@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "$0")/env.sh"
+mkdir -p "$PROJECT_ROOT/outputs" "$PROJECT_ROOT/runtime/user" "$PROJECT_ROOT/runtime/input"
+cd "$PROJECT_ROOT/runtime/ComfyUI"
+exec "$PROJECT_ROOT/.venv/bin/python" main.py \
+  --listen 127.0.0.1 --port "${COMFY_PORT:-8188}" \
+  --output-directory "$PROJECT_ROOT/outputs" \
+  --input-directory "$PROJECT_ROOT/runtime/input" \
+  --user-directory "$PROJECT_ROOT/runtime/user" \
+  --preview-method none --offline "$@"

@@ -1,0 +1,14 @@
+.DS_Store
+.venv/
+.cache/
+runtime/
+models/**
+!models/README.md
+outputs/**
+!outputs/.gitkeep
+benchmarks/*.history.json
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example

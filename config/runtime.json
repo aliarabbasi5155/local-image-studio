@@ -1,0 +1,10 @@
+{
+  "comfyui": {
+    "repository": "https://github.com/Comfy-Org/ComfyUI.git",
+    "revision": "b87fe48b0491425f682f7ffdaed56d0387cb6c5d"
+  },
+  "flux2klein_mlx": {
+    "repository": "https://github.com/tanis2000/comfyui-flux2klein-mlx.git",
+    "revision": "f4048f9ac25d11f5a5a5e67b931deaae3d94326c"
+  }
+}

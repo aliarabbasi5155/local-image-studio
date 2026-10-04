@@ -1,0 +1,256 @@
+{
+  "id": "flux2-klein-9b-4bit-mlx",
+  "revision": 0,
+  "last_node_id": 4,
+  "last_link_id": 2,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "Flux2KleinModelLoader",
+      "pos": [
+        80,
+        120
+      ],
+      "size": [
+        340,
+        150
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "localized_name": "pipeline",
+          "name": "pipeline",
+          "type": "FLUX2KLEIN_PIPELINE",
+          "slot_index": 0,
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Flux2KleinModelLoader"
+      },
+      "widgets_values": [
+        "flux2-klein-9b",
+        "4",
+        "../../models/flux2-klein-9b-4bit",
+        ""
+      ]
+    },
+    {
+      "id": 2,
+      "type": "Flux2KleinGenerate",
+      "pos": [
+        480,
+        80
+      ],
+      "size": [
+        400,
+        400
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "pipeline",
+          "name": "pipeline",
+          "type": "FLUX2KLEIN_PIPELINE",
+          "link": 1
+        },
+        {
+          "localized_name": "image",
+          "name": "image",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "localized_name": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "height",
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "width",
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "num_inference_steps",
+          "name": "num_inference_steps",
+          "type": "INT",
+          "widget": {
+            "name": "num_inference_steps"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "seed",
+          "name": "seed",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "guidance",
+          "name": "guidance",
+          "type": "FLOAT",
+          "widget": {
+            "name": "guidance"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "image_strength",
+          "name": "image_strength",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "image_strength"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "slot_index": 0,
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Flux2KleinGenerate"
+      },
+      "widgets_values": [
+        "Editorial architectural photograph of a secluded Italian villa beside Lake Como, warm terracotta walls, weathered stone steps, delicate climbing ivy and purple wisteria, a small wooden boat moored at the shore, distant mountains reflected in still turquoise water. Soft golden sunrise with thin morning mist, natural color, realistic fine textures, balanced composition, photographed on a medium format camera, 50mm lens, crisp details.",
+        1024,
+        1024,
+        4,
+        42,
+        "randomize",
+        1.0,
+        "flux2-klein-9b-4bit/image",
+        0.3
+      ]
+    },
+    {
+      "id": 3,
+      "type": "PreviewImage",
+      "pos": [
+        920,
+        80
+      ],
+      "size": [
+        320,
+        320
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 2
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 4,
+      "type": "Note",
+      "pos": [
+        80,
+        300
+      ],
+      "size": [
+        340,
+        210
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "flux2-klein-9b-4bit on Apple Silicon via MLX.\n4 steps, guidance 1.0, 1024 x 1024.\nRun ./scripts/start.sh to resolve the model path.\nThe local integration unloads text encoding and sampling components after use to fit 24 GB RAM.\nPNG files include the workflow and are saved to outputs/flux2-klein-9b-4bit/.\nSee README.md for measured M5 timings and the model license."
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      0,
+      "FLUX2KLEIN_PIPELINE"
+    ],
+    [
+      2,
+      2,
+      0,
+      3,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "definitions": {
+    "subgraphs": []
+  },
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 1,
+      "offset": [
+        0,
+        0
+      ]
+    }
+  },
+  "version": 0.4
+}

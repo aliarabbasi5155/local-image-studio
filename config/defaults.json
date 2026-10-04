@@ -1,0 +1,8 @@
+{
+  "model": "flux2-klein-9b-8bit",
+  "width": 1024,
+  "height": 1024,
+  "steps": 4,
+  "guidance": 1.0,
+  "target_seconds": 90
+}

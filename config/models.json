@@ -1,0 +1,26 @@
+{
+  "flux2-klein-9b-8bit": {
+    "repo_id": "mlx-community/flux2-klein-9b-8bit",
+    "revision": "07c85fd971952e5959a9314f4f2da446ff1b59b2",
+    "model_name": "flux2-klein-9b",
+    "quantize": "8",
+    "download_bytes": 17865577446,
+    "license": "FLUX Non-Commercial License (upstream 9B weights)"
+  },
+  "flux2-klein-9b-4bit": {
+    "repo_id": "mlx-community/flux2-klein-9b-4bit",
+    "revision": "f0c62655b9da432932ba24d4bfce8a96800cf0bd",
+    "model_name": "flux2-klein-9b",
+    "quantize": "4",
+    "download_bytes": 9541194042,
+    "license": "FLUX Non-Commercial License (upstream 9B weights)"
+  },
+  "flux2-klein-4b-8bit": {
+    "repo_id": "mlx-community/flux2-klein-4b-8bit",
+    "revision": "9beac1a3ad296d9e5e3f8845674e6577fa8654ec",
+    "model_name": "flux2-klein-4b",
+    "quantize": "8",
+    "download_bytes": 8569661670,
+    "license": "Apache-2.0"
+  }
+}

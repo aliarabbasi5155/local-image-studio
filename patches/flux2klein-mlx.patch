@@ -1,0 +1,116 @@
+diff --git a/nodes/generate.py b/nodes/generate.py
+index 19add51..9e1008c 100644
+--- a/nodes/generate.py
++++ b/nodes/generate.py
+@@ -1,14 +1,28 @@
+ import os
+ import tempfile
++import logging
+ 
++import mlx.core as mx
+ import numpy as np
+ import torch
++from comfy.model_management import throw_exception_if_processing_interrupted
++from comfy.utils import ProgressBar
+ from comfy_api.latest import io, ui
+ from PIL import Image
+ 
+ from ..nodes_registry import comfy_node
+ 
+ 
++class _ComfyProgress:
++    def __init__(self, steps):
++        self.progress = ProgressBar(steps)
++
++    def call_in_loop(self, t, latents, **kwargs):
++        mx.eval(latents)
++        throw_exception_if_processing_interrupted()
++        self.progress.update_absolute(t + 1)
++
++
+ def _tensor_to_image_path(image_tensor) -> str:
+     array = (image_tensor[0].clamp(0, 1).cpu().numpy() * 255.0).astype(np.uint8)
+     image = Image.fromarray(array)
+@@ -97,6 +111,9 @@ class Flux2KleinGenerate(io.ComfyNode):
+         if image is not None:
+             image_path = _tensor_to_image_path(image)
+ 
++        callback = _ComfyProgress(num_inference_steps)
++        pipeline.callbacks.register(callback)
++        mx.reset_peak_memory()
+         try:
+             result = pipeline.generate_image(
+                 seed=seed,
+@@ -109,6 +126,9 @@ class Flux2KleinGenerate(io.ComfyNode):
+                 image_strength=image_strength if image_path else None,
+             )
+         finally:
++            pipeline.callbacks.in_loop.remove(callback)
++            logging.info("FLUX MLX peak memory: %.2f GB", mx.get_peak_memory() / 1e9)
++            mx.clear_cache()
+             if image_path is not None:
+                 os.remove(image_path)
+ 
+diff --git a/nodes/loaders.py b/nodes/loaders.py
+index 256e52b..1f51c31 100644
+--- a/nodes/loaders.py
++++ b/nodes/loaders.py
+@@ -57,7 +57,6 @@ def _log_resolved_source(model_name: str, quantize: str, custom_model_path: str,
+     print(f"[comfyui-flux2klein-mlx] model_name={model_name!r} quantize={quantize!r} -> {source}", flush=True)
+ 
+ 
+-_PIPELINE_CACHE = {}
+ _EDIT_PIPELINE_CACHE = {}
+ 
+ 
+@@ -133,6 +132,11 @@ def _parse_loras(raw: str) -> tuple[list[str], list[float]]:
+ class Flux2KleinModelLoader(io.ComfyNode):
+     """Load a FLUX.2 Klein MLX pipeline for text-to-image / single-image img2img."""
+ 
++    @classmethod
++    def fingerprint_inputs(cls, **kwargs):
++        # MemorySaver releases components during generation, so each request needs a fresh pipeline.
++        return float("nan")
++
+     @classmethod
+     def define_schema(cls) -> io.Schema:
+         return io.Schema(
+@@ -173,17 +177,18 @@ class Flux2KleinModelLoader(io.ComfyNode):
+         loras: str = "",
+     ) -> io.NodeOutput:
+         _check_apple_silicon()
++        import mlx.core as mx
++        mx.set_cache_limit(1_000_000_000)
++        mx.clear_cache()
+         from mflux.models.common.config.model_config import ModelConfig
+         from mflux.models.flux2.variants.txt2img.flux2_klein import Flux2Klein
++        from mflux.callbacks.instances.memory_saver import MemorySaver
+ 
+         resolved_path = custom_model_path.strip() or _resolve_prequantized_repo(model_name, quantize)
++        if resolved_path and os.path.isdir(resolved_path):
++            resolved_path = os.path.realpath(resolved_path)
+         _log_resolved_source(model_name, quantize, custom_model_path, resolved_path)
+         lora_paths, lora_scales = _parse_loras(loras)
+-        cache_key = ("t2i", model_name, quantize, resolved_path, tuple(zip(lora_paths, lora_scales)))
+-        cached = _PIPELINE_CACHE.get(cache_key)
+-        if cached is not None:
+-            return io.NodeOutput(cached)
+-
+         pipeline = Flux2Klein(
+             model_config=ModelConfig.from_name(model_name),
+             quantize=_quantize_arg(quantize),
+@@ -192,8 +197,12 @@ class Flux2KleinModelLoader(io.ComfyNode):
+             lora_scales=lora_scales or None,
+         )
+ 
+-        _PIPELINE_CACHE.clear()
+-        _PIPELINE_CACHE[cache_key] = pipeline
++        pipeline.callbacks.register(MemorySaver(
++            model=pipeline,
++            keep_transformer=False,
++            keep_text_encoder=False,
++            cache_limit_bytes=1_000_000_000,
++        ))
+         return io.NodeOutput(pipeline)
+ 
+ 
