@@ -9,7 +9,8 @@ const state = {view:'library', images:[], jobs:[], total:0, query:'', options:nu
   mode:saved.mode || 'create', quality:saved.quality || 'balanced', aspect:saved.aspect || 'square',
   outputSize:saved.outputSize || (saved.mode === 'edit' ? 'original' : 'preset'),
   variations:saved.variations || 1, snofs:saved.snofs !== false, source:saved.source || null,
-  drafts:saved.drafts || {create:'',edit:''}, seed:saved.seed ?? null, authenticated:false};
+  drafts:saved.drafts || {create:'',edit:''}, seed:saved.seed ?? null,
+  composerCollapsed:saved.composerCollapsed === true, authenticated:false};
 let toastTimer, searchTimer, refreshing = false, gallerySignature = '', fetching = false;
 let deletingImage = null, deletePending = false, libraryRevision = 0;
 
@@ -27,7 +28,19 @@ const send = (path, body, method='POST') => api(path, {method, body:JSON.stringi
 function persist() {
   state.drafts[state.mode] = $('#prompt').value;
   try { localStorage.setItem('studio-composer', JSON.stringify({mode:state.mode, quality:state.quality,
-    aspect:state.aspect,outputSize:state.outputSize,variations:state.variations,snofs:state.snofs,source:state.source,drafts:state.drafts,seed:state.seed})); } catch { /* Private browsing may disable storage. */ }
+    aspect:state.aspect,outputSize:state.outputSize,variations:state.variations,snofs:state.snofs,source:state.source,drafts:state.drafts,seed:state.seed,composerCollapsed:state.composerCollapsed})); } catch { /* Private browsing may disable storage. */ }
+}
+function renderComposerVisibility() {
+  $('.composer-wrap').classList.toggle('is-collapsed',state.composerCollapsed);
+  $('#composer-body').hidden = state.composerCollapsed;
+  $('#composer-toggle').setAttribute('aria-expanded',String(!state.composerCollapsed));
+  $('#composer-toggle').setAttribute('aria-label',state.composerCollapsed ? 'Expand Create/Edit panel' : 'Minimize Create/Edit panel');
+  $('#composer-toggle-label').textContent = state.composerCollapsed ? 'Expand' : 'Minimize';
+}
+function setComposerCollapsed(collapsed) {
+  state.composerCollapsed = collapsed;
+  renderComposerVisibility(); persist();
+  $('#composer-toggle').focus({preventScroll:true});
 }
 function toast(message, action, callback) {
   clearTimeout(toastTimer);
@@ -92,7 +105,7 @@ function renderComposer() {
   $('#generate-label').textContent = state.mode === 'edit' ? (state.variations > 1 ? `Make ${state.variations} edits` : 'Edit image') : (state.variations > 1 ? `Create ${state.variations} images` : 'Create image');
   $('#seed').hidden = state.seed === null; $('#seed').value = state.seed ?? '';
   $('#seed-toggle').textContent = state.seed === null ? 'Random seed' : 'Fixed seed · switch to random';
-  qualityHint(); persist();
+  qualityHint(); renderComposerVisibility(); persist();
 }
 function dateText(timestamp) {
   const day = new Date(timestamp*1000);
@@ -164,7 +177,8 @@ async function changeView(view) {
 }
 function setMode(mode) {
   persist(); if (mode === 'edit' && state.mode !== 'edit' && state.outputSize === 'preset') state.outputSize = 'original';
-  state.mode = mode; $('#compose-error').hidden = true; renderComposer(); $('#prompt').focus();
+  state.mode = mode; state.composerCollapsed = false;
+  $('#compose-error').hidden = true; renderComposer(); $('#prompt').focus();
 }
 function reuse(recipe) {
   state.mode = recipe.mode; state.quality = recipe.quality; state.aspect = recipe.aspect;
@@ -173,6 +187,7 @@ function reuse(recipe) {
   state.drafts[recipe.mode] = recipe.prompt;
   if (recipe.source_id) state.source = {id:recipe.source_id,name:recipe.source.name,width:recipe.source.width,height:recipe.source.height,
     thumbnail:`/media/thumb/${recipe.source_id}`,url:`/media/upload/${recipe.source_id}`,parent_image_id:recipe.parent_image_id};
+  state.composerCollapsed = false;
   renderComposer(); $('#detail-dialog').close(); changeView('library'); $('#prompt').focus(); toast('Settings restored. Change anything, then create.');
 }
 function detailImageHTML(image) {
@@ -307,6 +322,7 @@ async function action(actionName,id) {
       state.source = source; state.drafts.edit = ''; state.mode = 'edit'; state.seed = null;
       state.outputSize = 'original';
       state.quality = image.recipe.quality; state.aspect = image.recipe.aspect;
+      state.composerCollapsed = false;
       renderComposer(); $('#detail-dialog').close(); await changeView('library'); $('#prompt').focus();
       return toast('Photo ready. Describe what you want to change.');
     }
@@ -335,7 +351,7 @@ document.addEventListener('click', event => {
   const item = event.target.closest('[data-action]'); if (item) action(item.dataset.action,item.dataset.id);
   const close = event.target.closest('[data-close]'); if (close) $(`#${close.dataset.close}`).close();
   const suggestion = event.target.closest('[data-suggestion]');
-  if (suggestion) { state.drafts.create = suggestion.dataset.suggestion; state.mode = 'create'; renderComposer(); $('#prompt').focus(); }
+  if (suggestion) { state.drafts.create = suggestion.dataset.suggestion; state.mode = 'create'; state.composerCollapsed = false; renderComposer(); $('#prompt').focus(); }
   if (event.target.closest('#remove-source')) { state.source = null; renderComposer(); }
 });
 $('#login-form').onsubmit = async event => {
@@ -374,7 +390,8 @@ $('#output-size').onchange = event => { persist(); state.outputSize = event.targ
 $('#prompt').oninput = persist;
 $('#seed-toggle').onclick = () => { state.seed = state.seed === null ? 123 : null; renderComposer(); if (state.seed !== null) $('#seed').focus(); };
 $('#seed').oninput = event => { state.seed = event.target.value === '' ? null : Number(event.target.value); persist(); };
-$('#new-image').onclick = () => { state.drafts.create = ''; state.mode = 'create'; state.seed = null; renderComposer(); changeView('library'); $('#prompt').focus(); };
+$('#composer-toggle').onclick = () => setComposerCollapsed(!state.composerCollapsed);
+$('#new-image').onclick = () => { state.drafts.create = ''; state.mode = 'create'; state.seed = null; state.composerCollapsed = false; renderComposer(); changeView('library'); $('#prompt').focus(); };
 function searchImages(immediate=false) {
   clearTimeout(searchTimer); state.query = $('#search').value; gallerySignature = '';
   if (immediate) refresh(); else searchTimer = setTimeout(refresh,250);
@@ -390,13 +407,19 @@ document.addEventListener('keydown',event => {
     const menu = $('.card-download[open]');
     if (menu) { menu.open = false; menu.querySelector('summary').focus(); event.preventDefault(); }
   }
-  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && state.authenticated && !document.querySelector('dialog[open]')) { event.preventDefault(); $('#compose-form').requestSubmit(); } });
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && state.authenticated && !document.querySelector('dialog[open]')) {
+    event.preventDefault();
+    if (state.composerCollapsed) { setComposerCollapsed(false); $('#prompt').focus(); }
+    else $('#compose-form').requestSubmit();
+  }
+});
 for (const dialog of document.querySelectorAll('dialog')) dialog.addEventListener('click',event => { if (event.target === dialog && !(dialog.id === 'delete-dialog' && deletePending)) { const rect = dialog.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close(); } });
 setInterval(() => { if (state.authenticated && !document.hidden) refresh(); },2500);
 const reserveComposerSpace = () => {
   const composerHeight = $('.composer-wrap').getBoundingClientRect().height;
   const navigationHeight = $('.mobile-nav').getBoundingClientRect().height;
   $('main').style.paddingBottom = `${composerHeight + navigationHeight + 45}px`;
+  $('#toast').style.bottom = `${composerHeight + navigationHeight + 12}px`;
 };
 new ResizeObserver(reserveComposerSpace).observe($('.composer-wrap'));
 window.addEventListener('resize',reserveComposerSpace);

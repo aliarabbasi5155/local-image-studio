@@ -25,6 +25,7 @@
     <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></symbol>
     <symbol id="icon-restore" viewBox="0 0 24 24"><path d="M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l3 2"/></symbol>
     <symbol id="icon-compare" viewBox="0 0 24 24"><path d="m9 8-4 4 4 4m6-8 4 4-4 4"/></symbol>
+    <symbol id="icon-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
   </defs></svg>
   <section id="login" class="login-screen" hidden>
     <form id="login-form" class="login-card">
@@ -54,7 +55,8 @@
       <button id="load-more" class="secondary load-more" hidden>Show more images</button>
       <section class="composer-wrap" aria-label="Create or edit an image">
         <form id="compose-form" class="composer">
-          <div class="composer-top"><div class="mode-tabs" role="group" aria-label="Image mode"><button type="button" data-mode="create" class="selected"><svg><use href="#icon-spark"/></svg>Create</button><button type="button" data-mode="edit"><svg><use href="#icon-edit"/></svg>Edit image</button></div><span class="saved-hint"><span class="status-dot"></span> Every result is saved</span></div>
+          <div class="composer-top"><div class="mode-tabs" role="group" aria-label="Image mode"><button type="button" data-mode="create" class="selected"><svg><use href="#icon-spark"/></svg>Create</button><button type="button" data-mode="edit"><svg><use href="#icon-edit"/></svg>Edit image</button></div><div class="composer-actions"><span class="saved-hint"><span class="status-dot"></span> Every result is saved</span><button type="button" id="composer-toggle" class="composer-toggle" aria-expanded="true" aria-controls="composer-body" aria-label="Minimize Create/Edit panel"><span id="composer-toggle-label">Minimize</span><svg aria-hidden="true"><use href="#icon-chevron"/></svg></button></div></div>
+          <div id="composer-body">
           <div id="source-area" class="source-area" hidden><button type="button" id="upload-button" class="upload-button"><svg><use href="#icon-image"/></svg><span>Choose a photo<small>PNG, JPG or WebP · up to 20 MB</small></span><span>＋</span></button><div id="source-preview" hidden></div><input id="upload" type="file" accept="image/png,image/jpeg,image/webp" hidden></div>
           <label class="sr-only" for="prompt">Describe your image</label><textarea id="prompt" rows="2" maxlength="5000" placeholder="Describe an image you’d love to see…" required></textarea>
           <div class="composer-bottom"><div class="controls">
@@ -67,6 +69,7 @@
           <p id="output-hint" class="output-hint" aria-live="polite"></p>
           <div class="composer-foot"><span id="quality-hint">Everyday detail</span><button type="button" id="seed-toggle">Random seed</button><input id="seed" type="number" min="0" max="4294967295" placeholder="Seed" aria-label="Fixed seed" hidden><span id="queue-hint">Variations render one at a time</span></div>
           <p id="compose-error" class="error" role="alert" hidden></p>
+          </div>
         </form>
       </section>
       <nav class="mobile-nav" aria-label="Mobile collections"><button data-view="library" class="active"><svg><use href="#icon-grid"/></svg>Library</button><button data-view="favorites"><svg><use href="#icon-heart"/></svg>Favorites</button><button data-view="archive"><svg><use href="#icon-archive"/></svg>Archive</button><button id="mobile-info"><svg><use href="#icon-phone"/></svg>Connect</button></nav>

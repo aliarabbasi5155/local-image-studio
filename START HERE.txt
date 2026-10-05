@@ -7,6 +7,8 @@ THE PHONE-FRIENDLY WEBSITE
 4. For your phone, use the "On your phone" address on the same Wi-Fi.
 
 Create = type a description, choose quality, size and variations, then Create image.
+Minimize folds the bottom panel away. Expand brings it back with your draft kept.
+Your browser remembers this choice. Starting an edit or a new creation opens it.
 Edit image = upload a photo and describe what should change.
 Output size: Match original keeps the exact photo dimensions when editing.
 2K = 2048 pixels on the longest edge; 4K = 4096 pixels on the longest edge.

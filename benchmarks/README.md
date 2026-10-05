@@ -226,3 +226,21 @@ changed. The JPG endpoint was verified directly, rather than claiming a
 completed Chrome JPG download. See [the report](20261005-jpg-downloads.json),
 [desktop preview](../examples/studio-jpg-downloads.png) and
 [phone preview](../examples/studio-jpg-downloads-mobile.png).
+
+## Collapsible bottom panel
+
+The Create/Edit panel has Minimize and Expand controls, with its preference saved
+in that browser. Desktop verification reduced the panel from 391px to an 88px
+bar. A reload kept it minimized, and expanding retained the prompt, source photo,
+quality, shape, output size, variation count, SNOFS and fixed seed. Ctrl/Cmd + Enter
+opened a minimized panel and focused the prompt. Reuse settings and the Edit tab
+also reopened it. Toasts and gallery spacing followed the panel's current height.
+
+The compact panel measured 77px in both 393 × 852 and 320 × 740 browser viewports,
+with no horizontal overflow or overlapping controls. It sat above the mobile
+navigation. `make check` passed, and the browser reported no console warnings or
+errors. Verification used saved cafe images without generating or changing any
+library images; a physical phone was not tested. See
+[the report](20261005-collapsible-panel.json),
+[desktop preview](../examples/studio-collapsed-panel.png) and
+[phone preview](../examples/studio-collapsed-panel-mobile.png).

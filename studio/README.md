@@ -24,6 +24,12 @@ from the browser's Share/menu controls.
 
 ## Make and edit images
 
+- **Minimize the bottom panel:** tap **Minimize** beside the Create/Edit tabs to
+  make room for browsing your images. Tap **Expand** to bring the controls back.
+  Your prompt, chosen photo and settings stay in place, and that browser remembers
+  whether the panel was minimized after a refresh. Choosing Create, Edit image,
+  New creation, Edit this image or Reuse settings opens it automatically.
+  Ctrl/Cmd + Enter opens a minimized panel; when expanded, it submits your prompt.
 - **Create:** describe what you want, choose quality, shape, output size and 1–4 variations,
   then tap **Create image**. Each variation uses a different seed and saves as
   it finishes. Images run one at a time to fit this Mac's memory.
