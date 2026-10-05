@@ -60,7 +60,7 @@ The fully clothed adult portrait completed in **193.78 s** end-to-end
 result passed dimension, nonblank-pixel and embedded prompt/workflow checks,
 and visual inspection. This single run exceeded the base preset's 90-second
 target; it is not a controlled comparison of adapter overhead.
-The 4-bit SNOFS workflow is installed but has not been benchmarked.
+The 4-bit SNOFS workflow has not been benchmarked at 1024 × 1024.
 
 See [the report](20261004T234742Z-snofs-8bit.json) and the local output at
 `outputs/flux2-klein-9b-8bit-snofs/image_00001_.png`.
@@ -92,3 +92,33 @@ the optional KV-cache path is incompatible with this installed model/runtime.
 The three extension patches were checked against clean pinned upstream sources,
 and setup was rerun successfully without changing saved user workflows.
 The launcher was checked for cold startup and reuse of the running server.
+
+## Docker website
+
+The website was built and run in Docker Desktop, connected to the native MLX
+engine through `host.docker.internal`. Two **Fast / square / SNOFS** creations
+used Klein 9B 4-bit at 512 × 512 with seeds 20261005 and 20261006. Worker times
+were **21.24 s** and **19.03 s**, with server execution of **20.78 s** and
+**18.71 s** and **7.49 GB** peak MLX allocation.
+
+An edit started through the website's **Edit this image** button added red
+flowers to the cafe table. It used the same model/size and took **29.52 s** from
+worker submission to saved result (**28.67 s** engine execution), with **8.02 GB**
+peak MLX allocation. Visual inspection confirmed the flowers were added.
+All three PNGs passed size, nonblank-pixel and exact embedded recipe checks,
+and include ComfyUI workflows. The editing source and its SHA256 were retained.
+See [the report](20261005-web-studio.json).
+
+Favorites, Archive and Restore were exercised in the browser. Rebuilding and
+restarting the Docker website preserved the library, favorites and sign-in
+session. A normal sample-photo upload and its thumbnail were checked through
+the API. The LAN HTTP address responded successfully. Responsive layout was
+checked at 393 × 852 and 320 × 740, with no horizontal overflow; a physical
+phone was not used in this verification.
+
+`make test-studio` passes nine tests covering PIN access and rate limiting,
+cross-origin rejection, recipe/search persistence, distinct variation seeds,
+editing lineage, archive restoration, targeted cancellation, and recovery of
+an existing engine job without submitting it twice. Fast's real GPU path was
+tested through the website; Balanced and High use the existing 8-bit engine,
+with the dimensions documented in [the studio guide](../studio/README.md).

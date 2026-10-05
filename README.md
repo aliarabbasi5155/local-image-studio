@@ -13,6 +13,16 @@ system load, prompt and resolution.
 
 ## Run
 
+For the phone-friendly website, open Docker Desktop and double-click
+**`Start Web Studio.command`**. It opens **http://localhost:7878** and prints your
+local PIN and phone address. Create or edit images with 1–4 variations, choose
+Fast / Balanced / High quality, favorite results, archive and restore images,
+and reuse the settings saved with every image. The library persists in
+`studio-data/`. See [the website guide](studio/README.md).
+
+The website runs in Docker; ComfyUI runs natively so MLX can use the Mac's GPU.
+Both reuse the models already installed in this checkout.
+
 For a beginner-friendly launch, double-click **`Start Image Studio.command`**.
 It starts this project's ComfyUI in the background, reuses it if already running,
 and opens the local studio in your default browser. Choose **01 - Create Images**
@@ -98,7 +108,9 @@ The 8-bit preset was verified at 1024 × 1024 with a fully clothed adult portrai
 all 336 adapter tensors matched, generation completed in **193.78 s**, and the
 PNG contains matching prompt/workflow metadata. Peak MLX allocation was
 **13.36 GB**. This run exceeded the base preset's 90-second target. The 4-bit
-SNOFS workflow is installed but has not been benchmarked with the adapter.
+SNOFS preset was later verified at 512 × 512 through the website: two creations
+took about 21 and 19 seconds, and an edit about 30 seconds. See
+[the website report](benchmarks/20261005-web-studio.json).
 See [the measured run](benchmarks/20261004T234742Z-snofs-8bit.json).
 
 ## Install on another Mac
@@ -166,6 +178,9 @@ measured time budget. See [benchmark details](benchmarks/README.md).
 | `models/` | Shared local model library, ignored by Git |
 | `runtime/` | Upstream repositories and local ComfyUI state, ignored by Git |
 | `outputs/` | Generated PNGs, ignored by Git |
+| `studio/` | Phone-friendly website, API and tests |
+| `studio-data/` | Persistent website library, sources and PIN, ignored by Git |
+| `compose.yaml` | Docker website connected to the native Mac engine |
 | `benchmarks/` | Measured performance and validation evidence |
 
 To add another family, add its pinned source to the model registry, its ComfyUI
@@ -176,10 +191,13 @@ integration to the runtime setup, and a workflow. Keep large weights in
 
 ```bash
 make check
+make test-studio
 ```
 
 Checks Python and shell syntax, installed dependency compatibility and diff
 whitespace. The benchmark command provides the real GPU integration check.
+The studio tests cover PIN access, variations, archive/restore persistence,
+editing sources, targeted cancellation and recovery without duplicate jobs.
 Text-to-image and image editing with a normal Load Image input are verified.
 The editing check uses the saved beginner workflow and SNOFS, validates PNG
 metadata and visually checks the requested coat-color change. See

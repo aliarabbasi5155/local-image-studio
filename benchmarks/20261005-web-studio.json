@@ -1,0 +1,89 @@
+{
+  "verified_at": "2026-10-05T01:27:08.614374+00:00",
+  "machine": "Apple M5, 24 GB",
+  "website": "Docker website connected to native MLX/ComfyUI",
+  "runs": [
+    {
+      "image_id": "48086e9d-87f1-4b84-8543-fa06d9cb6911",
+      "mode": "create",
+      "quality": "fast",
+      "seed": 20261005,
+      "width": 512,
+      "height": 512,
+      "snofs": true,
+      "model": "flux2-klein-9b-4bit",
+      "parent_image_id": null,
+      "worker_elapsed_seconds": 21.24,
+      "png_recipe_matches": true,
+      "png_workflow_present": true,
+      "nonblank": true,
+      "source_retained": false
+    },
+    {
+      "image_id": "a321285d-c29f-42f2-906a-ba916fdcfb80",
+      "mode": "create",
+      "quality": "fast",
+      "seed": 20261006,
+      "width": 512,
+      "height": 512,
+      "snofs": true,
+      "model": "flux2-klein-9b-4bit",
+      "parent_image_id": null,
+      "worker_elapsed_seconds": 19.03,
+      "png_recipe_matches": true,
+      "png_workflow_present": true,
+      "nonblank": true,
+      "source_retained": false
+    },
+    {
+      "image_id": "692db282-019c-4ce8-bfdc-6cd0f6223d12",
+      "mode": "edit",
+      "quality": "fast",
+      "seed": 2182083100,
+      "width": 512,
+      "height": 512,
+      "snofs": true,
+      "model": "flux2-klein-9b-4bit",
+      "parent_image_id": "a321285d-c29f-42f2-906a-ba916fdcfb80",
+      "worker_elapsed_seconds": 29.52,
+      "png_recipe_matches": true,
+      "png_workflow_present": true,
+      "nonblank": true,
+      "source_retained": true
+    }
+  ],
+  "engine_elapsed_seconds": [
+    20.78,
+    18.71,
+    28.67
+  ],
+  "peak_mlx_gb": [
+    7.49,
+    7.49,
+    8.02
+  ],
+  "visual_edit_check": "Requested red flowers were added to the cafe table.",
+  "api_tests": 9,
+  "favorite_archive_restore_ui_verified": true,
+  "docker_rebuild_library_session_persistence_verified": true,
+  "physical_phone_tested": false,
+  "photo_upload_api_verified": true,
+  "lan_endpoint_reachable": true,
+  "browser_prompt_search_verified": true,
+  "responsive_viewports": [
+    [
+      393,
+      852
+    ],
+    [
+      320,
+      740
+    ]
+  ],
+  "responsive_horizontal_overflow": false,
+  "browser_console_errors": 0,
+  "screenshots": [
+    "examples/studio-desktop.png",
+    "examples/studio-mobile.png"
+  ]
+}

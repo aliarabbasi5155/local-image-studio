@@ -1,0 +1,17 @@
+services:
+  studio:
+    build: .
+    image: local-image-studio:latest
+    user: "${STUDIO_UID:-1000}:${STUDIO_GID:-1000}"
+    ports:
+      - "${STUDIO_BIND:-0.0.0.0}:${STUDIO_PORT:-7878}:7878"
+    environment:
+      COMFY_URL: http://host.docker.internal:8188
+      ENGINE_PROJECT_ROOT: "${ENGINE_PROJECT_ROOT:?Use Start Web Studio.command to configure your Mac path}"
+      STUDIO_LAN_URL: "${STUDIO_LAN_URL:-http://localhost:7878}"
+    volumes:
+      - ./studio-data:/data
+    restart: unless-stopped
+    init: true
+    mem_limit: 768m
+    cpus: 2

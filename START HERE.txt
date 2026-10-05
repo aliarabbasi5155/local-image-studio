@@ -1,5 +1,21 @@
 YOUR LOCAL IMAGE STUDIO
 
+THE PHONE-FRIENDLY WEBSITE
+1. Open Docker Desktop and wait until it is running.
+2. Double-click "Start Web Studio.command" in this folder.
+3. Open the address it prints and enter your six-digit PIN.
+4. For your phone, use the "On your phone" address on the same Wi-Fi.
+
+Create = type a description, choose quality and variations, then Create image.
+Edit image = upload a photo and describe what should change.
+Tap an image to edit it again, download it or reuse its saved settings.
+The heart adds a favorite. Archive keeps the image; Restore brings it back.
+Start with Fast quality while exploring. All results save automatically.
+Keep your Mac awake and Docker Desktop running while generating.
+Your PIN and library stay in studio-data. Full guide: studio/README.md.
+
+THE COMFYUI WORKFLOWS
+
 Opening it again
 1. Double-click "Start Image Studio.command" in this folder.
 2. Wait for the browser to open ComfyUI.
