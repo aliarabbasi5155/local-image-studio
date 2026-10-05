@@ -1,0 +1,21 @@
+diff --git a/nodes/loaders.py b/nodes/loaders.py
+--- a/nodes/loaders.py
++++ b/nodes/loaders.py
+@@ -194,6 +194,8 @@ class Flux2KleinModelLoader(io.ComfyNode):
+             model_path=resolved_path,
+             lora_paths=lora_paths or None,
+             lora_scales=lora_scales or None,
++            # Apply adapters at inference time without folding them into base weights.
++            bake_lora=False,
+         )
+ 
+         pipeline.callbacks.register(MemorySaver(
+@@ -270,6 +272,8 @@ class Flux2KleinEditModelLoader(io.ComfyNode):
+             model_path=resolved_path,
+             lora_paths=lora_paths or None,
+             lora_scales=lora_scales or None,
++            # Preserve the quantized base weights when applying an adapter.
++            bake_lora=False,
+         )
+ 
+         _EDIT_PIPELINE_CACHE.clear()

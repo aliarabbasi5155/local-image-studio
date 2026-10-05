@@ -99,8 +99,7 @@ index 256e52b..1f51c31 100644
          pipeline = Flux2Klein(
              model_config=ModelConfig.from_name(model_name),
              quantize=_quantize_arg(quantize),
-@@ -192,8 +197,12 @@ class Flux2KleinModelLoader(io.ComfyNode):
-             lora_scales=lora_scales or None,
+@@ -193,7 +198,11 @@ class Flux2KleinModelLoader(io.ComfyNode):
          )
  
 -        _PIPELINE_CACHE.clear()

@@ -1,0 +1,57 @@
+YOUR LOCAL IMAGE STUDIO
+
+Opening it again
+1. Double-click "Start Image Studio.command" in this folder.
+2. Wait for the browser to open ComfyUI.
+3. Click Workflows on the left (the connected-circles icon).
+4. Choose "01 - Create Images" or "02 - Edit Images".
+
+The workflows are saved on your Mac. You can close the launcher Terminal
+window after it says Ready. Closing the browser also keeps the studio running.
+After restarting your Mac, just double-click the launcher again.
+
+01 - CREATE IMAGES
+Type a description in the middle box. Click the blue Run button at the top
+right once. Wait for the result on the right.
+
+Example: A photograph of a small Italian cafe at sunrise, warm light,
+terracotta walls, realistic details.
+
+02 - EDIT IMAGES
+Click "choose file to upload" in the Load Image box on the left and select
+your photo. In the middle box, describe what should change. Click Run once.
+An example photo is already selected so you can practice immediately.
+
+Example: Change the coat to red. Keep the same face, scarf and background.
+
+Your original photo stays unchanged. AI edits can also change other details;
+check the result and try a clearer instruction if needed.
+
+SETTINGS TO START WITH
+Keep steps at 4 and guidance at 1.0.
+Create Images starts at 1024 x 1024; Edit Images starts at 768 x 768.
+Larger images take longer. Expect a few minutes; editing can take longer.
+"randomize" makes a fresh variation each run. "fixed" keeps the seed.
+The red X beside Run stops the current generation.
+
+FINDING YOUR IMAGES
+Open this project's outputs folder:
+  create-images = new images
+  edit-images   = edited images
+Every result is saved automatically as a PNG.
+
+KEEPING A RECIPE
+To keep a particular prompt or edit, use the workflow menu's Save As option
+and give your copy a new name. Keep the two starter workflows as templates.
+Generated PNG files also contain their workflow: drag a result PNG onto the
+ComfyUI canvas to restore the recipe that produced it.
+
+MOVING AROUND
+Scroll on the empty canvas to zoom. Click an empty part of the canvas, then
+the Fit View button at the bottom to see the whole workflow. You do not need
+to add nodes or reconnect any wires.
+
+IF SOMETHING GOES WRONG
+If the browser cannot connect, double-click Start Image Studio.command again.
+If you see a red error, copy its text so it can be checked.
+Startup details are in runtime/comfyui-launcher.log.

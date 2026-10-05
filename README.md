@@ -13,6 +13,20 @@ system load, prompt and resolution.
 
 ## Run
 
+For a beginner-friendly launch, double-click **`Start Image Studio.command`**.
+It starts this project's ComfyUI in the background, reuses it if already running,
+and opens the local studio in your default browser. Choose **01 - Create Images**
+or **02 - Edit Images** in the Workflows sidebar. Both are saved on disk.
+The editing workflow includes a sample photo and a normal image upload button.
+See [START HERE.txt](START%20HERE.txt) for the short guide.
+
+Both beginner presets use Klein 9B 8-bit with SNOFS v1.4, four steps and
+guidance 1.0. Create Images saves 1024 × 1024 results to `outputs/create-images/`;
+Edit Images saves 768 × 768 results to `outputs/edit-images/`. For editing,
+upload a photo, describe the change and click Run. The source file stays intact.
+AI edits can also alter the framing or other details, so inspect each result.
+The verified sample edit took about five minutes on this Mac.
+
 The environment and weights are installed in this checkout. Start ComfyUI:
 
 ```bash
@@ -44,6 +58,48 @@ For the faster 4-bit preset, which is also downloaded:
 Use the matching saved workflow in the UI. Its initial benchmarks were 42–46 s
 at 1024 × 1024. Resolution changes affect both time and memory; keep one image
 per generation for the measured performance profile.
+
+## SNOFS adapter
+
+**SNOFS v1.4 for Klein 9B** is installed as a separate 1.09 GB LoKr adapter from
+[the author's repository](https://huggingface.co/Ashen3/SNOFS/tree/main/Klein9b).
+The workflows reuse the existing 8-bit and 4-bit Klein 9B model directories.
+Open `workflows/flux2-klein-9b-8bit-snofs.json` in ComfyUI, or select the matching
+saved workflow. The 4-bit workflow is `workflows/flux2-klein-9b-4bit-snofs.json`.
+The presets use four steps, guidance 1.0 and adapter strength 1.0. Change strength
+in the loader's `loras` field: `SNOFS/klein_snofs_v1_4.safetensors:0.75`.
+
+Generate from the terminal:
+
+```bash
+.venv/bin/python scripts/generate.py --lora snofs-klein-9b-v1.4 --prompt "An adult woman wearing a navy coat on a street in Rome"
+# Optional: --model flux2-klein-9b-4bit --lora-strength 0.75
+```
+
+Images are saved under `outputs/flux2-klein-9b-8bit-snofs/` or the corresponding
+4-bit directory. Adapters are applied during inference with `bake_lora=False`.
+The adapter remains separate from the quantized base checkpoint.
+
+To reinstall SNOFS on another checkout, after runtime/model setup:
+
+```bash
+source scripts/env.sh
+.venv/bin/python scripts/download_loras.py snofs-klein-9b-v1.4
+```
+
+The downloader pins the author's revision, verifies file size and SHA256, saves
+the source and license under `models/loras/`, and creates a relative symlink in
+ComfyUI's `models/loras/SNOFS/` directory. Restart ComfyUI after applying runtime
+patches. `config/loras.json` records the adapter source and supported model.
+SNOFS uses its author's personal-use license; the full terms are downloaded
+alongside the adapter. The upstream Klein 9B license also applies.
+
+The 8-bit preset was verified at 1024 × 1024 with a fully clothed adult portrait:
+all 336 adapter tensors matched, generation completed in **193.78 s**, and the
+PNG contains matching prompt/workflow metadata. Peak MLX allocation was
+**13.36 GB**. This run exceeded the base preset's 90-second target. The 4-bit
+SNOFS workflow is installed but has not been benchmarked with the adapter.
+See [the measured run](benchmarks/20261004T234742Z-snofs-8bit.json).
 
 ## Install on another Mac
 
@@ -100,6 +156,7 @@ measured time budget. See [benchmark details](benchmarks/README.md).
 | Path | Purpose |
 | --- | --- |
 | `config/models.json` | Model IDs, exact source revisions and licenses |
+| `config/loras.json` | Adapter sources, checksums and compatible models |
 | `config/defaults.json` | Default model and image settings |
 | `config/runtime.json` | Exact ComfyUI and extension commits |
 | `requirements.lock.txt` | Exact tested Python package versions |
@@ -123,7 +180,10 @@ make check
 
 Checks Python and shell syntax, installed dependency compatibility and diff
 whitespace. The benchmark command provides the real GPU integration check.
-Text-to-image is verified; image editing and LoRAs have not been tested here.
+Text-to-image and image editing with a normal Load Image input are verified.
+The editing check uses the saved beginner workflow and SNOFS, validates PNG
+metadata and visually checks the requested coat-color change. See
+[validation details](benchmarks/README.md).
 
 **Klein 9B weights use BFL's FLUX Non-Commercial License.** The Apache tag on the
 community quantization card does not replace the upstream model license. Review

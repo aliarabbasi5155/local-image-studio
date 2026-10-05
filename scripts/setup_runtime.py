@@ -3,6 +3,7 @@
 import json
 import subprocess
 import shutil
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,18 +32,34 @@ def main():
     plugin = comfy / "custom_nodes/comfyui-flux2klein-mlx"
     install(runtime["comfyui"], comfy)
     install(runtime["flux2klein_mlx"], plugin)
-    patch = ROOT / "patches/flux2klein-mlx.patch"
-    applied = git(plugin, "apply", "--reverse", "--check", str(patch), check=False)
-    if applied.returncode != 0:
-        git(plugin, "apply", "--check", str(patch))
-        git(plugin, "apply", str(patch))
-    print("Verified Apple memory settings patch", flush=True)
+    patches = [ROOT / "patches" / name for name in (
+        "flux2klein-mlx.patch", "flux2klein-lora.patch", "flux2klein-edit.patch",
+    )]
+    # Check the whole patch stack on a copy before changing installed sources.
+    with tempfile.TemporaryDirectory(prefix="flux2klein-setup-") as name:
+        staged = Path(name)
+        shutil.copytree(plugin / "nodes", staged / "nodes", ignore=shutil.ignore_patterns("__pycache__"))
+        for patch in reversed(patches):
+            if git(staged, "apply", "--reverse", "--check", str(patch), check=False).returncode == 0:
+                git(staged, "apply", "--reverse", str(patch))
+        for patch in patches:
+            git(staged, "apply", "--check", str(patch))
+            git(staged, "apply", str(patch))
+            print(f"Verified {patch.name}", flush=True)
+        for source in (staged / "nodes").rglob("*.py"):
+            destination = plugin / source.relative_to(staged)
+            if source.read_bytes() != destination.read_bytes():
+                shutil.copy2(source, destination)
     saved_workflows = ROOT / "runtime/user/default/workflows"
     saved_workflows.mkdir(parents=True, exist_ok=True)
     for workflow in (ROOT / "workflows").glob("*.json"):
         destination = saved_workflows / workflow.name
         if not destination.exists():
             shutil.copy2(workflow, destination)
+    sample = ROOT / "runtime/input/example-edit-source.png"
+    sample.parent.mkdir(parents=True, exist_ok=True)
+    if not sample.exists():
+        shutil.copy2(ROOT / "examples/edit-source.png", sample)
 
 
 if __name__ == "__main__":

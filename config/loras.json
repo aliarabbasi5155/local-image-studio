@@ -1,0 +1,14 @@
+{
+  "snofs-klein-9b-v1.4": {
+    "repo_id": "Ashen3/SNOFS",
+    "revision": "11c39dcd0758b6f047e933ea00fe019570ab1485",
+    "filename": "Klein9b/klein_snofs_v1_4.safetensors",
+    "comfy_filename": "SNOFS/klein_snofs_v1_4.safetensors",
+    "sha256": "512c7f1d8dc7fa5dbc1fee6049c2975ef3007300a5de1712b3e1773cb95089f7",
+    "download_bytes": 1090563760,
+    "model_names": ["flux2-klein-9b"],
+    "strength": 1.0,
+    "workflow_suffix": "snofs",
+    "license": "SNOFS Model Personal Use License v1.1"
+  }
+}

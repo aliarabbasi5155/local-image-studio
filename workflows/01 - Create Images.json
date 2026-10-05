@@ -1,0 +1,260 @@
+{
+  "id": "96abc18c-beec-5879-ad11-d1df9097a9eb",
+  "revision": 0,
+  "last_node_id": 4,
+  "last_link_id": 2,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "Flux2KleinModelLoader",
+      "pos": [
+        70,
+        350
+      ],
+      "size": [
+        360,
+        270
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "localized_name": "pipeline",
+          "name": "pipeline",
+          "type": "FLUX2KLEIN_PIPELINE",
+          "slot_index": 0,
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Flux2KleinModelLoader"
+      },
+      "widgets_values": [
+        "flux2-klein-9b",
+        "8",
+        "../../models/flux2-klein-9b-8bit",
+        "SNOFS/klein_snofs_v1_4.safetensors:1.0"
+      ],
+      "title": "Model + SNOFS (ready to use)"
+    },
+    {
+      "id": 2,
+      "type": "Flux2KleinGenerate",
+      "pos": [
+        480,
+        70
+      ],
+      "size": [
+        420,
+        590
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "pipeline",
+          "name": "pipeline",
+          "type": "FLUX2KLEIN_PIPELINE",
+          "link": 1
+        },
+        {
+          "localized_name": "image",
+          "name": "image",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "localized_name": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "height",
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "width",
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "num_inference_steps",
+          "name": "num_inference_steps",
+          "type": "INT",
+          "widget": {
+            "name": "num_inference_steps"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "seed",
+          "name": "seed",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "guidance",
+          "name": "guidance",
+          "type": "FLOAT",
+          "widget": {
+            "name": "guidance"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "image_strength",
+          "name": "image_strength",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "image_strength"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "slot_index": 0,
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Flux2KleinGenerate"
+      },
+      "widgets_values": [
+        "Editorial photograph of an adult woman aged 30 wearing a navy wool coat and a cream scarf, standing on a cobblestone street in Rome, natural daylight, realistic skin texture, 50mm lens, fully clothed.",
+        1024,
+        1024,
+        4,
+        42,
+        "randomize",
+        1.0,
+        "create-images/image",
+        0.3
+      ],
+      "title": "1. Describe the image you want"
+    },
+    {
+      "id": 3,
+      "type": "PreviewImage",
+      "pos": [
+        960,
+        70
+      ],
+      "size": [
+        420,
+        590
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 2
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": [],
+      "title": "2. Your result"
+    },
+    {
+      "id": 4,
+      "type": "Note",
+      "pos": [
+        70,
+        70
+      ],
+      "size": [
+        360,
+        240
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "Write your description in the middle box.\nClick the blue Run button at the top right once.\nYour image appears on the right and saves automatically.\n\nKeep steps 4 and guidance 1.0.\nRandomize gives a new variation each run.\n\nFind images in the project outputs/create-images folder.\nUse Workflows on the left to switch to 02 - Edit Images."
+      ],
+      "title": "CREATE IMAGES - Quick guide"
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      0,
+      "FLUX2KLEIN_PIPELINE"
+    ],
+    [
+      2,
+      2,
+      0,
+      3,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "definitions": {
+    "subgraphs": []
+  },
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.6,
+      "offset": [
+        600,
+        125
+      ]
+    }
+  },
+  "version": 0.4
+}

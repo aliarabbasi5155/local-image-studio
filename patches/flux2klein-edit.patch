@@ -1,0 +1,158 @@
+diff --git a/nodes/loaders.py b/nodes/loaders.py
+index eb26ff7..34045f9 100644
+--- a/nodes/loaders.py
++++ b/nodes/loaders.py
+@@ -57,9 +57,6 @@ def _log_resolved_source(model_name: str, quantize: str, custom_model_path: str,
+     print(f"[comfyui-flux2klein-mlx] model_name={model_name!r} quantize={quantize!r} -> {source}", flush=True)
+ 
+ 
+-_EDIT_PIPELINE_CACHE = {}
+-
+-
+ def _check_apple_silicon():
+     if platform.system() != "Darwin" or platform.machine() != "arm64":
+         raise RuntimeError(
+@@ -212,6 +209,10 @@ class Flux2KleinModelLoader(io.ComfyNode):
+ class Flux2KleinEditModelLoader(io.ComfyNode):
+     """Load a FLUX.2 Klein MLX pipeline for multi-image conditioned editing."""
+ 
++    @classmethod
++    def fingerprint_inputs(cls, **kwargs):
++        return float("nan")
++
+     @classmethod
+     def define_schema(cls) -> io.Schema:
+         return io.Schema(
+@@ -252,16 +253,18 @@ class Flux2KleinEditModelLoader(io.ComfyNode):
+         loras: str = "",
+     ) -> io.NodeOutput:
+         _check_apple_silicon()
++        import mlx.core as mx
++        mx.set_cache_limit(1_000_000_000)
++        mx.clear_cache()
+         from mflux.models.common.config.model_config import ModelConfig
+         from mflux.models.flux2.variants.edit.flux2_klein_edit import Flux2KleinEdit
++        from mflux.callbacks.instances.memory_saver import MemorySaver
+ 
+         resolved_path = custom_model_path.strip() or _resolve_prequantized_repo(model_name, quantize)
++        if resolved_path and os.path.isdir(resolved_path):
++            resolved_path = os.path.realpath(resolved_path)
+         _log_resolved_source(model_name, quantize, custom_model_path, resolved_path)
+         lora_paths, lora_scales = _parse_loras(loras)
+-        cache_key = ("edit", model_name, quantize, resolved_path, tuple(zip(lora_paths, lora_scales)))
+-        cached = _EDIT_PIPELINE_CACHE.get(cache_key)
+-        if cached is not None:
+-            return io.NodeOutput(cached)
+ 
+         pipeline = Flux2KleinEdit(
+             model_config=ModelConfig.from_name(model_name),
+@@ -273,6 +276,10 @@ class Flux2KleinEditModelLoader(io.ComfyNode):
+             bake_lora=False,
+         )
+ 
+-        _EDIT_PIPELINE_CACHE.clear()
+-        _EDIT_PIPELINE_CACHE[cache_key] = pipeline
++        pipeline.callbacks.register(MemorySaver(
++            model=pipeline,
++            keep_transformer=False,
++            keep_text_encoder=False,
++            cache_limit_bytes=1_000_000_000,
++        ))
+         return io.NodeOutput(pipeline)
+diff --git a/nodes/edit.py b/nodes/edit.py
+index 8e56963..234e303 100644
+--- a/nodes/edit.py
++++ b/nodes/edit.py
+@@ -1,12 +1,16 @@
+ import json
++import logging
++import os
+ import re
+ 
++import mlx.core as mx
+ import numpy as np
+ import torch
+ from comfy_api.latest import io, ui
+ from PIL import Image
+ 
+ from ..nodes_registry import comfy_node
++from .generate import _ComfyProgress, _tensor_to_image_path
+ 
+ 
+ def _pil_to_tensor(image: Image.Image):
+@@ -90,9 +94,11 @@ class Flux2KleinEdit(io.ComfyNode):
+                     "image_paths",
+                     multiline=True,
+                     default="",
++                    advanced=True,
+                     tooltip="Reference image paths, one per line or a JSON list. "
+                     "Same format as VRGDG_MultiReferenceConditioningFromPaths.",
+                 ),
++                io.Image.Input("image", optional=True),
+                 io.Int.Input("height", default=1024, min=64, max=2048, step=8),
+                 io.Int.Input("width", default=1024, min=64, max=2048, step=8),
+                 io.Int.Input("num_inference_steps", default=4, min=1, max=50),
+@@ -102,6 +108,7 @@ class Flux2KleinEdit(io.ComfyNode):
+                     "use_kv_cache",
+                     default=False,
+                     optional=True,
++                    advanced=True,
+                     tooltip="mflux's KV-cache path for multi-reference editing. "
+                     "CONFIRMED BROKEN on the plain flux2-klein-4b/-9b models: "
+                     "raises 'Function arguments must be trees of arrays or "
+@@ -110,7 +117,7 @@ class Flux2KleinEdit(io.ComfyNode):
+                     "(untested — bigger download, not yet verified). Default "
+                     "False is the only variant confirmed to work.",
+                 ),
+-                io.String.Input("filename_prefix", default="flux2klein_mlx/edit"),
++                io.String.Input("filename_prefix", default="flux2klein_mlx/edit", advanced=True),
+             ],
+             hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
+             is_output_node=True,
+@@ -132,20 +139,34 @@ class Flux2KleinEdit(io.ComfyNode):
+         guidance: float,
+         filename_prefix: str,
+         use_kv_cache: bool = False,
++        image=None,
+     ) -> io.NodeOutput:
+         paths = _parse_image_paths(image_paths)
++        uploaded_path = _tensor_to_image_path(image) if image is not None else None
++        if uploaded_path is not None:
++            paths.insert(0, uploaded_path)
+         if not paths:
+-            raise ValueError("Flux2KleinEdit requires at least one reference image path.")
+-
+-        result = pipeline.generate_image(
+-            seed=seed,
+-            prompt=prompt,
+-            num_inference_steps=num_inference_steps,
+-            height=height,
+-            width=width,
+-            guidance=guidance,
+-            image_paths=paths,
+-            use_kv_cache=use_kv_cache,
+-        )
++            raise ValueError("Upload an image with Load Image and connect it to the edit node, or provide a reference image path.")
++
++        callback = _ComfyProgress(num_inference_steps)
++        pipeline.callbacks.register(callback)
++        mx.reset_peak_memory()
++        try:
++            result = pipeline.generate_image(
++                seed=seed,
++                prompt=prompt,
++                num_inference_steps=num_inference_steps,
++                height=height,
++                width=width,
++                guidance=guidance,
++                image_paths=paths,
++                use_kv_cache=use_kv_cache,
++            )
++        finally:
++            pipeline.callbacks.in_loop.remove(callback)
++            logging.info("FLUX MLX edit peak memory: %.2f GB", mx.get_peak_memory() / 1e9)
++            mx.clear_cache()
++            if uploaded_path is not None:
++                os.remove(uploaded_path)
+ 
+         return _save_output(_pil_to_tensor(result.image), filename_prefix, cls)

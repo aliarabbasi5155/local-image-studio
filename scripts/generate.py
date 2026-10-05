@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
+import math
 import time
 import uuid
 from datetime import datetime, timezone
@@ -31,18 +32,35 @@ def request(base, route, payload=None):
         return json.load(response)
 
 
-def build_prompt(model_key, width, height, seed, prompt):
+def resolve_lora(model_key, lora_key, strength=None):
+    if lora_key is None:
+        return None
+    adapters = json.loads((ROOT / "config/loras.json").read_text())
+    models = json.loads((ROOT / "config/models.json").read_text())
+    adapter = adapters[lora_key]
+    if models[model_key]["model_name"] not in adapter["model_names"]:
+        raise SystemExit(f"{lora_key} does not support {model_key}")
+    path = ROOT / "models" / "loras" / lora_key / adapter["filename"]
+    if not path.is_file() or not (ROOT / "models" / "loras" / lora_key / "source.json").is_file():
+        raise SystemExit(f"Adapter missing. Download it with scripts/download_loras.py {lora_key}")
+    scale = adapter["strength"] if strength is None else strength
+    return {"key": lora_key, "path": str(path), "strength": scale, "source": adapter}
+
+
+def build_prompt(model_key, width, height, seed, prompt, lora=None):
     models = json.loads((ROOT / "config/models.json").read_text())
     model = models[model_key]
     directory = ROOT / "models" / model_key
     if not (directory / "source.json").is_file():
         raise SystemExit(f"Model missing. Download it with scripts/download_models.py {model_key}")
+    output_key = f"{model_key}-{lora['source']['workflow_suffix']}" if lora else model_key
     return {
         "1": {
             "class_type": "Flux2KleinModelLoader",
             "inputs": {
                 "model_name": model["model_name"], "quantize": model["quantize"],
-                "custom_model_path": str(directory), "loras": "",
+                "custom_model_path": str(directory),
+                "loras": json.dumps([{"path": lora["path"], "strength": lora["strength"]}]) if lora else "",
             },
         },
         "2": {
@@ -50,7 +68,7 @@ def build_prompt(model_key, width, height, seed, prompt):
             "inputs": {
                 "pipeline": ["1", 0], "prompt": prompt, "width": width, "height": height,
                 "num_inference_steps": 4, "seed": seed, "guidance": 1.0,
-                "filename_prefix": f"{model_key}/image", "image_strength": 0.3,
+                "filename_prefix": f"{output_key}/image", "image_strength": 0.3,
             },
         },
     }
@@ -62,6 +80,8 @@ def main():
     defaults = json.loads(defaults_path.read_text()) if defaults_path.exists() else {}
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", choices=list(models), default=defaults.get("model", "flux2-klein-9b-8bit"))
+    parser.add_argument("--lora", choices=list(json.loads((ROOT / "config/loras.json").read_text())))
+    parser.add_argument("--lora-strength", type=float, help="Adapter strength (default from config/loras.json)")
     parser.add_argument("--width", type=int, default=defaults.get("width", 1024))
     parser.add_argument("--height", type=int, default=defaults.get("height", 1024))
     parser.add_argument("--seed", type=int, default=42)
@@ -71,13 +91,18 @@ def main():
     parser.add_argument("--server", default="http://127.0.0.1:8188")
     parser.add_argument("--timeout", type=float, default=900)
     args = parser.parse_args()
+    if args.lora_strength is not None and (args.lora is None or not math.isfinite(args.lora_strength)):
+        parser.error("--lora-strength requires --lora and a finite value")
     if args.runs < 1 or args.timeout <= 0:
         parser.error("--runs and --timeout must be positive")
     if any(size < 64 or size > 2048 or size % 16 for size in (args.width, args.height)):
         parser.error("dimensions must be multiples of 16 between 64 and 2048")
+    lora = resolve_lora(args.model, args.lora, args.lora_strength)
+    workflow_key = f"{args.model}-{lora['source']['workflow_suffix']}" if lora else args.model
     stats = request(args.server, "/system_stats")
     runtime = json.loads((ROOT / "config/runtime.json").read_text())
     patch_sha256 = hashlib.sha256((ROOT / "patches/flux2klein-mlx.patch").read_bytes()).hexdigest()
+    lora_patch_sha256 = hashlib.sha256((ROOT / "patches/flux2klein-lora.patch").read_bytes()).hexdigest()
     packages = {name: importlib.metadata.version(name) for name in ("mflux", "mlx", "mlx-metal", "torch", "transformers")}
     records = []
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -85,9 +110,11 @@ def main():
     report_path.parent.mkdir(exist_ok=True)
     for run in range(args.runs):
         seed = args.seed + run  # Always recompute; don't benchmark a cached image.
-        graph = build_prompt(args.model, args.width, args.height, seed, args.prompt)
-        workflow = json.loads((ROOT / "workflows" / f"{args.model}.json").read_text())
-        workflow["nodes"][1]["widgets_values"] = [args.prompt, args.height, args.width, 4, seed, "fixed", 1.0, f"{args.model}/image", 0.3]
+        graph = build_prompt(args.model, args.width, args.height, seed, args.prompt, lora)
+        workflow = json.loads((ROOT / "workflows" / f"{workflow_key}.json").read_text())
+        if lora:
+            workflow["nodes"][0]["widgets_values"][3] = f"{lora['source']['comfy_filename']}:{lora['strength']}"
+        workflow["nodes"][1]["widgets_values"] = [args.prompt, args.height, args.width, 4, seed, "fixed", 1.0, f"{workflow_key}/image", 0.3]
         started = time.perf_counter()
         queued = request(args.server, "/prompt", {
             "prompt": graph, "client_id": str(uuid.uuid4()),
@@ -149,7 +176,8 @@ def main():
             "model": args.model, "model_source": json.loads((ROOT / "models" / args.model / "source.json").read_text()), "backend": "MLX/Metal via ComfyUI",
             "width": args.width, "height": args.height, "steps": 4, "guidance": 1.0,
             "prompt": args.prompt, "system_stats": stats, "runs": records,
-            "runtime_sources": runtime, "integration_patch_sha256": patch_sha256, "packages": packages,
+            "runtime_sources": runtime, "integration_patch_sha256": patch_sha256,
+            "lora_integration_patch_sha256": lora_patch_sha256, "lora": lora, "packages": packages,
             "note": "End-to-end latency includes queueing, model loading if needed, encoding, sampling, decoding and saving. Downloads excluded. Later runs change seed and recompute the image.",
         }
         report_path.write_text(json.dumps(report, indent=2) + "\n")

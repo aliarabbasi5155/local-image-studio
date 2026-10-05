@@ -1,0 +1,257 @@
+{
+  "id": "flux2-klein-9b-8bit-snofs-mlx",
+  "revision": 0,
+  "last_node_id": 4,
+  "last_link_id": 2,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "Flux2KleinModelLoader",
+      "pos": [
+        80,
+        120
+      ],
+      "size": [
+        360,
+        230
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "localized_name": "pipeline",
+          "name": "pipeline",
+          "type": "FLUX2KLEIN_PIPELINE",
+          "slot_index": 0,
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Flux2KleinModelLoader"
+      },
+      "widgets_values": [
+        "flux2-klein-9b",
+        "8",
+        "../../models/flux2-klein-9b-8bit",
+        "SNOFS/klein_snofs_v1_4.safetensors:1.0"
+      ],
+      "title": "FLUX.2 Klein 9B + SNOFS v1.4"
+    },
+    {
+      "id": 2,
+      "type": "Flux2KleinGenerate",
+      "pos": [
+        480,
+        80
+      ],
+      "size": [
+        400,
+        400
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "pipeline",
+          "name": "pipeline",
+          "type": "FLUX2KLEIN_PIPELINE",
+          "link": 1
+        },
+        {
+          "localized_name": "image",
+          "name": "image",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "localized_name": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "height",
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "width",
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "num_inference_steps",
+          "name": "num_inference_steps",
+          "type": "INT",
+          "widget": {
+            "name": "num_inference_steps"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "seed",
+          "name": "seed",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "guidance",
+          "name": "guidance",
+          "type": "FLOAT",
+          "widget": {
+            "name": "guidance"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "image_strength",
+          "name": "image_strength",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "image_strength"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "slot_index": 0,
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Flux2KleinGenerate"
+      },
+      "widgets_values": [
+        "Editorial photograph of an adult woman aged 30 wearing a navy wool coat and a cream scarf, standing on a cobblestone street in Rome, natural daylight, realistic skin texture, 50mm lens, fully clothed.",
+        1024,
+        1024,
+        4,
+        42,
+        "randomize",
+        1.0,
+        "flux2-klein-9b-8bit-snofs/image",
+        0.3
+      ]
+    },
+    {
+      "id": 3,
+      "type": "PreviewImage",
+      "pos": [
+        920,
+        80
+      ],
+      "size": [
+        320,
+        320
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 2
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 4,
+      "type": "Note",
+      "pos": [
+        80,
+        390
+      ],
+      "size": [
+        360,
+        250
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "SNOFS v1.4 LoKr on FLUX.2 Klein 9B 8-bit via MLX.\n4 steps, guidance 1.0, strength 1.0.\nChange adapter strength in the loader loras field.\nRun scripts/download_loras.py snofs-klein-9b-v1.4 to install.\nAdapters are applied during inference.\nOutputs: outputs/flux2-klein-9b-8bit-snofs/.\nSNOFS: local personal use; see downloaded LICENSE.\nKlein 9B: upstream FLUX Non-Commercial License."
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      0,
+      "FLUX2KLEIN_PIPELINE"
+    ],
+    [
+      2,
+      2,
+      0,
+      3,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "definitions": {
+    "subgraphs": []
+  },
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 1,
+      "offset": [
+        0,
+        0
+      ]
+    }
+  },
+  "version": 0.4
+}

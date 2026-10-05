@@ -3,6 +3,12 @@ Downloaded weights live here, outside Git. Exact source revisions are in
 and VAEs together in the MLX/MFLUX format. Future model families can share this
 directory without changing the ComfyUI installation.
 
+Adapters live in `models/loras/<adapter-key>/`. Their pinned sources, file sizes
+and SHA256 checksums are in `config/loras.json`. Run
+`scripts/download_loras.py snofs-klein-9b-v1.4` with the project Python to install
+SNOFS v1.4 and its license. The downloader registers a relative symlink in
+ComfyUI's LoRA directory; workflows use `SNOFS/klein_snofs_v1_4.safetensors`.
+
 FLUX.2 Klein **9B** upstream weights use the **FLUX Non-Commercial License**.
 The Apache tag on the community quantization cards does not replace the upstream
 license. FLUX.2 Klein **4B** uses Apache 2.0.

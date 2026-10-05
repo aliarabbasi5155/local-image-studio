@@ -47,3 +47,48 @@ end-to-end and server timings, and source model revisions. Full ComfyUI history
 files are ignored by Git; startup logs stay under the ignored `runtime/` directory.
 Software versions are pinned in `requirements.lock.txt`; ComfyUI and extension
 commits are pinned in `config/runtime.json`.
+
+## SNOFS v1.4 installation verification
+
+On the same Mac, SNOFS v1.4 was verified with Klein 9B 8-bit at 1024 × 1024,
+four steps, guidance 1.0 and adapter strength 1.0. Its 336 tensors matched all
+adapter keys and applied to 144 transformer layers. The LoKr adapter runs
+separately with `bake_lora=False`.
+
+The fully clothed adult portrait completed in **193.78 s** end-to-end
+(**193.52 s** server execution), with **13.36 GB** peak MLX allocation. The
+result passed dimension, nonblank-pixel and embedded prompt/workflow checks,
+and visual inspection. This single run exceeded the base preset's 90-second
+target; it is not a controlled comparison of adapter overhead.
+The 4-bit SNOFS workflow is installed but has not been benchmarked.
+
+See [the report](20261004T234742Z-snofs-8bit.json) and the local output at
+`outputs/flux2-klein-9b-8bit-snofs/image_00001_.png`.
+
+## Beginner editing workflow
+
+`02 - Edit Images` uses a standard ComfyUI Load Image upload connected to the
+MLX editing node, Klein 9B 8-bit and SNOFS v1.4 at strength 1.0. The first
+768 × 768 edit took **296.50 s** of server execution with **14.05 GB** peak
+MLX allocation. End-to-end time was **394.93 s**, including a wait behind a
+separate generation. Four steps, guidance 1.0 and seed 123 were used.
+
+The output passed success-status, dimensions, nonblank pixels and embedded
+Load Image/workflow checks. Visual inspection confirmed the navy coat changed
+to red; the model also changed framing and details. The source file was
+unchanged. See [the report](20261005T002820Z-beginner-image-edit.json),
+[source](../examples/edit-source.png) and [result](../examples/edit-result.png).
+
+A second consecutive edit was started with ComfyUI's Run button using the same
+photo and seed, but an emerald-green coat instruction. It completed in
+**287.25 s** with **14.05 GB** peak MLX allocation. The output passed the same
+checks, displayed in ComfyUI and visibly changed the coat to green. This
+confirms repeated editing works after component unloading. See
+[the GUI report](20261005T003308Z-beginner-edit-ui.json).
+
+The editing pipeline is rebuilt for each request so component unloading does
+not break later edits. The plain Klein 9B workflow keeps `use_kv_cache=False`;
+the optional KV-cache path is incompatible with this installed model/runtime.
+The three extension patches were checked against clean pinned upstream sources,
+and setup was rerun successfully without changing saved user workflows.
+The launcher was checked for cold startup and reuse of the running server.
