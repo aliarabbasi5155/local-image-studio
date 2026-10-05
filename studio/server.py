@@ -289,6 +289,21 @@ async def delete_image(request):
     return web.json_response({"ok": True, "deleted_id": image_id})
 
 
+def jpeg_download(path):
+    """Encode a sharing copy without changing the saved PNG or its dimensions."""
+    with Image.open(path) as original:
+        profile = original.info.get("icc_profile")
+        if original.mode in ("RGBA", "LA") or "transparency" in original.info:
+            rgba = original.convert("RGBA")
+            image = Image.new("RGB", original.size, "white")
+            image.paste(rgba, mask=rgba.getchannel("A"))
+        else:
+            image = original.convert("RGB")
+        output = io.BytesIO()
+        image.save(output, "JPEG", quality=95, subsampling=0, optimize=True, icc_profile=profile)
+        return output.getvalue()
+
+
 async def media(request):
     state = request.app[STATE]
     media_id = request.match_info["id"]
@@ -308,9 +323,20 @@ async def media(request):
     path = state["store"].directory / folder / (media_id + suffix)
     if not path.is_file():
         raise web.HTTPNotFound()
+    output_format = request.query.get("format")
+    if output_format is not None and (kind == "thumb" or output_format not in ("png", "jpg", "jpeg")):
+        return failure("Choose PNG or JPG for a full-size image download.")
     headers = {}
+    jpeg = output_format in ("jpg", "jpeg")
     if request.query.get("download") == "1":
-        headers["Content-Disposition"] = f'attachment; filename="studio-{media_id}{suffix}"'
+        extension = ".jpg" if jpeg else suffix
+        headers["Content-Disposition"] = f'attachment; filename="studio-{media_id}{extension}"'
+    if jpeg:
+        try:
+            content = await asyncio.to_thread(jpeg_download, path)
+        except FileNotFoundError:
+            raise web.HTTPNotFound()
+        return web.Response(body=content, content_type="image/jpeg", headers=headers)
     return web.FileResponse(path, headers=headers)
 
 

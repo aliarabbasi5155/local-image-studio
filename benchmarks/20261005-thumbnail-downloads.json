@@ -1,0 +1,58 @@
+{
+  "status": 200,
+  "content_type": "image/png",
+  "content_disposition": "attachment; filename=\"studio-6161ac5e-fba3-4878-96c1-d19d02025c88.png\"",
+  "content_length": "9034399",
+  "bytes": 9034399,
+  "dimensions": [
+    4096,
+    2711
+  ],
+  "image_id": "6161ac5e-fba3-4878-96c1-d19d02025c88",
+  "sha256": "060978d89d2a2955af45741f77a64089b3a5edce18a1e0f484467299547900f2",
+  "recipe_and_workflow_preserved": true,
+  "verified_at": "2026-10-05T09:57:46.043242+00:00",
+  "feature": "full-size PNG downloads from gallery thumbnails",
+  "checkpoint_commit": "cf761f8",
+  "make_check": "passed",
+  "chrome_download_history": "completed studio-6161ac5e-fba3-4878-96c1-d19d02025c88.png; Show in Finder available",
+  "browser_download_helpers": {
+    "wait_for_event": "timed out",
+    "download_media": "reported canceled",
+    "verification": "Chrome Download History confirmed the completed download; direct HTTP response matched the saved PNG byte-for-byte"
+  },
+  "browser_checks": {
+    "library_download_icons": 6,
+    "favorite_download_icon_visible": true,
+    "details_dialog_stayed_closed": true,
+    "phone_viewports": [
+      {
+        "width": 393,
+        "height": 852
+      },
+      {
+        "width": 320,
+        "height": 740,
+        "horizontal_overflow": false
+      }
+    ],
+    "physical_phone_tested": false,
+    "console_errors_or_warnings": []
+  },
+  "screenshots": [
+    {
+      "path": "examples/studio-thumbnail-download.png",
+      "dimensions": [
+        1512,
+        772
+      ]
+    },
+    {
+      "path": "examples/studio-thumbnail-download-mobile.png",
+      "dimensions": [
+        393,
+        852
+      ]
+    }
+  ]
+}

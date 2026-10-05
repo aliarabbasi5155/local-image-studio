@@ -121,6 +121,57 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await (await self.client.get("/api/images?q=unrelated")).json())["total"], 0)
         self.assertEqual((await (await self.client.get(f"/api/images/{image_id}/recipe")).json()), recipe)
 
+    async def test_jpg_download_keeps_full_size_png_recipe_and_requires_login(self):
+        image_id, recipe = await self.seed_image()
+        path = self.store.directory / "images" / (image_id + ".png")
+        metadata = PngImagePlugin.PngInfo()
+        metadata.add_text("studio", json.dumps(recipe))
+        metadata.add_text("workflow", '{"nodes": []}')
+        Image.new("RGB", (751,497), (30,80,170)).save(path, "PNG", pnginfo=metadata)
+        original = path.read_bytes()
+        files = set(path.parent.iterdir())
+        url = f"/media/image/{image_id}?download=1&format=jpg"
+        response = await self.client.get(url)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.content_type, "image/jpeg")
+        self.assertEqual(response.headers["Content-Disposition"], f'attachment; filename="studio-{image_id}.jpg"')
+        with Image.open(io.BytesIO(await response.read())) as jpg:
+            self.assertEqual(jpg.format, "JPEG")
+            self.assertEqual(jpg.mode, "RGB")
+            self.assertEqual(jpg.size, (751,497))
+            self.assertTrue(all(abs(a-b) <= 2 for a,b in zip(jpg.getpixel((300,200)),(30,80,170))))
+        png = await self.client.get(f"/media/image/{image_id}?download=1")
+        self.assertEqual(png.content_type, "image/png")
+        self.assertEqual(await png.read(), original)
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(set(path.parent.iterdir()), files)
+        self.assertEqual(self.store.image(image_id)["recipe"], recipe)
+        self.assertEqual((await self.client.get(f"/media/image/{image_id}?format=gif")).status,400)
+        self.assertEqual((await self.client.get("/media/image/00000000-0000-0000-0000-000000000000?format=jpg")).status,404)
+        await self.client.post("/api/logout",json={})
+        self.assertEqual((await self.client.get(url)).status,401)
+
+    async def test_jpg_export_flattens_transparency_and_supports_saved_sources(self):
+        image_id, _ = await self.seed_image()
+        path = self.store.directory / "images" / (image_id + ".png")
+        Image.new("RGBA", (79,65), (255,0,0,0)).save(path,"PNG")
+        response = await self.client.get(f"/media/image/{image_id}?format=jpeg&download=1")
+        self.assertEqual(response.status,200)
+        with Image.open(io.BytesIO(await response.read())) as jpg:
+            self.assertEqual(jpg.size,(79,65))
+            self.assertEqual(jpg.getpixel((30,30)),(255,255,255))
+        with Image.open(path) as png:
+            self.assertEqual(png.mode,"RGBA")
+            self.assertEqual(png.getpixel((30,30)),(255,0,0,0))
+        form = aiohttp.FormData()
+        form.add_field("image",photo(643,427),filename="source.png",content_type="image/png")
+        source = await (await self.client.post("/api/uploads",data=form)).json()
+        response = await self.client.get(source["url"] + "?download=1&format=jpg")
+        self.assertEqual(response.content_type,"image/jpeg")
+        with Image.open(io.BytesIO(await response.read())) as jpg:
+            self.assertEqual(jpg.size,(643,427))
+        self.assertEqual((await self.client.get(source["thumbnail"] + "?format=jpg")).status,400)
+
     async def test_delete_requires_confirmation_and_removes_files_recipe_and_job(self):
         image_id, _ = await self.seed_image()
         kept_id, kept_recipe = await self.seed_image()

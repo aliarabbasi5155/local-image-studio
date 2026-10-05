@@ -1,0 +1,75 @@
+{
+  "status": 200,
+  "content_type": "image/jpeg",
+  "content_disposition": "attachment; filename=\"studio-6161ac5e-fba3-4878-96c1-d19d02025c88.jpg\"",
+  "bytes": 1813361,
+  "format": "JPEG",
+  "mode": "RGB",
+  "dimensions": [
+    4096,
+    2711
+  ],
+  "feature": "Full-size JPG downloads from thumbnails and image details",
+  "image_id": "6161ac5e-fba3-4878-96c1-d19d02025c88",
+  "sha256": "93af7949743113c5db199cd06b221d9b6a3279191d3b9a695acb568e7538ea17",
+  "saved_png_unchanged": true,
+  "saved_png_sha256": "060978d89d2a2955af45741f77a64089b3a5edce18a1e0f484467299547900f2",
+  "verified_at": "2026-10-05T10:18:13.660460+00:00",
+  "make_check": "passed",
+  "studio_tests": 16,
+  "physical_phone_tested": false,
+  "browser_checks": {
+    "phone393": {
+      "formats": [
+        "Download PNG",
+        "Download JPG"
+      ],
+      "menuOpen": true,
+      "pageWidth": 393,
+      "viewportWidth": 393
+    },
+    "phone320": {
+      "card": {
+        "bottom": 271.5,
+        "left": 16,
+        "right": 153.5,
+        "top": 134
+      },
+      "menu": {
+        "bottom": 227.5,
+        "left": 24,
+        "right": 152,
+        "top": 135.5
+      },
+      "menuFits": true,
+      "pageWidth": 320,
+      "viewportWidth": 320
+    },
+    "singleMenuOpen": 1,
+    "escapeClosedMenu": true,
+    "favoriteFormats": [
+      "Download PNG",
+      "Download JPG"
+    ],
+    "detailFormats": [
+      {
+        "filename": "studio-6161ac5e-fba3-4878-96c1-d19d02025c88.png",
+        "href": "/media/image/6161ac5e-fba3-4878-96c1-d19d02025c88?download=1",
+        "label": "Download PNG"
+      },
+      {
+        "filename": "studio-6161ac5e-fba3-4878-96c1-d19d02025c88.jpg",
+        "href": "/media/image/6161ac5e-fba3-4878-96c1-d19d02025c88?download=1&format=jpg",
+        "label": "Download JPG"
+      }
+    ],
+    "comparisonPreserved": true,
+    "consoleErrorsOrWarnings": []
+  },
+  "chrome_jpg_download": "Blocked by your organization: file did not meet a security policy",
+  "chrome_png_download": "Opened the standard Save dialog; the extra copy was canceled",
+  "screenshots": [
+    "examples/studio-jpg-downloads.png",
+    "examples/studio-jpg-downloads-mobile.png"
+  ]
+}

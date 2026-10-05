@@ -14,7 +14,11 @@ Edits keep the photo's shape. Create uses your chosen Square/Portrait/Landscape.
 Large outputs use local AI upscaling. The final size is shown before you start.
 Preset uses the normal quality/shape size. Edit this image starts at Match original.
 Tap an image to edit it again, download it or reuse its saved settings.
+Open an edited image and drag the Before / after divider left or right.
+Original is on the left; Edited is on the right. Reset returns to half-and-half.
 The heart adds a favorite. Archive keeps the image; Restore brings it back.
+The down arrow on a thumbnail lets you download PNG or JPG at the full saved size.
+PNG includes saved settings; JPG is easy to share. Recipes stay in your studio.
 The trash icon, or Delete image in the image details, opens a confirmation.
 Delete permanently removes the result and its settings from the website.
 Keep image cancels. Use Archive if you may want to restore it later.

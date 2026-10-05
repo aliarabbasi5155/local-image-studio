@@ -32,7 +32,24 @@ from the browser's Share/menu controls.
   **Match original** keeps the photo's exact width and height. Tell the
   model what should stay the same, for example: “Make the coat red. Keep the
   same face, scarf and background.” Your source remains saved.
+- **Compare an edit:** open an edited image to see **Before / after**. The original
+  is on the left and the edited result is on the right. Drag the divider, swipe
+  horizontally on the photo, or move the slider underneath. **Reset** returns to
+  a half-and-half view. With the slider focused, arrow keys adjust the split;
+  Home shows the full edit and End shows the full original. This also works for
+  earlier saved edits. Both photos fit the same viewing area without stretching
+  or cropping, including when an edit has a different size or shape.
+
+  ![Original and edited photo with a draggable comparison divider](../examples/studio-before-after.png)
 - **Heart:** adds an image to Favorites. Tap it again to remove the favorite.
+- **Download:** tap the down-arrow button at the bottom left of any thumbnail,
+  then choose **PNG** or **JPG**. Both download at the full saved dimensions.
+  It works in Library, Favorites and Archive without opening the image details;
+  the details also have separate **Download PNG** and **Download JPG** buttons.
+  PNG includes the embedded settings and workflow. JPG is a high-quality
+  sharing copy (quality 95) without those embedded settings. Your saved PNG,
+  editing source and studio recipe remain unchanged. Any transparent areas
+  become white in JPG. Choose **Save recipe** to download the settings separately.
 - **Archive:** moves an image out of the library. Open Archive and choose
   **Restore** to bring it back. Its image, source and settings are kept.
 - **Delete:** tap the trash icon on an image, or open it and choose **Delete
@@ -41,7 +58,7 @@ from the browser's Share/menu controls.
   website, including Favorites and Archive. There is no restore after deletion;
   use Archive when you may want the result again. Other images and saved editing
   source photos are kept, so later edits and reused recipes remain usable.
-- **Open an image:** download its PNG, view its settings, download the recipe,
+- **Open an image:** download its PNG or JPG, view its settings, download the recipe,
   reuse its settings, or make another edit. **Reuse settings** restores the
   prompt, seed, quality, shape, output size, SNOFS and editing source for that result.
 - **Stop:** stops only that variation. Other queued variations can finish.

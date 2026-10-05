@@ -171,3 +171,58 @@ overflow; the browser reported no errors or warnings. Permanent removal was
 exercised on temporary test data. User library images were preserved during UI
 verification. See [the report](20261005-image-deletion.json) and the
 [confirmation screenshot](../examples/studio-delete.png).
+
+## Thumbnail downloads
+
+Gallery thumbnails now have a separate download icon at the bottom left.
+Chrome's Download History confirmed a completed PNG download from the 4K cafe
+thumbnail. The same endpoint returned the original 9,034,399 bytes at
+4096 × 2711, including the embedded recipe and workflow. Clicking the link
+kept the details dialog closed. The icon also appeared in Favorites, and the
+controls fit 393 × 852 and 320 × 740 viewports. `make check` passed. See
+[the report](20261005-thumbnail-downloads.json) and the
+[desktop screenshot](../examples/studio-thumbnail-download.png). The browser
+download helpers failed to report completion; native Chrome history and the
+HTTP response supplied the verification.
+
+## Before-and-after comparisons
+
+Saved edited images now show the full original and result in a shared viewing
+area with a draggable divider and native range control. The 4K cafe edit loaded
+its 751 × 497 source and 4096 × 2711 result without stretching or cropping.
+Desktop dragging updated the split to 70/30; keyboard Home, End and arrow keys
+showed the expected endpoints and one-percent adjustment. Reset returned to
+50/50. An earlier 512 × 512 edit also worked, and an ordinary creation retained
+its image viewer.
+
+The comparison fit 393 × 852 and 320 × 740 browser viewports without horizontal
+overflow. Dragging worked at phone dimensions, and the stage permits vertical
+touch scrolling and pinch zoom. A physical phone was not tested. `make check`
+passed, the Docker service was healthy, and the browser reported no warnings or
+errors. No library images were modified. See [the report](20261005-before-after.json),
+[desktop preview](../examples/studio-before-after.png) and
+[phone preview](../examples/studio-before-after-mobile.png).
+
+## JPG downloads
+
+The thumbnail download button now offers PNG and JPG; image details have both
+download buttons. An authenticated LAN request returned a valid RGB JPEG at
+4096 × 2711 (1,813,361 bytes), while the saved PNG's SHA256 stayed unchanged.
+JPG uses quality 95 without chroma subsampling and is encoded off the HTTP event
+loop without creating another library file. PNG retains its embedded settings;
+JPG sharing copies omit those settings. Transparent areas become white.
+
+All sixteen studio tests pass, including full-size JPEG output, PNG and recipe
+preservation, PIN protection, transparent-image export, and saved-source export.
+`make check` also passes. The chooser fits within thumbnails at 393 × 852 and
+320 × 740, supports Escape, and keeps only one menu open. Favorites and details
+show both formats, and the before-and-after view remains present. No browser
+console errors or warnings were reported. A physical phone was not tested.
+
+Chrome blocked the automated JPG download with “Blocked by your organization”
+and stated that the file did not meet a security policy. PNG reached the normal
+Save dialog; its extra copy was canceled. No browser security settings were
+changed. The JPG endpoint was verified directly, rather than claiming a
+completed Chrome JPG download. See [the report](20261005-jpg-downloads.json),
+[desktop preview](../examples/studio-jpg-downloads.png) and
+[phone preview](../examples/studio-jpg-downloads-mobile.png).

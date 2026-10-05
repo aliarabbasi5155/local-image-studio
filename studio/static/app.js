@@ -113,9 +113,17 @@ function jobHTML(job) {
   const cancellable = activeStatuses.includes(job.status);
   return `<article class="image-card job-card ${failed ? 'failed' : ''}"><div class="job-top"><span>${job.recipe.mode === 'edit' ? 'Edit' : 'Creation'} · Variation ${job.variation}</span>${cancellable ? `<button data-action="cancel" data-id="${job.id}" aria-label="Stop variation ${job.variation}">${icon('close')}</button>` : ''}</div>${icon('spark')}<p>${escapeHTML(job.recipe.prompt)}</p>${failed ? `<div class="job-error">${escapeHTML(job.error)}</div><button class="secondary" data-action="retry" data-id="${job.id}">Reuse settings</button>` : `<div class="job-phase"><span>${escapeHTML(job.cancel_requested ? 'Stopping…' : job.phase)}</span><span data-elapsed="${job.id}">${elapsedText(job)}</span></div><div class="progress-track"><span data-progress="${job.id}"></span></div>`}</article>`;
 }
+function downloadLinks(image, compact=false) {
+  return ['png','jpg'].map(format => {
+    const name = format.toUpperCase();
+    const hint = format === 'png' ? 'Original + settings' : 'Easy to share';
+    const query = format === 'jpg' ? '&format=jpg' : '';
+    return `<a class="${compact ? 'download-option' : 'secondary'}" href="/media/image/${image.id}?download=1${query}" download="studio-${image.id}.${format}" aria-label="Download ${name}" title="${hint}">${icon('download')}${compact ? `<span>${name}<small>${hint}</small></span>` : `Download ${name}`}</a>`;
+  }).join('');
+}
 function imageHTML(image) {
   const recipe = image.recipe;
-  return `<article class="image-card"><button class="image-open" data-action="detail" data-id="${image.id}" aria-label="Open image: ${escapeHTML(recipe.prompt.slice(0,100))}"><img src="/media/thumb/${image.id}" alt="${escapeHTML(recipe.prompt)}" loading="lazy"></button><div class="card-actions"><button data-action="favorite" data-id="${image.id}" class="${image.favorite ? 'favorited' : ''}" aria-label="${image.favorite ? 'Remove from favorites' : 'Add to favorites'}" aria-pressed="${image.favorite}">${icon('heart')}</button><button data-action="archive" data-id="${image.id}" aria-label="${image.archived ? 'Restore image' : 'Archive image'}">${icon(image.archived ? 'restore' : 'archive')}</button><button data-action="delete" data-id="${image.id}" class="delete-image" aria-label="Delete image">${icon('trash')}</button></div><div class="card-info"><p>${escapeHTML(recipe.prompt)}</p><div class="card-meta"><span class="tag ${recipe.mode === 'edit' ? 'edited' : ''}">${recipe.mode === 'edit' ? 'Edited' : recipe.quality}</span><span>${recipe.width} × ${recipe.height}</span><span class="date">${dateText(image.created)}</span></div></div></article>`;
+  return `<article class="image-card"><div class="card-preview"><button class="image-open" data-action="detail" data-id="${image.id}" aria-label="Open image: ${escapeHTML(recipe.prompt.slice(0,100))}"><img src="/media/thumb/${image.id}" alt="${escapeHTML(recipe.prompt)}" loading="lazy"></button><div class="card-actions"><button data-action="favorite" data-id="${image.id}" class="${image.favorite ? 'favorited' : ''}" aria-label="${image.favorite ? 'Remove from favorites' : 'Add to favorites'}" aria-pressed="${image.favorite}">${icon('heart')}</button><button data-action="archive" data-id="${image.id}" aria-label="${image.archived ? 'Restore image' : 'Archive image'}">${icon(image.archived ? 'restore' : 'archive')}</button><button data-action="delete" data-id="${image.id}" class="delete-image" aria-label="Delete image">${icon('trash')}</button></div><details class="card-download"><summary aria-label="Download image" title="Choose PNG or JPG">${icon('download')}</summary><div class="download-menu">${downloadLinks(image,true)}</div></details></div><div class="card-info"><p>${escapeHTML(recipe.prompt)}</p><div class="card-meta"><span class="tag ${recipe.mode === 'edit' ? 'edited' : ''}">${recipe.mode === 'edit' ? 'Edited' : recipe.quality}</span><span>${recipe.width} × ${recipe.height}</span><span class="date">${dateText(image.created)}</span></div></div></article>`;
 }
 function renderGallery() {
   const visibleJobs = state.view === 'library' && !state.query ? state.jobs.filter(job => activeStatuses.includes(job.status) || job.status === 'failed') : [];
@@ -167,17 +175,83 @@ function reuse(recipe) {
     thumbnail:`/media/thumb/${recipe.source_id}`,url:`/media/upload/${recipe.source_id}`,parent_image_id:recipe.parent_image_id};
   renderComposer(); $('#detail-dialog').close(); changeView('library'); $('#prompt').focus(); toast('Settings restored. Change anything, then create.');
 }
+function detailImageHTML(image) {
+  const r = image.recipe;
+  if (r.mode !== 'edit' || !r.source_id) return `<img src="/media/image/${image.id}" alt="${escapeHTML(r.prompt)}">`;
+  return `<div class="image-comparison" role="group" aria-label="Original and edited image comparison">
+    <div class="compare-heading"><span>BEFORE / AFTER</span><button type="button" id="comparison-reset" aria-label="Reset comparison to half original and half edited">Reset</button></div>
+    <div class="compare-stage">
+      <div class="compare-layer compare-original"><img src="/media/upload/${r.source_id}" alt="Original photo before editing" draggable="false"><span class="compare-label">Original</span></div>
+      <div class="compare-layer compare-edited"><img src="/media/image/${image.id}" alt="Edited photo: ${escapeHTML(r.prompt)}" draggable="false"><span class="compare-label">Edited</span></div>
+      <div class="compare-divider" aria-hidden="true"><span class="compare-handle">${icon('compare')}</span></div>
+    </div>
+    <label class="sr-only" for="comparison-position">Original photo visible</label>
+    <input id="comparison-position" class="compare-range" type="range" min="0" max="100" step="1" value="50" aria-describedby="comparison-hint">
+    <p id="comparison-hint" class="compare-hint">Drag the photo or slider to compare.</p>
+  </div>`;
+}
+function initComparison(image, position=50) {
+  const comparison = $('.image-comparison');
+  if (!comparison) return;
+  const stage = comparison.querySelector('.compare-stage');
+  const range = $('#comparison-position');
+  const reset = $('#comparison-reset');
+  stage.style.aspectRatio = `${image.recipe.width} / ${image.recipe.height}`;
+  const update = value => {
+    const percent = Math.max(0,Math.min(100,Math.round(value)));
+    range.value = percent;
+    range.setAttribute('aria-valuetext',`${percent}% original, ${100-percent}% edited`);
+    stage.style.setProperty('--compare-position',`${percent}%`);
+  };
+  range.addEventListener('input', () => update(Number(range.value)));
+  reset.addEventListener('click', () => update(50));
+  let pointerId = null;
+  const move = event => {
+    const rect = stage.getBoundingClientRect();
+    if (rect.width) update((event.clientX-rect.left)/rect.width*100);
+  };
+  stage.addEventListener('pointerdown', event => {
+    if (range.disabled || pointerId !== null || !event.isPrimary || event.button !== 0) return;
+    if (event.pointerType === 'mouse') event.preventDefault();
+    pointerId = event.pointerId;
+    stage.setPointerCapture(pointerId);
+    stage.classList.add('dragging');
+    range.focus({preventScroll:true});
+    move(event);
+  });
+  stage.addEventListener('pointermove', event => { if (event.pointerId === pointerId) move(event); });
+  const end = event => {
+    if (event.pointerId !== pointerId) return;
+    pointerId = null;
+    stage.classList.remove('dragging');
+    if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId);
+  };
+  stage.addEventListener('pointerup', event => { if (event.pointerId === pointerId) move(event); end(event); });
+  stage.addEventListener('pointercancel', end);
+  stage.addEventListener('lostpointercapture', end);
+  const original = comparison.querySelector('.compare-original img');
+  const missingOriginal = () => {
+    comparison.classList.add('compare-unavailable');
+    range.disabled = reset.disabled = true;
+    $('#comparison-hint').textContent = 'Original photo unavailable. Showing the saved edit.';
+  };
+  original.addEventListener('error',missingOriginal);
+  if (original.complete && !original.naturalWidth) missingOriginal();
+  update(position);
+}
 function detailHTML(image) {
   const r = image.recipe;
   const processing = r.processing?.method;
   const outputLabel = {preset:'Preset',original:'Match original','2k':'2K','4k':'4K'}[r.output_size || 'preset'];
   const sizeInfo = `<div><dt>Output size</dt><dd>${outputLabel}</dd></div><div><dt>Generated at</dt><dd>${r.generation_width || r.width} × ${r.generation_height || r.height}</dd></div>`;
   const processingInfo = processing === 'ai_upscale' ? `<p class="processing-note">AI upscaled with ${escapeHTML(r.processing.upscaler.name)} and fitted to the saved size.</p>` : processing === 'resize' ? '<p class="processing-note">Fitted to your photo’s exact dimensions.</p>' : '';
-  return `<div class="detail-layout"><button class="icon-button dialog-close" data-close="detail-dialog" aria-label="Close image">${icon('close')}</button><div class="detail-image"><img src="/media/image/${image.id}" alt="${escapeHTML(r.prompt)}"></div><div class="detail-info"><span class="eyebrow">${r.mode === 'edit' ? 'AN IMAGE, REIMAGINED' : 'FROM YOUR IMAGINATION'}</span><h2>${r.mode === 'edit' ? 'Your edited image' : 'Your creation'}</h2><div class="detail-prompt">${escapeHTML(r.prompt)}</div><dl class="recipe-grid"><div><dt>Quality</dt><dd>${escapeHTML(r.quality)}</dd></div><div><dt>Size</dt><dd>${r.width} × ${r.height}</dd></div>${sizeInfo}<div><dt>Seed</dt><dd>${r.seed}</dd></div><div><dt>Variation</dt><dd>${r.variation}</dd></div><div><dt>Created</dt><dd>${dateText(image.created)}</dd></div><div><dt>SNOFS</dt><dd>${r.snofs ? 'On' : 'Off'}</dd></div></dl>${processingInfo}${r.source_id ? `<a class="source-link" href="/media/upload/${r.source_id}?download=1"><img src="/media/thumb/${r.source_id}" alt="Source photo"><span>Original photo · download source</span></a>` : ''}<div class="detail-actions"><button class="primary" data-action="edit" data-id="${image.id}">${icon('edit')}Edit this image</button><button class="secondary" data-action="reuse" data-id="${image.id}">${icon('repeat')}Reuse settings</button><a class="secondary" href="/media/image/${image.id}?download=1">${icon('download')}Download PNG</a><button class="secondary ${image.favorite ? 'favorited' : ''}" data-action="favorite" data-id="${image.id}">${icon('heart')}${image.favorite ? 'Favorited' : 'Favorite'}</button><button class="secondary" data-action="archive" data-id="${image.id}">${icon(image.archived ? 'restore' : 'archive')}${image.archived ? 'Restore' : 'Archive'}</button><a class="secondary" href="/api/images/${image.id}/recipe">${icon('download')}Save recipe</a><button class="secondary danger" data-action="delete" data-id="${image.id}">${icon('trash')}Delete image</button></div><details><summary>Full generation settings</summary><pre>${escapeHTML(JSON.stringify(r,null,2))}</pre></details></div></div>`;
+  return `<div class="detail-layout"><button class="icon-button dialog-close" data-close="detail-dialog" aria-label="Close image">${icon('close')}</button><div class="detail-image">${detailImageHTML(image)}</div><div class="detail-info"><span class="eyebrow">${r.mode === 'edit' ? 'AN IMAGE, REIMAGINED' : 'FROM YOUR IMAGINATION'}</span><h2>${r.mode === 'edit' ? 'Your edited image' : 'Your creation'}</h2><div class="detail-prompt">${escapeHTML(r.prompt)}</div><dl class="recipe-grid"><div><dt>Quality</dt><dd>${escapeHTML(r.quality)}</dd></div><div><dt>Size</dt><dd>${r.width} × ${r.height}</dd></div>${sizeInfo}<div><dt>Seed</dt><dd>${r.seed}</dd></div><div><dt>Variation</dt><dd>${r.variation}</dd></div><div><dt>Created</dt><dd>${dateText(image.created)}</dd></div><div><dt>SNOFS</dt><dd>${r.snofs ? 'On' : 'Off'}</dd></div></dl>${processingInfo}${r.source_id ? `<a class="source-link" href="/media/upload/${r.source_id}?download=1"><img src="/media/thumb/${r.source_id}" alt="Source photo"><span>Original photo · download source</span></a>` : ''}<div class="detail-actions"><button class="primary" data-action="edit" data-id="${image.id}">${icon('edit')}Edit this image</button><div class="detail-downloads">${downloadLinks(image)}</div><button class="secondary" data-action="reuse" data-id="${image.id}">${icon('repeat')}Reuse settings</button><button class="secondary ${image.favorite ? 'favorited' : ''}" data-action="favorite" data-id="${image.id}">${icon('heart')}${image.favorite ? 'Favorited' : 'Favorite'}</button><button class="secondary" data-action="archive" data-id="${image.id}">${icon(image.archived ? 'restore' : 'archive')}${image.archived ? 'Restore' : 'Archive'}</button><a class="secondary" href="/api/images/${image.id}/recipe">${icon('download')}Save recipe</a><button class="secondary danger" data-action="delete" data-id="${image.id}">${icon('trash')}Delete image</button></div><details><summary>Full generation settings</summary><pre>${escapeHTML(JSON.stringify(r,null,2))}</pre></details></div></div>`;
 }
 async function showDetail(id) {
+  const position = state.detail?.id === id ? Number($('#comparison-position')?.value ?? 50) : 50;
   state.detail = await api(`/api/images/${id}`);
   $('#detail-content').innerHTML = detailHTML(state.detail);
+  initComparison(state.detail,position);
   if (!$('#detail-dialog').open) $('#detail-dialog').showModal();
 }
 function confirmDelete(image) {
@@ -252,6 +326,10 @@ async function action(actionName,id) {
 }
 
 document.addEventListener('click', event => {
+  const download = event.target.closest('.card-download');
+  document.querySelectorAll('.card-download[open]').forEach(menu => {
+    if (menu !== download || event.target.closest('.download-option')) menu.open = false;
+  });
   const view = event.target.closest('[data-view]'); if (view) changeView(view.dataset.view);
   const mode = event.target.closest('[data-mode]'); if (mode) setMode(mode.dataset.mode);
   const item = event.target.closest('[data-action]'); if (item) action(item.dataset.action,item.dataset.id);
@@ -307,7 +385,12 @@ $('#search').onkeydown = event => { if (event.key === 'Enter') { event.preventDe
 $('#load-more').onclick = () => refresh(true);
 $('#phone-info').onclick = $('#mobile-info').onclick = () => $('#info-dialog').showModal();
 $('#logout').onclick = async () => { try { await send('/api/logout',{}); showLogin(); } catch (error) { toast(error.message); } };
-document.addEventListener('keydown',event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && state.authenticated && !document.querySelector('dialog[open]')) { event.preventDefault(); $('#compose-form').requestSubmit(); } });
+document.addEventListener('keydown',event => {
+  if (event.key === 'Escape') {
+    const menu = $('.card-download[open]');
+    if (menu) { menu.open = false; menu.querySelector('summary').focus(); event.preventDefault(); }
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && state.authenticated && !document.querySelector('dialog[open]')) { event.preventDefault(); $('#compose-form').requestSubmit(); } });
 for (const dialog of document.querySelectorAll('dialog')) dialog.addEventListener('click',event => { if (event.target === dialog && !(dialog.id === 'delete-dialog' && deletePending)) { const rect = dialog.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close(); } });
 setInterval(() => { if (state.authenticated && !document.hidden) refresh(); },2500);
 const reserveComposerSpace = () => {
