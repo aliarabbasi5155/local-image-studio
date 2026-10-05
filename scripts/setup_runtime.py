@@ -33,7 +33,7 @@ def main():
     install(runtime["comfyui"], comfy)
     install(runtime["flux2klein_mlx"], plugin)
     patches = [ROOT / "patches" / name for name in (
-        "flux2klein-mlx.patch", "flux2klein-lora.patch", "flux2klein-edit.patch",
+        "flux2klein-mlx.patch", "flux2klein-lora.patch", "flux2klein-edit.patch", "flux2klein-model-handoff.patch",
     )]
     # Check the whole patch stack on a copy before changing installed sources.
     with tempfile.TemporaryDirectory(prefix="flux2klein-setup-") as name:

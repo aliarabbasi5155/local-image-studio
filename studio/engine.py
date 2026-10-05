@@ -9,6 +9,8 @@ from pathlib import Path
 
 import aiohttp
 from PIL import Image, ImageOps
+from .qwen import graph_for
+from .presets import PRESETS, QWEN
 
 QUALITIES = {
     "fast": {"label": "Fast", "description": "Quick previews", "model": "flux2-klein-9b-4bit",
@@ -21,6 +23,11 @@ QUALITIES = {
 
 
 def build_graph(recipe, project_root, templates, upload_name=None):
+    if recipe.get("family") == "qwen":
+        graph, workflow = graph_for(recipe, upload_name)
+        if recipe.get("processing", {}).get("method", "none") != "none":
+            append_processing(graph, workflow, recipe, "web-studio/" + recipe["image_id"], image_node=24)
+        return graph, workflow
     editing = recipe["mode"] == "edit"
     generation_width = recipe.get("generation_width", recipe["width"])
     generation_height = recipe.get("generation_height", recipe["height"])
@@ -60,12 +67,12 @@ def build_graph(recipe, project_root, templates, upload_name=None):
     return graph, workflow
 
 
-def append_processing(graph, workflow, recipe, prefix):
+def append_processing(graph, workflow, recipe, prefix, image_node=2):
     """Embed a runnable ComfyUI workflow for the final-size PNG, too."""
     nodes = {n["id"]: n for n in workflow["nodes"]}
     preview_link = nodes[3]["inputs"][0]["link"]
     workflow["links"] = [link for link in workflow["links"] if link[0] != preview_link]
-    nodes[2]["outputs"][0]["links"] = []
+    nodes[image_node]["outputs"][0]["links"] = [link for link in nodes[image_node]["outputs"][0]["links"] if link != preview_link]
     next_link = max((link[0] for link in workflow["links"]), default=0) + 1
 
     def node(node_id, kind, position, widgets, input_specs, output_type="IMAGE"):
@@ -83,14 +90,14 @@ def append_processing(graph, workflow, recipe, prefix):
         nodes[target]["inputs"][target_slot]["link"] = next_link
         next_link += 1
 
-    image_node = "2"
+    image_node = str(image_node)
     if recipe["processing"]["method"] == "ai_upscale":
         filename = recipe["processing"]["upscaler"]["filename"]
         graph["6"] = {"class_type": "UpscaleModelLoader", "inputs": {"model_name": filename}}
-        graph["7"] = {"class_type": "ImageUpscaleWithModel", "inputs": {"upscale_model": ["6", 0], "image": ["2", 0]}}
+        graph["7"] = {"class_type": "ImageUpscaleWithModel", "inputs": {"upscale_model": ["6", 0], "image": [image_node, 0]}}
         node(6, "UpscaleModelLoader", [940, 700], [filename], [], "UPSCALE_MODEL")
         node(7, "ImageUpscaleWithModel", [1300, 400], [], [("upscale_model", "UPSCALE_MODEL"), ("image", "IMAGE")])
-        connect(6, 7, 0, "UPSCALE_MODEL"); connect(2, 7, 1)
+        connect(6, 7, 0, "UPSCALE_MODEL"); connect(int(image_node), 7, 1)
         image_node = "7"
     graph["8"] = {"class_type": "ImageScale", "inputs": {"image": [image_node, 0], "upscale_method": "lanczos",
                    "width": recipe["width"], "height": recipe["height"], "crop": "disabled"}}
@@ -99,7 +106,7 @@ def append_processing(graph, workflow, recipe, prefix):
     node(9, "SaveImage", [2020, 400], [prefix + "/final"], [("images", "IMAGE")])
     connect(int(image_node), 8, 0); connect(8, 9, 0); connect(8, 3, 0)
     nodes[3]["pos"] = [2380, 400]
-    workflow["last_node_id"] = 9; workflow["last_link_id"] = next_link - 1
+    workflow["last_node_id"] = max(nodes); workflow["last_link_id"] = next_link - 1
 
 
 def make_thumbnail(source, destination):
@@ -118,6 +125,7 @@ class Engine:
         self.wake = asyncio.Event()
         self.client_id = "studio-" + uuid.uuid4().hex
         self.session = None
+        self._preset_cache = None
 
     async def request(self, method, path, **kwargs):
         async with self.session.request(method, self.base + path, **kwargs) as response:
@@ -127,11 +135,41 @@ class Engine:
             return payload
 
     async def available(self):
+        if self.session is None:
+            return False
         try:
             await self.request("GET", "/system_stats")
             return True
         except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError):
             return False
+
+    async def preset_availability(self):
+        if self._preset_cache and time.monotonic() - self._preset_cache[0] < 15:
+            return self._preset_cache[1]
+        ready = {key: key == "flux" for key in PRESETS}
+        kinds = ("UnetLoaderGGUFAdvanced", "CLIPLoaderGGUF", "VAELoader", "LoraLoaderModelOnly", "TextEncodeQwenImageEditPlus")
+        try:
+            schemas = await asyncio.gather(*(self.request("GET", "/object_info/" + kind,
+                timeout=aiohttp.ClientTimeout(total=5)) for kind in kinds))
+            schemas = {kind: data.get(kind, {}).get("input", {}) for kind, data in zip(kinds, schemas)}
+            def filenames(kind, name):
+                value = schemas[kind].get("required", {}).get(name, [[]])[0]
+                return value if isinstance(value, list) else []
+            files = {"diffusion_models": filenames(kinds[0], "unet_name"),
+                     "text_encoders": filenames(kinds[1], "clip_name"), "vae": filenames(kinds[2], "vae_name"),
+                     "loras": filenames(kinds[3], "lora_name")}
+            patched = "reference_resolution" in schemas[kinds[4]].get("optional", {})
+            for key, preset in PRESETS.items():
+                if preset["family"] != "qwen":
+                    continue
+                assets = [preset["base"], preset["adapter"], "encoder", "vision", "vae"]
+                if preset["lightning"]:
+                    assets.append("lightning")
+                ready[key] = patched and all(QWEN["assets"][a]["comfy_filename"] in files[QWEN["assets"][a]["folder"]] for a in assets)
+        except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError, AttributeError, KeyError, IndexError):
+            pass
+        self._preset_cache = (time.monotonic(), ready)
+        return ready
 
     async def cancel(self, job):
         if job["prompt_id"]:
@@ -147,10 +185,14 @@ class Engine:
                 continue
             if event["type"] == "executing":
                 node = str(data.get("node"))
-                if node == "1":
+                if node in ("1", "10", "11", "30", "31"):
                     self.store.update_job(job_id, status="running", phase="Preparing your image")
-                elif node == "2":
+                elif node in ("2", "20"):
                     self.store.update_job(job_id, status="running", phase="Creating your image")
+                elif node in ("13", "14"):
+                    self.store.update_job(job_id, status="running", phase="Understanding your photo")
+                elif node == "24":
+                    self.store.update_job(job_id, phase="Developing your image")
                 elif node in ("6", "7"):
                     self.store.update_job(job_id, status="running", phase="Enhancing image detail", progress=0.65)
                 elif node == "8":
@@ -239,7 +281,8 @@ class Engine:
                 })
             listener = asyncio.create_task(self.watch(ws, job["id"], prompt_id))
             try:
-                deadline = time.monotonic() + 3600
+                hours = 24 if job["recipe"].get("family") == "qwen" else 1
+                deadline = time.monotonic() + hours * 3600
                 while time.monotonic() < deadline:
                     current = self.store.job(job["id"])
                     if current["cancel_requested"]:
@@ -255,7 +298,7 @@ class Engine:
                             return
                     await asyncio.sleep(1)
                 await self.cancel(self.store.job(job["id"]))
-                raise RuntimeError("The image engine took over an hour. This job was stopped; you can reuse its settings.")
+                raise RuntimeError(f"The image engine took over {hours} hour(s). This job was stopped; you can reuse its settings.")
             finally:
                 listener.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

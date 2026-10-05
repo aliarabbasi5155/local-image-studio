@@ -25,6 +25,10 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.app = create_app(self.temp.name, pin="123456", start_worker=False)
         self.store = self.app[STATE]["store"]
+        async def all_presets_ready():
+            from studio.presets import PRESETS
+            return {key: True for key in PRESETS}
+        self.app[STATE]["engine"].preset_availability = all_presets_ready
         self.client = TestClient(TestServer(self.app), cookie_jar=aiohttp.CookieJar(unsafe=True))
         await self.client.start_server()
 
@@ -274,6 +278,48 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         recipe = self.store.job((await response.json())["jobs"][0])["recipe"]
         self.assertEqual((recipe["width"],recipe["height"]),(4096,4096))
         self.assertEqual((recipe["generation_width"],recipe["generation_height"]),(1024,1024))
+
+
+    async def test_model_presets_validate_edit_mode_and_save_the_complete_stack(self):
+        await self.login()
+        for preset in ("unknown", [], "qwen-fast-mcnl"):
+            response = await self.client.post("/api/generate", json={"prompt": "A cafe", "preset": preset})
+            self.assertEqual(response.status, 400)
+        form = aiohttp.FormData()
+        form.add_field("image", photo(643,427), filename="cafe.png", content_type="image/png")
+        source = await (await self.client.post("/api/uploads",data=form)).json()
+        for preset in ("qwen-quality-snofs", "qwen-fast-snofs", "qwen-fast-mcnl", "qwen-quality-mcnl"):
+            response = await self.client.post("/api/generate", json={"mode":"edit", "prompt":"Make the awning blue",
+                "preset":preset, "quality":"fast", "source_id":source["id"], "output_size":"original", "snofs":False})
+            self.assertEqual(response.status,202)
+            recipe = self.store.job((await response.json())["jobs"][0])["recipe"]
+            self.assertEqual(recipe["preset"],preset)
+            self.assertEqual(recipe["family"],"qwen")
+            self.assertEqual(recipe["steps"],8 if "fast" in preset else 40)
+            self.assertEqual(recipe["snofs"],"snofs" in preset)
+            self.assertEqual((recipe["width"],recipe["height"]),(643,427))
+            self.assertEqual(recipe["base_model"],"Qwen/Qwen-Image-Edit-2511")
+            self.assertLessEqual(recipe["reference_resolution"], 512)
+            self.assertTrue(recipe["gguf_settings"]["patch_on_device"])
+            for component in ("model_source","encoder","vision_encoder","vae","adapter"):
+                self.assertEqual(len(recipe[component]["revision"]),40)
+                self.assertEqual(len(recipe[component]["sha256"]),64)
+            self.assertEqual((recipe["source"]["width"],recipe["source"]["height"]),(643,427))
+
+    async def test_missing_qwen_models_reject_before_queuing(self):
+        await self.login()
+        async def missing_presets():
+            from studio.presets import PRESETS
+            return {key: key == "flux" for key in PRESETS}
+        self.app[STATE]["engine"].preset_availability = missing_presets
+        form = aiohttp.FormData()
+        form.add_field("image", photo(), filename="photo.png", content_type="image/png")
+        source = await (await self.client.post("/api/uploads", data=form)).json()
+        response = await self.client.post("/api/generate", json={"mode":"edit", "prompt":"Blue walls",
+            "preset":"qwen-fast-mcnl", "source_id":source["id"]})
+        self.assertEqual(response.status, 503)
+        self.assertIn("Add Qwen Models.command", (await response.json())["error"])
+        self.assertEqual(self.store.one("SELECT COUNT(*) AS n FROM jobs")["n"], 0)
 
 
 class EngineTests(unittest.IsolatedAsyncioTestCase):

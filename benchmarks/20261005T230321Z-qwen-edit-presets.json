@@ -1,0 +1,179 @@
+{
+  "feature": "Qwen Image Edit 2511 presets alongside Flux",
+  "verified_at": "2026-10-05T23:03:21.835644+00:00",
+  "hardware": {
+    "chip": "Apple M5",
+    "unified_memory_gb": 24,
+    "macos": "26.5"
+  },
+  "model_manifest": "config/qwen.json",
+  "manifest_sha256": "5c632d2d6dc8341f3e9109debb401dc9633d27ebac0a4c1ab9383f4de7903072",
+  "downloaded_assets": 8,
+  "download_bytes": 33442082910,
+  "sha256_verification": "All eight assets passed at installation",
+  "fast_preset_runs": [
+    {
+      "preset": "qwen-fast-snofs",
+      "job_id": "a99c263b-aa64-4072-80b8-5f7777bab005",
+      "status": "complete",
+      "seconds": 443.09,
+      "error": null,
+      "size": [
+        512,
+        512
+      ],
+      "recipe_saved": true,
+      "workflow_saved": true,
+      "pixel_range": [
+        [
+          0,
+          252
+        ],
+        [
+          0,
+          253
+        ],
+        [
+          0,
+          246
+        ]
+      ],
+      "image": "examples/qwen-fast-snofs.png",
+      "engine_seconds": 441.681,
+      "prompt_id": "e4b02aaf-1ad3-4f07-9757-0fa244f8d87f",
+      "includes_queue_wait": false
+    },
+    {
+      "preset": "qwen-fast-mcnl",
+      "job_id": "f490971e-b7c0-4ee2-99e9-e5543766cd49",
+      "status": "complete",
+      "seconds": 726.29,
+      "error": null,
+      "size": [
+        512,
+        512
+      ],
+      "recipe_saved": true,
+      "workflow_saved": true,
+      "pixel_range": [
+        [
+          0,
+          255
+        ],
+        [
+          0,
+          255
+        ],
+        [
+          0,
+          254
+        ]
+      ],
+      "image": "examples/qwen-fast-mcnl.png",
+      "engine_seconds": 313.584,
+      "prompt_id": "d54a7701-41c9-4eb9-bc5e-0fce65b0e817",
+      "includes_queue_wait": true
+    }
+  ],
+  "earlier_reference_1024_baseline": [
+    {
+      "preset": "qwen-fast-snofs",
+      "job_id": "c76a0d10-2cd0-4796-8f2b-f72b7862673c",
+      "status": "complete",
+      "seconds": 850.71,
+      "error": null,
+      "size": [
+        512,
+        512
+      ],
+      "recipe_saved": true,
+      "workflow_saved": true,
+      "pixel_range": [
+        [
+          2,
+          254
+        ],
+        [
+          0,
+          250
+        ],
+        [
+          0,
+          242
+        ]
+      ],
+      "image": "examples/qwen-fast-snofs.png"
+    }
+  ],
+  "full_quality_mcnl_probe": {
+    "preset": "qwen-quality-mcnl",
+    "job_id": "a5117978-d05b-4270-ac5c-6a7e16c88282",
+    "status": "cancelled",
+    "seconds": 411.82,
+    "error": "The image engine stopped before finishing.",
+    "steps": 40,
+    "cfg": 4.0,
+    "reference_resolution": 256,
+    "completed_denoising_steps": 1,
+    "first_step_seconds": 221.7,
+    "intentionally_stopped": true,
+    "reason": "Observed per-step latency implies an hours-long run on this Mac; this was a compatibility probe, not a completed quality benchmark."
+  },
+  "full_quality_snofs_validation": "Pinned assets and full 40-step graph validated; no complete native 40-step render performed.",
+  "switch_qwen_to_flux": {
+    "job_id": "15dc96cc-2287-478b-8e8b-5d8da37e7799",
+    "status": "complete",
+    "seconds": 22.1,
+    "error": null,
+    "size": [
+      512,
+      512
+    ],
+    "recipe_saved": true
+  },
+  "switch_flux_to_qwen": {
+    "job_id": "12d8f372-f5d2-486a-91d8-46dd28b516e4",
+    "status": "cancelled",
+    "seconds": 96.43,
+    "denoising_confirmed": true,
+    "error": "The image engine stopped before finishing.",
+    "recipe_has_patch_hashes": true
+  },
+  "checks": {
+    "make_check": "passed",
+    "studio_tests": 22,
+    "studio_tests_result": "passed",
+    "docker": "built, deployed and healthy",
+    "live_options": "Flux and all four Qwen presets available"
+  },
+  "browser_qa": {
+    "edit_model_choices": 5,
+    "create_model_choices": 1,
+    "model_and_draft_persist": true,
+    "reuse_restores_preset_and_source": true,
+    "before_after_and_download_links": true,
+    "phone393": {
+      "viewport": 393,
+      "document_width": 393
+    },
+    "phone320": {
+      "viewport": 320,
+      "document_width": 320,
+      "composer_bottom": 676,
+      "navigation_top": 683
+    },
+    "console_errors_or_warnings": [],
+    "physical_phone_tested": false,
+    "browser_file_chooser_test": "Blocked by Chrome extension file URL permission; upload API and reuse-source paths passed."
+  },
+  "production_image_library_modified_by_tests": false,
+  "not_tested": [
+    "Complete 40-step Qwen renders",
+    "Qwen High/2K/4K GPU renders",
+    "Physical phone"
+  ],
+  "screenshots": [
+    "examples/studio-qwen-presets.png"
+  ],
+  "timing_notes": "Native engine times exclude queue waiting. Adapter runs used different warm-cache/system conditions, so timings are not a controlled speed ranking."
+}

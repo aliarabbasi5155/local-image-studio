@@ -1,0 +1,97 @@
+{
+  "base_model": "Qwen/Qwen-Image-Edit-2511",
+  "gguf_node": {
+    "repository": "https://github.com/city96/ComfyUI-GGUF.git",
+    "revision": "6ea2651e7df66d7585f6ffee804b20e92fb38b8a"
+  },
+  "assets": {
+    "q4_k_m": {
+      "repo_id": "unsloth/Qwen-Image-Edit-2511-GGUF",
+      "revision": "0d33d9692b4b26212297240d87b0d4719aa4fd06",
+      "filename": "qwen-image-edit-2511-Q4_K_M.gguf",
+      "download_bytes": 13244758624,
+      "sha256": "8677bac90627adbbc11efab87b1870e701c4eb3689ee865a3de8ab81b705a723",
+      "folder": "diffusion_models",
+      "comfy_filename": "Qwen/qwen-image-edit-2511-Q4_K_M.gguf"
+    },
+    "q4_0": {
+      "repo_id": "unsloth/Qwen-Image-Edit-2511-GGUF",
+      "revision": "0d33d9692b4b26212297240d87b0d4719aa4fd06",
+      "filename": "qwen-image-edit-2511-Q4_0.gguf",
+      "download_bytes": 11852773984,
+      "sha256": "4b537c1e238f315fb4774e3ae677037b3d8bfde3e50a95d0b0a68dd9597b4f82",
+      "folder": "diffusion_models",
+      "comfy_filename": "Qwen/qwen-image-edit-2511-Q4_0.gguf"
+    },
+    "encoder": {
+      "repo_id": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF",
+      "revision": "68bb8bc4b7df5289c143aaec0ab477a7d4051aab",
+      "filename": "Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf",
+      "download_bytes": 4683072384,
+      "sha256": "d16776dcd9a28d42758c2958ed3a752aabf20a305252cd64ff2be72b4a78c503",
+      "folder": "text_encoders",
+      "comfy_filename": "Qwen/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf"
+    },
+    "vision": {
+      "repo_id": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF",
+      "revision": "68bb8bc4b7df5289c143aaec0ab477a7d4051aab",
+      "filename": "mmproj-F16.gguf",
+      "download_bytes": 1354163040,
+      "sha256": "987dd0733033fb5dd9b124d1ca926ae865572e432384eee7618b2eec3e735e17",
+      "folder": "text_encoders",
+      "comfy_filename": "Qwen/Qwen2.5-VL-7B-Instruct-mmproj-F16.gguf"
+    },
+    "vae": {
+      "repo_id": "Comfy-Org/Qwen-Image_ComfyUI",
+      "revision": "1f12b17be14c89b026c51a91d67c32f84bb047bc",
+      "filename": "split_files/vae/qwen_image_vae.safetensors",
+      "download_bytes": 253806246,
+      "sha256": "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f",
+      "folder": "vae",
+      "comfy_filename": "Qwen/qwen_image_vae.safetensors"
+    },
+    "lightning": {
+      "repo_id": "lightx2v/Qwen-Image-Edit-2511-Lightning",
+      "revision": "d74eba145674fd7e31b949324e148e21e7118abd",
+      "filename": "Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors",
+      "download_bytes": 849608296,
+      "sha256": "a9e81a58a78f260f67b337a6f615e8fa4cd3bc79847c77b7d61a581b789b1ba8",
+      "folder": "loras",
+      "comfy_filename": "Qwen/Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors"
+    },
+    "snofs": {
+      "repo_id": "GeoffreyBG/qwen_lora_snofs",
+      "revision": "9ad5c9ccba83ccc772b5b0fe6a3ec36ca75c0a4b",
+      "filename": "Qwen_Snofs_1_3.safetensors",
+      "download_bytes": 613841472,
+      "sha256": "4a34f57bdb5333b884db997a9b74b2ba740b5a8344b750c6b8cb75a35088cee7",
+      "folder": "loras",
+      "comfy_filename": "Qwen/Qwen_Snofs_1_3.safetensors",
+      "source_note": "Community mirror of Qwen SNOFS 1.3; original author does not currently host this Qwen file in Ashen3/SNOFS. License metadata on the mirror is not verified."
+    },
+    "mcnl": {
+      "repo_id": "ScottzillaSystems/qwen-image-edit-plus-nsfw-lora",
+      "revision": "66e89e998dd4ea1a359c4bf0dd5e17d2f0b06ef0",
+      "filename": "qwen-image-edit-plus-nsfw-lora.safetensors",
+      "download_bytes": 590058864,
+      "sha256": "16c4841028615bb82c38e79756c0abad42494d85bca0daebc2939384a74d86bb",
+      "folder": "loras",
+      "comfy_filename": "Qwen/qwen-image-edit-plus-nsfw-lora.safetensors"
+    }
+  },
+  "local_patches": [
+    {
+      "file": "patches/qwen-gguf-memory.patch",
+      "sha256": "5848fd997d7579558204cc6582a54f859c958dc1b3fe74bcc9e182be4ec1f3f4"
+    },
+    {
+      "file": "patches/qwen-reference-resolution.patch",
+      "sha256": "2733a0e08a62f710075b28c1e4417d5edff4708a3bb42e561aac099fdac214cb"
+    }
+  ],
+  "runtime_options": {
+    "cache": "none",
+    "attention": "pytorch",
+    "gguf_version": "0.19.0"
+  }
+}

@@ -10,6 +10,15 @@ Create = type a description, choose quality, size and variations, then Create im
 Minimize folds the bottom panel away. Expand brings it back with your draft kept.
 Your browser remembers this choice. Starting an edit or a new creation opens it.
 Edit image = upload a photo and describe what should change.
+Model preset lets you choose Flux or one of four Qwen editing options.
+The four Qwen ComfyUI workflows also start at 512 x 512 for this Mac.
+Qwen Fast = 8 steps with Lightning; Qwen Quality = 40 steps with Q4_K_M.
+Qwen Quality can take hours on this 24 GB Mac. Begin with a Fast preset.
+Each has a SNOFS 1.3 or MCNL v1 option. Choose one adapter using the preset.
+Start Qwen with Canvas detail = Fast and one variation; it is a bigger model than Flux.
+Qwen's Canvas detail setting changes the canvas size; its model preset sets the steps.
+Reuse settings restores the model preset too. Create continues to use Flux.
+On a new checkout, double-click "Add Qwen Models.command" once to install Qwen.
 Output size: Match original keeps the exact photo dimensions when editing.
 2K = 2048 pixels on the longest edge; 4K = 4096 pixels on the longest edge.
 Edits keep the photo's shape. Create uses your chosen Square/Portrait/Landscape.

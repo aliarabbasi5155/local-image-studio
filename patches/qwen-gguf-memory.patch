@@ -1,0 +1,22 @@
+diff --git a/nodes.py b/nodes.py
+index 4683514..2ac615c 100644
+--- a/nodes.py
++++ b/nodes.py
+@@ -148,6 +148,17 @@ class UnetLoaderGGUF:
+     TITLE = "Unet Loader (GGUF)"
+ 
+     def load_unet(self, unet_name, dequant_dtype=None, patch_dtype=None, patch_on_device=None):
++        # ComfyUI drops unused Flux nodes before this loader runs. Collect
++        # their MLX arrays and allocator cache before allocating Qwen.
++        import gc
++        comfy.model_management.unload_all_models()
++        gc.collect()
++        comfy.model_management.soft_empty_cache()
++        try:
++            import mlx.core as mx
++            mx.clear_cache()
++        except ImportError:
++            pass
+         ops = GGMLOps()
+ 
+         if dequant_dtype in ("default", None):

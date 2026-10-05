@@ -8,4 +8,4 @@ exec "$PROJECT_ROOT/.venv/bin/python" main.py \
   --output-directory "$PROJECT_ROOT/outputs" \
   --input-directory "$PROJECT_ROOT/runtime/input" \
   --user-directory "$PROJECT_ROOT/runtime/user" \
-  --preview-method none --offline "$@"
+  --preview-method none --cache-none --use-pytorch-cross-attention --offline "$@"

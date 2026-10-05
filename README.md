@@ -119,6 +119,67 @@ took about 21 and 19 seconds, and an edit about 30 seconds. See
 [the website report](benchmarks/20261005-web-studio.json).
 See [the measured run](benchmarks/20261004T234742Z-snofs-8bit.json).
 
+## Qwen Image Edit 2511
+
+In the website, choose **Edit image**, upload a photo, and choose a **Model
+preset**. Flux remains available for both Create and Edit. The Qwen presets
+share one encoder/vision projector and VAE:
+
+| Model preset | Base file | Adapters | Steps |
+| --- | --- | --- | --- |
+| Qwen · Quality · SNOFS 1.3 | Q4_K_M | Qwen SNOFS 1.3 | 40 |
+| Qwen · Fast · SNOFS 1.3 | Q4_0 | Lightning 8-step + Qwen SNOFS 1.3 | 8 |
+| Qwen · Fast · MCNL v1 | Q4_0 | Lightning 8-step + MCNL v1 | 8 |
+| Qwen · Quality · MCNL v1 | Q4_K_M | MCNL v1 | 40 |
+
+These are comparison presets, not guaranteed rankings of image quality or
+instruction following. Lightning reduces the number of denoising steps;
+Qwen is a larger model than Klein and may still take substantially longer.
+Start with Fast canvas quality and one variation. The Q4_K_M/40-step options
+can take hours on this 24 GB Mac; leave the Mac awake and use Stop if you want
+to end a variation. Qwen jobs allow up to 24 hours. For Qwen, the separate
+Canvas detail control changes the canvas size; the model preset fixes quantization
+and steps. Original-size/2K/4K output, before/after comparison, PNG/JPG downloads,
+favorites and archive all use the same library features. Saved recipes include
+the selected preset, source hashes/revisions, adapter strengths, sampling
+settings and the exact editing source. **Reuse settings** restores the preset.
+The reference detail follows the native generation canvas, capped at a
+1024-square-equivalent pixel budget. Smaller references save memory and time
+but can lose fine source detail; choose High when those details matter.
+The setting, GGUF options and local patch hashes are recorded in recipes.
+
+The four reusable ComfyUI templates are `03 - Qwen - Quality - SNOFS 1.3`
+through `06 - Qwen - Quality - MCNL v1`. They start at 512 × 512 and include a public lakeside example;
+replace it with your own photo and edit the positive prompt.
+
+On a fresh checkout, first install the standard runtime, then double-click
+**`Add Qwen Models.command`**. It installs about 33.4 GB of pinned assets,
+checks SHA256 hashes, and restarts the project engine only if its queue is
+empty. Downloads can be resumed by running it again. Models live outside
+Docker and Git under `models/qwen/`; the Docker website sends jobs to the
+native PyTorch/MPS Qwen engine. Flux continues to use MLX/Metal.
+The installer applies a backwards-compatible optional reference-resolution
+input to the pinned Qwen encoding node and a model-handoff memory patch.
+The native launcher uses PyTorch attention and disables node caching to keep
+memory pressure lower when switching between Qwen and Flux.
+Pinned sources are in [config/qwen.json](config/qwen.json).
+
+The 512-square eight-step edits completed in about 7m 22s (SNOFS) and 5m 14s
+(MCNL) of native engine time. These runs used different cache conditions.
+Q4_K_M + MCNL loaded and completed a denoising step at 256 square, but its
+221.7-second first step made a full benchmark impractical; the probe was
+stopped. Full 40-step results and Qwen 2K/4K GPU paths have not been validated.
+Both model-switch directions passed. See [the verification report](benchmarks/20261005T230321Z-qwen-edit-presets.json).
+
+The Qwen SNOFS 1.3 file is obtained from a community mirror because the author's
+current Hugging Face repository contains Klein/Krea adapters. The mirror's
+license metadata is unverified; this provenance is recorded in the manifest.
+MCNL v1 uses the exact
+[ScottzillaSystems file](https://huggingface.co/ScottzillaSystems/qwen-image-edit-plus-nsfw-lora)
+requested. Base weights are from
+[Unsloth](https://huggingface.co/unsloth/Qwen-Image-Edit-2511-GGUF), and acceleration
+uses [LightX2V's 2511 eight-step adapter](https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning).
+
 ## Install on another Mac
 
 Requires Apple Silicon, macOS compatible with MLX 0.32.3, Git, and
@@ -174,6 +235,7 @@ measured time budget. See [benchmark details](benchmarks/README.md).
 | Path | Purpose |
 | --- | --- |
 | `config/models.json` | Model IDs, exact source revisions and licenses |
+| `config/qwen.json` | Four edit presets' assets, hashes and local runtime patches |
 | `config/loras.json` | Adapter sources, checksums and compatible models |
 | `config/upscaler.json` | Pinned AI upscaler source, checksum and scale |
 | `config/defaults.json` | Default model and image settings |
