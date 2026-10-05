@@ -122,3 +122,52 @@ editing lineage, archive restoration, targeted cancellation, and recovery of
 an existing engine job without submitting it twice. Fast's real GPU path was
 tested through the website; Balanced and High use the existing 8-bit engine,
 with the dimensions documented in [the studio guide](../studio/README.md).
+
+## Original-size, 2K and 4K website outputs
+
+Three real **Fast / SNOFS** jobs completed through the Docker website and native
+ComfyUI engine using the pinned Real-ESRGAN Compact x4 upscaler:
+
+| Mode / output | Generation canvas | Saved dimensions | Worker time |
+| --- | --- | --- | ---: |
+| Edit / Match original | 512 × 336 | 751 × 497 | 27.41 s |
+| Create / 2K square | 512 × 512 | 2048 × 2048 | 20.01 s |
+| Edit / 4K | 1024 × 672 | 4096 × 2711 | 46.96 s |
+
+The edits used the same 751 × 497 cafe source. Their saved source hash stayed
+unchanged. Output dimensions, nonblank pixels, exact embedded recipe metadata
+and complete ComfyUI workflows with the upscaler and final Save Image node were
+verified. Visual inspection confirmed the edited red flowers and clean cafe
+outputs. Timings include local AI enhancement and saving, and exclude queue
+waits. These outputs use upscaling after generation. See
+[the report](20261005-output-sizes.json).
+
+The automated suite now passes eleven tests, including exact odd dimensions,
+source-shape preservation, 2K/4K planning, final-image selection over the smaller
+base image, and consistent saved workflow links. The earlier website report
+records the nine tests present at that stage.
+
+Browser checks confirmed Match original defaults for new edits, 4K settings
+reuse with the source and fixed seed, and composer restoration after reloading.
+The Output size controls fit desktop, 393 × 852 and 320 × 740 viewports without
+horizontal overflow. The LAN browser session reported no console errors or
+warnings. See the [desktop](../examples/studio-output-sizes.png) and
+[phone-sized](../examples/studio-output-sizes-mobile.png) screenshots. A physical
+phone was not used.
+
+## Website image deletion
+
+The suite now passes fourteen tests. Permanent deletion requires an authenticated
+same-origin request and an explicit confirmation. Tests with temporary data
+verify removal of the PNG, thumbnail, image recipe and completed job; updated
+Library/Favorites/Archive counts; preserved source photos and descendant images;
+and reuse of editing settings after deleting their earlier parent image.
+Restart checks cover interrupted deletion before and after the database commit.
+
+The deployed Docker website's gallery and image details both open a confirmation
+with the matching image preview. Keep image and Escape cancel it, and initial
+focus goes to Keep image. The dialog fits 393 × 852 and 320 × 740 screens without
+overflow; the browser reported no errors or warnings. Permanent removal was
+exercised on temporary test data. User library images were preserved during UI
+verification. See [the report](20261005-image-deletion.json) and the
+[confirmation screenshot](../examples/studio-delete.png).

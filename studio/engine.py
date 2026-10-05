@@ -22,6 +22,10 @@ QUALITIES = {
 
 def build_graph(recipe, project_root, templates, upload_name=None):
     editing = recipe["mode"] == "edit"
+    generation_width = recipe.get("generation_width", recipe["width"])
+    generation_height = recipe.get("generation_height", recipe["height"])
+    processing = recipe.get("processing", {"method": "none"})
+    processed = processing["method"] != "none"
     model = recipe["model_source"]
     prefix = "web-studio/" + recipe["image_id"]
     loader = {
@@ -30,9 +34,9 @@ def build_graph(recipe, project_root, templates, upload_name=None):
         "loras": "SNOFS/klein_snofs_v1_4.safetensors:1.0" if recipe["snofs"] else "",
     }
     inputs = {
-        "pipeline": ["1", 0], "prompt": recipe["prompt"], "width": recipe["width"],
-        "height": recipe["height"], "seed": recipe["seed"], "num_inference_steps": 4,
-        "guidance": 1.0, "filename_prefix": prefix,
+        "pipeline": ["1", 0], "prompt": recipe["prompt"], "width": generation_width,
+        "height": generation_height, "seed": recipe["seed"], "num_inference_steps": 4,
+        "guidance": 1.0, "filename_prefix": prefix + "/base" if processed else prefix,
     }
     graph = {
         "1": {"class_type": "Flux2KleinEditModelLoader" if editing else "Flux2KleinModelLoader", "inputs": loader},
@@ -41,16 +45,61 @@ def build_graph(recipe, project_root, templates, upload_name=None):
     workflow = copy.deepcopy(templates[recipe["mode"]])
     nodes = {n["id"]: n for n in workflow["nodes"]}
     nodes[1]["widgets_values"] = [loader["model_name"], loader["quantize"], loader["custom_model_path"], loader["loras"]]
-    values = [recipe["height"], recipe["width"], 4, recipe["seed"], "fixed", 1.0, prefix]
+    values = [generation_height, generation_width, 4, recipe["seed"], "fixed", 1.0, inputs["filename_prefix"]]
     if editing:
         inputs.update(image=["5", 0], image_paths="", use_kv_cache=False)
         graph["5"] = {"class_type": "LoadImage", "inputs": {"image": upload_name}}
         nodes[5]["widgets_values"] = [upload_name, "image"]
+        nodes[5]["widgets_values_named"] = {"image": upload_name, "upload": "image"}
         nodes[2]["widgets_values"] = [recipe["prompt"], "", *values, False]
     else:
         inputs["image_strength"] = 0.3
         nodes[2]["widgets_values"] = [recipe["prompt"], *values, 0.3]
+    if processed:
+        append_processing(graph, workflow, recipe, prefix)
     return graph, workflow
+
+
+def append_processing(graph, workflow, recipe, prefix):
+    """Embed a runnable ComfyUI workflow for the final-size PNG, too."""
+    nodes = {n["id"]: n for n in workflow["nodes"]}
+    preview_link = nodes[3]["inputs"][0]["link"]
+    workflow["links"] = [link for link in workflow["links"] if link[0] != preview_link]
+    nodes[2]["outputs"][0]["links"] = []
+    next_link = max((link[0] for link in workflow["links"]), default=0) + 1
+
+    def node(node_id, kind, position, widgets, input_specs, output_type="IMAGE"):
+        result = {"id": node_id, "type": kind, "pos": position, "size": [320, 160],
+                  "flags": {}, "order": len(nodes), "mode": 0,
+                  "inputs": [{"name": name, "type": kind, "link": None} for name, kind in input_specs],
+                  "outputs": [{"name": output_type, "type": output_type, "slot_index": 0, "links": []}],
+                  "properties": {"Node name for S&R": kind}, "widgets_values": widgets}
+        workflow["nodes"].append(result); nodes[node_id] = result
+
+    def connect(origin, target, target_slot, kind="IMAGE"):
+        nonlocal next_link
+        workflow["links"].append([next_link, origin, 0, target, target_slot, kind])
+        nodes[origin]["outputs"][0]["links"].append(next_link)
+        nodes[target]["inputs"][target_slot]["link"] = next_link
+        next_link += 1
+
+    image_node = "2"
+    if recipe["processing"]["method"] == "ai_upscale":
+        filename = recipe["processing"]["upscaler"]["filename"]
+        graph["6"] = {"class_type": "UpscaleModelLoader", "inputs": {"model_name": filename}}
+        graph["7"] = {"class_type": "ImageUpscaleWithModel", "inputs": {"upscale_model": ["6", 0], "image": ["2", 0]}}
+        node(6, "UpscaleModelLoader", [940, 700], [filename], [], "UPSCALE_MODEL")
+        node(7, "ImageUpscaleWithModel", [1300, 400], [], [("upscale_model", "UPSCALE_MODEL"), ("image", "IMAGE")])
+        connect(6, 7, 0, "UPSCALE_MODEL"); connect(2, 7, 1)
+        image_node = "7"
+    graph["8"] = {"class_type": "ImageScale", "inputs": {"image": [image_node, 0], "upscale_method": "lanczos",
+                   "width": recipe["width"], "height": recipe["height"], "crop": "disabled"}}
+    graph["9"] = {"class_type": "SaveImage", "inputs": {"images": ["8", 0], "filename_prefix": prefix + "/final"}}
+    node(8, "ImageScale", [1660, 400], ["lanczos", recipe["width"], recipe["height"], "disabled"], [("image", "IMAGE")])
+    node(9, "SaveImage", [2020, 400], [prefix + "/final"], [("images", "IMAGE")])
+    connect(int(image_node), 8, 0); connect(8, 9, 0); connect(8, 3, 0)
+    nodes[3]["pos"] = [2380, 400]
+    workflow["last_node_id"] = 9; workflow["last_link_id"] = next_link - 1
 
 
 def make_thumbnail(source, destination):
@@ -102,9 +151,18 @@ class Engine:
                     self.store.update_job(job_id, status="running", phase="Preparing your image")
                 elif node == "2":
                     self.store.update_job(job_id, status="running", phase="Creating your image")
+                elif node in ("6", "7"):
+                    self.store.update_job(job_id, status="running", phase="Enhancing image detail", progress=0.65)
+                elif node == "8":
+                    self.store.update_job(job_id, status="running", phase="Fitting your output size", progress=0.95)
+                elif node == "9":
+                    self.store.update_job(job_id, phase="Saving your image", progress=0.98)
             elif event["type"] == "progress":
-                self.store.update_job(job_id, status="running", phase="Creating your image",
-                                      progress=min(0.95, data["value"] / max(1, data["max"])))
+                enhancing = self.store.job(job_id)["phase"] == "Enhancing image detail"
+                fraction = data["value"] / max(1, data["max"])
+                processed = self.store.job(job_id)["recipe"].get("processing", {}).get("method", "none") != "none"
+                self.store.update_job(job_id, status="running", phase="Enhancing image detail" if enhancing else "Creating your image",
+                                      progress=min(0.95, .65 + .3 * fraction if enhancing else fraction * (.6 if processed else .95)))
 
     async def finish(self, job, history):
         recipe = job["recipe"]
@@ -115,7 +173,8 @@ class Engine:
             self.store.update_job(job["id"], status="cancelled" if job["cancel_requested"] else "failed",
                                   phase="Stopped", error=error[:1500], finished=time.time())
             return
-        outputs = history.get("outputs", {}).get("2", {}).get("images", [])
+        output_node = "9" if recipe.get("processing", {}).get("method", "none") != "none" else "2"
+        outputs = history.get("outputs", {}).get(output_node, {}).get("images", [])
         output = next((x for x in outputs if x.get("type") == "output"), None)
         if not output:
             raise RuntimeError("The image engine returned no saved image.")

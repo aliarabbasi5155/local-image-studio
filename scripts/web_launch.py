@@ -13,6 +13,8 @@ import webbrowser
 from pathlib import Path
 from urllib.request import urlopen
 
+from download_upscaler import install as install_upscaler
+
 ROOT = Path(__file__).resolve().parents[1]
 URL = "http://127.0.0.1:7878"
 
@@ -50,6 +52,7 @@ def main():
         engine = subprocess.run([sys.executable, str(ROOT / "scripts/launch.py"), "--no-browser"], capture_output=True, text=True)
         if engine.returncode:
             raise SystemExit(engine.stdout + engine.stderr)
+        install_upscaler()
         print("Your Mac’s image engine is ready.", flush=True)
         if args.native:
             if not ready():

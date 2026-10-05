@@ -16,6 +16,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .engine import Engine, QUALITIES, make_thumbnail
 from .storage import Store
+from .sizing import OUTPUT_SIZES, MAX_PIXELS, plan_size
 
 ROOT = Path(__file__).resolve().parents[1]
 STATE = web.AppKey("studio", dict)
@@ -105,14 +106,14 @@ async def health(request):
 
 async def options(request):
     state = request.app[STATE]
-    return web.json_response({"qualities": QUALITIES, "engine_ready": await state["engine"].available(),
+    return web.json_response({"qualities": QUALITIES, "output_sizes": OUTPUT_SIZES, "engine_ready": await state["engine"].available(),
                               "lan_url": os.environ.get("STUDIO_LAN_URL", f"{request.scheme}://{request.host}"),
                               "pin_required": bool(state["pin"]), "max_variations": 4})
 
 
 def normalized_upload(content, path, thumb):
     with Image.open(io.BytesIO(content)) as image:
-        if image.width * image.height > 16_000_000 or image.width < 64 or image.height < 64:
+        if image.width * image.height > MAX_PIXELS or image.width < 64 or image.height < 64:
             raise ValueError("Choose an image between 64 pixels and 16 megapixels.")
         if image.format not in ("PNG", "JPEG", "WEBP"):
             raise ValueError("Choose a PNG, JPEG or WebP image.")
@@ -185,14 +186,16 @@ async def generate(request):
         return failure("Upload a photo or choose an image from your library first.")
     parent_id = payload.get("parent_image_id")
     if parent_id and not state["store"].image(parent_id):
-        return failure("The original studio image could not be found.")
+        # The saved editing source is independent of the parent image, so a
+        # reused recipe still works after that earlier result is deleted.
+        parent_id = None
     pending = state["store"].one("SELECT COUNT(*) AS count FROM jobs WHERE status IN ('queued','submitted','running')")["count"]
     if pending + count > 24:
         return failure("Your queue is full. Wait for some images to finish before adding more.", 409)
-    width, height = QUALITIES[quality]["sizes"][aspect]
+    sizing = plan_size(quality, aspect, mode, source, payload.get("output_size", "preset"), QUALITIES, state["upscaler"])
     model = QUALITIES[quality]["model"]
-    recipe = {"version": 1, "mode": mode, "prompt": prompt.strip(), "quality": quality, "aspect": aspect,
-              "width": width, "height": height, "model": model, "model_source": state["models"][model],
+    recipe = {"version": 2, "mode": mode, "prompt": prompt.strip(), "quality": quality, "aspect": aspect,
+              **sizing, "model": model, "model_source": state["models"][model],
               "steps": 4, "guidance": 1.0, "snofs": payload.get("snofs", True),
               "adapter": state["adapter"] if payload.get("snofs", True) else None, "runtime": state["runtime"],
               "source_id": source_id if mode == "edit" else None,
@@ -271,6 +274,21 @@ async def recipe_file(request):
                         headers={"Content-Disposition": f'attachment; filename="studio-{image["id"]}-settings.json"'})
 
 
+async def delete_image(request):
+    store = request.app[STATE]["store"]
+    image_id = request.match_info["id"]
+    if not store.image(image_id):
+        raise web.HTTPNotFound()
+    payload = await request.json()
+    if not isinstance(payload, dict) or payload.get("confirm") is not True:
+        return failure("Confirm permanent deletion of this image first.")
+    job = store.job(image_id)
+    if job and job["status"] in ACTIVE:
+        return failure("Wait for this image to finish before deleting it.", 409)
+    store.delete_image(image_id)
+    return web.json_response({"ok": True, "deleted_id": image_id})
+
+
 async def media(request):
     state = request.app[STATE]
     media_id = request.match_info["id"]
@@ -281,6 +299,10 @@ async def media(request):
     kind = request.match_info["kind"]
     folders = {"image": ("images", ".png"), "upload": ("uploads", ".png"), "thumb": ("thumbs", ".webp")}
     if kind not in folders:
+        raise web.HTTPNotFound()
+    image_exists = state["store"].one("SELECT id FROM images WHERE id=?", (media_id,))
+    upload_exists = state["store"].one("SELECT id FROM uploads WHERE id=?", (media_id,))
+    if not {"image": image_exists, "upload": upload_exists, "thumb": image_exists or upload_exists}[kind]:
         raise web.HTTPNotFound()
     folder, suffix = folders[kind]
     path = state["store"].directory / folder / (media_id + suffix)
@@ -310,6 +332,7 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
     app[STATE] = {"store": store, "engine": engine, "pin": pin, "attempts": {},
                   "models": json.loads((ROOT / "config/models.json").read_text()),
                   "adapter": json.loads((ROOT / "config/loras.json").read_text())["snofs-klein-9b-v1.4"],
+                  "upscaler": json.loads((ROOT / "config/upscaler.json").read_text()),
                   "runtime": json.loads((ROOT / "config/runtime.json").read_text())}
     if start_worker:
         app.cleanup_ctx.append(engine.context)
@@ -323,6 +346,7 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
         web.post("/api/uploads", upload), web.post("/api/generate", generate),
         web.get("/api/jobs", jobs), web.post("/api/jobs/{id}/cancel", cancel),
         web.get("/api/images", library), web.get("/api/images/{id}", image_detail),
+        web.delete("/api/images/{id}", delete_image),
         web.patch("/api/images/{id}", update_image), web.post("/api/images/{id}/edit-source", edit_source),
         web.get("/api/images/{id}/recipe", recipe_file), web.get("/media/{kind}/{id}", media),
     ])

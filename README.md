@@ -16,12 +16,18 @@ system load, prompt and resolution.
 For the phone-friendly website, open Docker Desktop and double-click
 **`Start Web Studio.command`**. It opens **http://localhost:7878** and prints your
 local PIN and phone address. Create or edit images with 1–4 variations, choose
-Fast / Balanced / High quality, favorite results, archive and restore images,
+Fast / Balanced / High quality, keep an edit's original dimensions or choose
+2K/4K output, favorite results, archive and restore images, delete unwanted
+results after confirmation,
 and reuse the settings saved with every image. The library persists in
 `studio-data/`. See [the website guide](studio/README.md).
 
 The website runs in Docker; ComfyUI runs natively so MLX can use the Mac's GPU.
 Both reuse the models already installed in this checkout.
+The launcher also installs a verified 5 MB Real-ESRGAN upscaler. Large outputs
+use local AI upscaling after generation; 2K/4K refer to the longest saved edge.
+Edits preserve the source aspect ratio. The original-size, 2K and 4K paths have
+all completed real GPU checks; see [the output-size report](benchmarks/20261005-output-sizes.json).
 
 For a beginner-friendly launch, double-click **`Start Image Studio.command`**.
 It starts this project's ComfyUI in the background, reuses it if already running,
@@ -169,6 +175,7 @@ measured time budget. See [benchmark details](benchmarks/README.md).
 | --- | --- |
 | `config/models.json` | Model IDs, exact source revisions and licenses |
 | `config/loras.json` | Adapter sources, checksums and compatible models |
+| `config/upscaler.json` | Pinned AI upscaler source, checksum and scale |
 | `config/defaults.json` | Default model and image settings |
 | `config/runtime.json` | Exact ComfyUI and extension commits |
 | `requirements.lock.txt` | Exact tested Python package versions |
@@ -197,7 +204,10 @@ make test-studio
 Checks Python and shell syntax, installed dependency compatibility and diff
 whitespace. The benchmark command provides the real GPU integration check.
 The studio tests cover PIN access, variations, archive/restore persistence,
-editing sources, targeted cancellation and recovery without duplicate jobs.
+editing sources, exact/2K/4K output dimensions, complete upscaling workflows,
+targeted cancellation and recovery without duplicate jobs.
+Deletion checks cover confirmation, access control, image/recipe/file removal,
+preserved editing sources, and recovery after interrupted deletion.
 Text-to-image and image editing with a normal Load Image input are verified.
 The editing check uses the saved beginner workflow and SNOFS, validates PNG
 metadata and visually checks the requested coat-color change. See

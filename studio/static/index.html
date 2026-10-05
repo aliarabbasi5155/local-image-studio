@@ -13,6 +13,7 @@
     <symbol id="icon-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
     <symbol id="icon-heart" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></symbol>
     <symbol id="icon-archive" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="5" rx="1"/><path d="M5 8v12h14V8M9 12h6"/></symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></symbol>
     <symbol id="icon-edit" viewBox="0 0 24 24"><path d="m16 3 5 5-12 12-6 1 1-6ZM13 6l5 5"/></symbol>
     <symbol id="icon-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/></symbol>
     <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol>
@@ -58,10 +59,12 @@
           <div class="composer-bottom"><div class="controls">
             <label>Quality<select id="quality"><option value="fast">Fast</option><option value="balanced" selected>Balanced</option><option value="high">High</option></select></label>
             <label>Shape<select id="aspect"><option value="square">Square</option><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label>
+            <label>Output size<select id="output-size"><option value="preset">Preset</option><option value="original">Match original</option><option value="2k">2K</option><option value="4k">4K</option></select></label>
             <label>Variations<select id="variations"><option value="1">1 image</option><option value="2">2 images</option><option value="3">3 images</option><option value="4">4 images</option></select></label>
             <label class="snofs-toggle"><input id="snofs" type="checkbox" checked><span>SNOFS</span></label>
           </div><button class="primary generate" id="generate" type="submit"><span id="generate-label">Create image</span><svg><use href="#icon-arrow"/></svg></button></div>
-          <div class="composer-foot"><span id="quality-hint">Everyday detail · 768 × 768</span><button type="button" id="seed-toggle">Random seed</button><input id="seed" type="number" min="0" max="4294967295" placeholder="Seed" aria-label="Fixed seed" hidden><span id="queue-hint">Variations render one at a time</span></div>
+          <p id="output-hint" class="output-hint" aria-live="polite"></p>
+          <div class="composer-foot"><span id="quality-hint">Everyday detail</span><button type="button" id="seed-toggle">Random seed</button><input id="seed" type="number" min="0" max="4294967295" placeholder="Seed" aria-label="Fixed seed" hidden><span id="queue-hint">Variations render one at a time</span></div>
           <p id="compose-error" class="error" role="alert" hidden></p>
         </form>
       </section>
@@ -69,6 +72,14 @@
     </main>
   </div>
   <dialog id="detail-dialog"><div id="detail-content"></div></dialog>
-  <dialog id="info-dialog" class="info-dialog"><button class="icon-button dialog-close" data-close="info-dialog" aria-label="Close"><svg><use href="#icon-close"/></svg></button><span class="eyebrow">MADE FOR YOUR EVERYDAY</span><h2>Your studio, anywhere at home.</h2><p>Connect your phone to the same Wi-Fi as your Mac, then open:</p><a id="phone-url" class="phone-url"></a><p>Use the same PIN as on your Mac. Keep your Mac awake while images are being made.</p><div class="info-tip"><strong>Make it feel like an app</strong><p>On iPhone, tap Share → Add to Home Screen. On Android, use your browser’s Add to Home Screen option.</p></div><hr><h3>A few useful basics</h3><p>Fast makes smaller previews. Balanced is a good everyday choice. High produces more pixels and takes longer.</p><p>Favorites keep your best images together. Archive moves an image out of the library; you can restore it anytime.</p><p>Open any image to reuse its settings, edit it, or download the PNG and its recipe. Edits create a new image and keep the original.</p></dialog>
+  <dialog id="delete-dialog" class="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description">
+    <span class="eyebrow">PERMANENT DELETION</span><h2 id="delete-title">Delete this image?</h2>
+    <div class="delete-preview"><img id="delete-thumbnail" alt="Image selected for deletion"><div><p id="delete-prompt"></p><small id="delete-size"></small></div></div>
+    <p id="delete-description">This permanently removes the image and its saved settings from this studio. Other images and saved editing photos are kept.</p>
+    <p class="delete-tip">Use Archive whenever you want to restore an image later.</p>
+    <p id="delete-error" class="error" role="alert" hidden></p>
+    <div class="delete-actions"><button type="button" class="secondary" id="delete-cancel" autofocus>Keep image</button><button type="button" class="primary danger" id="delete-confirm">Delete permanently</button></div>
+  </dialog>
+  <dialog id="info-dialog" class="info-dialog"><button class="icon-button dialog-close" data-close="info-dialog" aria-label="Close"><svg><use href="#icon-close"/></svg></button><span class="eyebrow">MADE FOR YOUR EVERYDAY</span><h2>Your studio, anywhere at home.</h2><p>Connect your phone to the same Wi-Fi as your Mac, then open:</p><a id="phone-url" class="phone-url"></a><p>Use the same PIN as on your Mac. Keep your Mac awake while images are being made.</p><div class="info-tip"><strong>Make it feel like an app</strong><p>On iPhone, tap Share → Add to Home Screen. On Android, use your browser’s Add to Home Screen option.</p></div><hr><h3>A few useful basics</h3><p>Fast is a quick starting point. Balanced and High use the more detailed model. With Preset output, High also generates more pixels.</p><p>Output size: Match original keeps an edit’s exact photo dimensions. 2K and 4K use 2048 or 4096 pixels on the longest edge, with local AI upscaling. Edits keep your photo’s shape; the final size appears below the controls.</p><p>Favorites keep your best images together. Archive moves an image out of the library; you can restore it anytime. Delete permanently removes an image after you confirm.</p><p>Open any image to reuse its settings, edit it, or download the PNG and its recipe. Edits create a new image and keep the original.</p></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </body></html>

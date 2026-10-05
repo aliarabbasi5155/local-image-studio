@@ -6,10 +6,19 @@ THE PHONE-FRIENDLY WEBSITE
 3. Open the address it prints and enter your six-digit PIN.
 4. For your phone, use the "On your phone" address on the same Wi-Fi.
 
-Create = type a description, choose quality and variations, then Create image.
+Create = type a description, choose quality, size and variations, then Create image.
 Edit image = upload a photo and describe what should change.
+Output size: Match original keeps the exact photo dimensions when editing.
+2K = 2048 pixels on the longest edge; 4K = 4096 pixels on the longest edge.
+Edits keep the photo's shape. Create uses your chosen Square/Portrait/Landscape.
+Large outputs use local AI upscaling. The final size is shown before you start.
+Preset uses the normal quality/shape size. Edit this image starts at Match original.
 Tap an image to edit it again, download it or reuse its saved settings.
 The heart adds a favorite. Archive keeps the image; Restore brings it back.
+The trash icon, or Delete image in the image details, opens a confirmation.
+Delete permanently removes the result and its settings from the website.
+Keep image cancels. Use Archive if you may want to restore it later.
+Other images and saved editing photos stay available.
 Start with Fast quality while exploring. All results save automatically.
 Keep your Mac awake and Docker Desktop running while generating.
 Your PIN and library stay in studio-data. Full guide: studio/README.md.

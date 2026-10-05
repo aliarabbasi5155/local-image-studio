@@ -34,6 +34,38 @@ class Store:
             CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires REAL NOT NULL);
         """)
         self.db.commit()
+        self.recover_deletions()
+
+    def recover_deletions(self):
+        # A crash before the DB commit restores the files; after it, finish
+        # removing them. Staged files cannot be served by the media route.
+        for folder in ("images", "thumbs"):
+            for staged in (self.directory / folder).glob("*.deleting"):
+                original = staged.with_suffix("")
+                exists = self.one("SELECT id FROM images WHERE id=?", (original.stem,))
+                if exists and not original.exists():
+                    staged.rename(original)
+                else:
+                    staged.unlink()
+
+    def delete_image(self, image_id):
+        staged = []
+        try:
+            for folder, suffix in (("images", ".png"), ("thumbs", ".webp")):
+                original = self.directory / folder / (image_id + suffix)
+                if original.exists():
+                    temporary = original.with_name(original.name + ".deleting")
+                    original.rename(temporary)
+                    staged.append((original, temporary))
+            with self.db:
+                self.db.execute("DELETE FROM images WHERE id=?", (image_id,))
+                self.db.execute("DELETE FROM jobs WHERE id=?", (image_id,))
+        except BaseException:
+            for original, temporary in reversed(staged):
+                temporary.rename(original)
+            raise
+        for _, temporary in staged:
+            temporary.unlink()
 
     def one(self, sql, args=()):
         row = self.db.execute(sql, args).fetchone()
