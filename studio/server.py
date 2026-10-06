@@ -12,13 +12,14 @@ import uuid
 from pathlib import Path
 
 from aiohttp import web
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageChops, ImageOps, UnidentifiedImageError
 
 from .engine import Engine, QUALITIES, make_thumbnail
 from .storage import Store
 from .metrics import Metrics
 from .downloads import Downloads
 from .masking import normalize_mask, masked_size, automatic_feather
+from .automask import AutoMask, AutomaticSelectionError, validate_selection
 from .sizing import OUTPUT_SIZES, RESIZE_MODES, MAX_PIXELS, plan_size
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,7 +64,7 @@ async def index(request):
 
 async def static_file(request):
     name = request.match_info["name"]
-    if name not in ("app.js", "projects.js", "masking.js", "actions.js", "style.css", "projects.css", "masking.css", "polish.css", "icon.svg", "manifest.json"):
+    if name not in ("app.js", "projects.js", "masking.js", "automatic.js", "actions.js", "style.css", "projects.css", "masking.css", "automatic.css", "polish.css", "icon.svg", "manifest.json"):
         raise web.HTTPNotFound()
     return web.FileResponse(STATIC / name)
 
@@ -111,7 +112,25 @@ async def options(request):
     state = request.app[STATE]
     return web.json_response({"qualities": QUALITIES, "output_sizes": OUTPUT_SIZES, "resize_modes": RESIZE_MODES, "engine_ready": await state["engine"].available(),
                               "lan_url": os.environ.get("STUDIO_LAN_URL", f"{request.scheme}://{request.host}"),
-                              "pin_required": bool(state["pin"]), "max_variations": 4})
+                              "pin_required": bool(state["pin"]), "max_variations": 4,
+                              "automatic_masks": await state["automask"].status()})
+
+
+async def automatic_mask(request):
+    state = request.app[STATE]
+    source = state["store"].one("SELECT * FROM uploads WHERE id=?", (request.match_info["id"],))
+    if not source:
+        raise web.HTTPNotFound()
+    target, protect = validate_selection(await request.json())
+    engine = state["engine"]
+    if engine.resource_lock.locked() or state["store"].one("SELECT id FROM jobs WHERE status IN ('submitted','running')"):
+        return failure("Your Mac is making an image. Try automatic selection when it finishes.", 409)
+    async with engine.resource_lock:
+        try:
+            result = await state["automask"].select(state["store"].directory / "uploads" / (source["id"] + ".png"), target, protect)
+        except AutomaticSelectionError as error:
+            return failure(str(error),error.status)
+    return web.json_response(result)
 
 
 def normalized_upload(content, path, thumb):
@@ -243,6 +262,7 @@ async def generate(request):
         return failure("Your queue is full. Wait for some images to finish before adding more.", 409)
     mask_id = payload.get("mask_id")
     mask = None
+    protection = None
     if mask_id is not None:
         if mode != "edit" or not isinstance(mask_id, str):
             return failure("Select an editing photo and paint an area first.")
@@ -255,6 +275,24 @@ async def generate(request):
             return failure("Choose whether to match surrounding colors and align the patch.")
         if payload.get("mask_blend_mode","adaptive") not in ("adaptive","manual"):
             return failure("Choose automatic or manual edge blending.")
+        if payload.get("mask_protection_id") is not None:
+            protection = state["store"].one("SELECT * FROM masks WHERE id=? AND source_id=?", (payload["mask_protection_id"], source_id))
+            if not protection:
+                return failure("The protected area belongs to a different photo. Select the area again.")
+            with Image.open(state["store"].directory / "masks" / (mask_id + ".png")) as selected, Image.open(state["store"].directory / "masks" / (protection["id"] + ".png")) as protected:
+                if ImageChops.multiply(selected, protected).getbbox():
+                    return failure("The selection overlaps a protected area. Adjust the mask before editing.")
+        selection = payload.get("mask_selection")
+        if selection is not None:
+            if not isinstance(selection, dict) or selection.get("mode") not in ("change", "move", "add") or type(selection.get("extra_room")) is not int or not 0 <= selection["extra_room"] <= 48:
+                return failure("Choose valid automatic selection settings.")
+            validate_selection({"target":selection.get("target", ""), "protect_faces":True})
+            if type(selection.get("protect_faces")) is not bool or any(selection.get(key) is not None and (not isinstance(selection[key],str) or len(selection[key])>200) for key in ("model","model_revision")):
+                return failure("Choose valid face protection and selection model settings.")
+            if selection.get("placement") is not None:
+                box=selection["placement"]
+                if not isinstance(box,list) or len(box)!=4 or any(type(v) is not int for v in box) or not 0<=box[0]<box[2]<=source["width"] or not 0<=box[1]<box[3]<=source["height"] or selection["mode"] not in ("add","move"):
+                    return failure("Draw a valid placement box within this photo.")
     else:
         sizing = plan_size(quality, aspect, mode, source, payload.get("output_size", "preset"), QUALITIES,
                            state["upscaler"], payload.get("resize_mode", "auto"))
@@ -277,6 +315,13 @@ async def generate(request):
                                   "blend_mode":blend_mode,"blend_width":blend_width,
                                   "color_match":payload.get("mask_color_match",True),"align":payload.get("mask_align",True),
                                   "feather_method":"inward_cosine","method": "matched_canvas_context_blend", "preserve_unselected": True}
+        if protection:
+            recipe["masked_edit"]["protection_mask_id"] = protection["id"]
+            recipe["masked_edit"]["protection_sha256"] = protection["sha256"]
+        if payload.get("mask_selection"):
+            recipe["masked_edit"]["selection"] = {key:payload["mask_selection"][key] for key in ("model","model_revision","target","mode","extra_room","protect_faces","placement") if key in payload["mask_selection"]}
+            if recipe["masked_edit"]["selection"].get("placement"):
+                recipe["masked_edit"]["placement_guidance"] = "visual_reference_v1"
     base_seed = seed if seed is not None else secrets.randbits(32)
     recipes = [dict(recipe, seed=(base_seed + i) % 2**32) for i in range(count)]
     result = state["store"].add_jobs(recipes)
@@ -505,6 +550,10 @@ async def estimate(request):
     else:
         size = plan_size(quality,aspect,mode,source,payload.get("output_size","preset"),QUALITIES,state["upscaler"],payload.get("resize_mode","auto"))
     recipe = dict(size,mode=mode,model=QUALITIES[quality]["model"],snofs=payload.get("snofs",True))
+    if type(payload.get("mask_placement_guidance",False)) is not bool:
+        return failure("Choose valid placement guidance.")
+    if payload.get("mask_placement_guidance") and payload.get("mask_bounds") is not None:
+        recipe["masked_edit"]={"placement_guidance":"visual_reference_v1"}
     prediction = state["metrics"].estimate(recipe)
     queue = state["metrics"].queue()
     last = list(queue.values())[-1] if queue else None
@@ -667,6 +716,7 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
                   "upscaler": json.loads((ROOT / "config/upscaler.json").read_text()),
                   "runtime": json.loads((ROOT / "config/runtime.json").read_text())}
     app[STATE]["metrics"] = Metrics(store,engine)
+    app[STATE]["automask"] = AutoMask()
     app[STATE]["downloads"] = Downloads()
     app.cleanup_ctx.append(app[STATE]["downloads"].context)
     if start_worker:
@@ -687,6 +737,7 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
         web.delete("/api/projects/{id}/versions/{version_id}",delete_version),
         web.post("/api/estimate",estimate), web.get("/api/metrics",metrics),
         web.post("/api/uploads/{id}/mask",upload_mask), web.get("/api/masks/{id}",mask_detail),
+        web.post("/api/uploads/{id}/auto-mask",automatic_mask),
         web.post("/api/uploads", upload), web.post("/api/generate", generate),
         web.get("/api/jobs", jobs), web.post("/api/jobs/{id}/cancel", cancel),
         web.get("/api/images", library), web.get("/api/images/{id}", image_detail),

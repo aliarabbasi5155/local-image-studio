@@ -6,7 +6,7 @@ import math
 
 import numpy as np
 
-from PIL import Image, ImageChops, ImageFilter, ImageOps, PngImagePlugin
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps, PngImagePlugin
 
 from .sizing import MAX_PIXELS, MAX_SIDE
 
@@ -83,6 +83,22 @@ def engine_reference(directory, recipe):
                     (left,recipe["generation_width"]-cw-left),(0,0)), mode="edge")
     stream = io.BytesIO(); Image.fromarray(pixels).save(stream,"PNG")
     return stream.getvalue()
+
+
+def engine_placement_guide(directory, recipe):
+    """A small destination marker avoids teaching Flux to copy a colored mask."""
+    selection=recipe["masked_edit"]
+    placement=selection["selection"]["placement"]
+    x,y,width,height=selection["crop"]
+    left,top,cw,ch=selection["canvas_content"]
+    with Image.open(io.BytesIO(engine_reference(directory,recipe))) as reference:
+        guide=reference.convert("RGB")
+    box=(left+(placement[0]-x)*cw/width,top+(placement[1]-y)*ch/height,
+         left+(placement[2]-x)*cw/width,top+(placement[3]-y)*ch/height)
+    cx,cy=(box[0]+box[2])/2,(box[1]+box[3])/2
+    radius=max(3,min(8,(box[2]-box[0])/12,(box[3]-box[1])/12))
+    ImageDraw.Draw(guide).ellipse((cx-radius,cy-radius,cx+radius,cy+radius),fill=(255,20,40))
+    output=io.BytesIO();guide.save(output,"PNG");return output.getvalue()
 
 
 def feather_mask(mask, radius):

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import aiohttp
 from PIL import Image, ImageOps
-from .masking import engine_mask, engine_reference, blend_selected, protect_unselected
+from .masking import engine_mask, engine_reference, engine_placement_guide, blend_selected, protect_unselected
 
 QUALITIES = {
     "fast": {"label": "Fast", "description": "Quick previews", "model": "flux2-klein-9b-4bit",
@@ -22,7 +22,7 @@ QUALITIES = {
 }
 
 
-def build_graph(recipe, project_root, templates, upload_name=None, mask_name=None, reference_name=None):
+def build_graph(recipe, project_root, templates, upload_name=None, mask_name=None, reference_name=None, guide_name=None):
     editing = recipe["mode"] == "edit"
     generation_width = recipe.get("generation_width", recipe["width"])
     generation_height = recipe.get("generation_height", recipe["height"])
@@ -59,6 +59,19 @@ def build_graph(recipe, project_root, templates, upload_name=None, mask_name=Non
         nodes[2]["widgets_values"] = [recipe["prompt"], *values, 0.3]
     if recipe.get("masked_edit"):
         append_masked_processing(graph, workflow, recipe, prefix, mask_name, reference_name)
+        if guide_name:
+            paths=json.dumps([str(Path(project_root)/"runtime/input"/guide_name)])
+            placement=recipe["masked_edit"]["selection"]["placement"]
+            crop=recipe["masked_edit"]["crop"]
+            width_percent=round(100*(placement[2]-placement[0])/crop[2])
+            height_percent=round(100*(placement[3]-placement[1])/crop[3])
+            hint=(" The FIRST reference is the original photo to edit. The second reference is only a placement guide, with a small red dot marking the desired object's CENTER. "
+                  "Place the new or moved object centered at that red dot and completely replace the dot with the object. "
+                  f"The object and its shadow must fit within about {width_percent}% of the image width and {height_percent}% of the image height around that center. "
+                  "Keep the original background, lighting and textures. Do not include any dot, guide mark, box or colored overlay in the final photo.")
+            graph["2"]["inputs"].update(image_paths=paths,prompt=recipe["prompt"]+hint)
+            nodes[2]["widgets_values"][0]=recipe["prompt"]+hint
+            nodes[2]["widgets_values"][1]=paths
     elif processed:
         append_processing(graph, workflow, recipe, prefix)
     return graph, workflow
@@ -196,6 +209,7 @@ class Engine:
         self.wake = asyncio.Event()
         self.client_id = "studio-" + uuid.uuid4().hex
         self.session = None
+        self.resource_lock = asyncio.Lock()
 
     async def request(self, method, path, **kwargs):
         async with self.session.request(method, self.base + path, **kwargs) as response:
@@ -316,7 +330,7 @@ class Engine:
                     upload_name = "/".join(filter(None, [uploaded.get("subfolder"), uploaded["name"]]))
                 else:
                     upload_name = None
-                mask_name = reference_name = None
+                mask_name = reference_name = guide_name = None
                 if job["recipe"].get("masked_edit"):
                     content = await asyncio.to_thread(engine_mask, self.store.directory, job["recipe"])
                     form = aiohttp.FormData()
@@ -332,7 +346,14 @@ class Engine:
                         form.add_field("subfolder","web-studio");form.add_field("overwrite","true")
                         uploaded = await self.request("POST","/upload/image",data=form)
                         reference_name = "/".join(filter(None,[uploaded.get("subfolder"),uploaded["name"]]))
-                graph, workflow = build_graph(job["recipe"], self.project_root, self.templates, upload_name, mask_name,reference_name)
+                        if job["recipe"]["masked_edit"].get("placement_guidance") == "visual_reference_v1":
+                            content = await asyncio.to_thread(engine_placement_guide,self.store.directory,job["recipe"])
+                            form = aiohttp.FormData()
+                            form.add_field("image",io.BytesIO(content),filename=job["id"]+"-placement.png",content_type="image/png")
+                            form.add_field("subfolder","web-studio");form.add_field("overwrite","true")
+                            uploaded = await self.request("POST","/upload/image",data=form)
+                            guide_name = "/".join(filter(None,[uploaded.get("subfolder"),uploaded["name"]]))
+                graph, workflow = build_graph(job["recipe"], self.project_root, self.templates, upload_name, mask_name,reference_name,guide_name)
                 prompt_id = str(uuid.uuid4())
                 # Persist identity before submitting; never duplicate an uncertain request.
                 self.store.update_job(job["id"], prompt_id=prompt_id, status="submitted", started=time.time(), phase="Waiting for the image engine")
@@ -380,7 +401,16 @@ class Engine:
                 await asyncio.sleep(3)
                 continue
             try:
-                await self.run_job(job)
+                if self.resource_lock.locked():
+                    self.store.update_job(job["id"], phase="Waiting for automatic selection")
+                async with self.resource_lock:
+                    job=self.store.job(job["id"])
+                    if not job:
+                        continue
+                    if job["cancel_requested"] and not job["prompt_id"]:
+                        self.store.update_job(job["id"],status="cancelled",phase="Stopped",finished=time.time())
+                        continue
+                    await self.run_job(job)
             except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError, OSError, ValueError) as error:
                 self.store.update_job(job["id"], status="failed", error=str(error)[:1500], phase="Needs attention", finished=time.time())
 

@@ -287,3 +287,30 @@ No new model runs were used. All 48 tests pass on macOS and Docker; `make check`
 passes. Phone-sized controls, saved-mode reuse and color-match toggles were
 checked with an isolated synthetic library. See
 [the report](20261006-mask-corner-blending.json).
+
+## Automatic selections and protected faces
+
+SAM 3 Q8 runs through a pinned sam3.cpp Metal helper, separate from the existing
+Flux environment and Docker website. On Meta's public SAM 3 sample photo, initial
+shirt/face detection took 16.617 seconds with a 2.02 GB peak process footprint.
+Subsequent clothing, hand and arm selections with six protected faces took about
+8.6–9 seconds using a 1024-pixel preview. The native process exits after inference.
+No private user photos were used.
+
+Seven real Fast Flux patch edits were tested in an isolated library. All saved
+1280 × 720 PNGs preserved every unselected pixel and all 13,499 protected face
+pixels exactly. A shirt recolor succeeded in 17.450 seconds. An initial flower
+addition fell outside the selected box, and a rectangular guide caused a visible
+box artifact. The final small destination marker placed the flower inside the
+selection with clean surrounding ground in 19.272 seconds. Those earlier
+approaches are not the shipped implementation. Hand/arm detection and compositing
+worked, but the requested hand position was not reliably achieved; the editor
+suggests including the connected arm and leaves brush correction available.
+These timings apply to these small working canvases, not 4K generation.
+
+All 56 tests pass on macOS and Docker, including source/PIN checks, protection
+overlap rejection, recipe persistence, placement guidance, separate timing
+samples and cancelling a generation while it waits for selection. Simultaneous
+selection requests return 409; the native helper rejects requests without its
+secret token. Desktop, phone portrait and phone landscape controls were checked.
+See [the report](20261006-automatic-masks.json).

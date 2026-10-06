@@ -30,9 +30,10 @@ class Metrics:
             previous_pixels = pw * ph
             ratio = pixels / previous_pixels
             method_matches = previous.get("processing",{}).get("method") == recipe.get("processing",{}).get("method")
+            references_match = bool(previous.get("masked_edit",{}).get("placement_guidance")) == bool(recipe.get("masked_edit",{}).get("placement_guidance"))
             output_ratio = recipe["width"]*recipe["height"] / (previous["width"]*previous["height"])
             # Do not extrapolate timings across canvas sizes or processing methods.
-            if method_matches and .8 <= ratio <= 1.25 and .8 <= (width/height)/(pw/ph) <= 1.25 and .8 <= output_ratio <= 1.25:
+            if method_matches and references_match and .8 <= ratio <= 1.25 and .8 <= (width/height)/(pw/ph) <= 1.25 and .8 <= output_ratio <= 1.25:
                 samples.append(row["seconds"])
                 if len(samples) == 8:
                     break

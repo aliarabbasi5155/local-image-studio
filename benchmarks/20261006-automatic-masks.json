@@ -1,0 +1,191 @@
+{
+  "date": "2026-10-06",
+  "machine": "Apple M5, 24 GB unified memory",
+  "selector": {
+    "repository": "https://github.com/PABannier/sam3.cpp.git",
+    "commit": "416186c501d060df7ca02989d49b38080f5f81f3",
+    "model_repository": "PABannier/sam3.cpp",
+    "model_revision": "a3892b63b918e872671322e116982a8910f0ffb7",
+    "filename": "sam3-q8_0.ggml",
+    "sha256": "c79474957db14899efc4fe2f20d6dc03c056e1126a39cee609bbfe14f9f69f77",
+    "size": 1099391742,
+    "cmake": "4.2.3"
+  },
+  "public_test_image": "https://raw.githubusercontent.com/facebookresearch/sam3/main/assets/images/test_image.jpg",
+  "segmentation": {
+    "first_shirt_and_faces_seconds": 16.617,
+    "maximum_resident_bytes": 1887027200,
+    "peak_footprint_bytes": 2021410952,
+    "warm_clothing_and_faces_seconds": 8.769,
+    "warm_hand_and_faces_seconds": 8.695,
+    "warm_arm_and_faces_seconds": 9,
+    "clothing_candidates": 8,
+    "hand_candidates": 8,
+    "arm_candidates": 8,
+    "detected_faces": 6,
+    "preview_long_edge": 1024
+  },
+  "integration_tests": [
+    {
+      "seed": 728410,
+      "mode": "change",
+      "target": "shirt",
+      "visual_guidance": null,
+      "generation_canvas": [
+        304,
+        368
+      ],
+      "output_size": [
+        1280,
+        720
+      ],
+      "edit_seconds": 17.45,
+      "protected_face_pixels": 13499,
+      "changed_face_pixels": 0,
+      "changed_unselected_pixels": 0,
+      "changed_selected_pixels": 10331
+    },
+    {
+      "seed": 728411,
+      "mode": "move",
+      "target": "hand",
+      "visual_guidance": null,
+      "generation_canvas": [
+        272,
+        272
+      ],
+      "output_size": [
+        1280,
+        720
+      ],
+      "edit_seconds": 13.395,
+      "protected_face_pixels": 13499,
+      "changed_face_pixels": 0,
+      "changed_unselected_pixels": 0,
+      "changed_selected_pixels": 4180
+    },
+    {
+      "seed": 728412,
+      "mode": "add",
+      "target": "",
+      "visual_guidance": null,
+      "generation_canvas": [
+        352,
+        224
+      ],
+      "output_size": [
+        1280,
+        720
+      ],
+      "edit_seconds": 16.787,
+      "protected_face_pixels": 13499,
+      "changed_face_pixels": 0,
+      "changed_unselected_pixels": 0,
+      "changed_selected_pixels": 14126
+    },
+    {
+      "seed": 728413,
+      "mode": "add",
+      "target": "",
+      "visual_guidance": "visual_reference_v1",
+      "generation_canvas": [
+        352,
+        240
+      ],
+      "output_size": [
+        1280,
+        720
+      ],
+      "edit_seconds": 22.555,
+      "protected_face_pixels": 13499,
+      "changed_face_pixels": 0,
+      "changed_unselected_pixels": 0,
+      "changed_selected_pixels": 18400
+    },
+    {
+      "seed": 728413,
+      "mode": "add",
+      "target": "",
+      "visual_guidance": "visual_reference_v1",
+      "generation_canvas": [
+        352,
+        240
+      ],
+      "output_size": [
+        1280,
+        720
+      ],
+      "edit_seconds": 19.272,
+      "protected_face_pixels": 13499,
+      "changed_face_pixels": 0,
+      "changed_unselected_pixels": 0,
+      "changed_selected_pixels": 16338
+    },
+    {
+      "seed": 728414,
+      "mode": "move",
+      "target": "hand",
+      "visual_guidance": "visual_reference_v1",
+      "generation_canvas": [
+        272,
+        272
+      ],
+      "output_size": [
+        1280,
+        720
+      ],
+      "edit_seconds": 17.269,
+      "protected_face_pixels": 13499,
+      "changed_face_pixels": 0,
+      "changed_unselected_pixels": 0,
+      "changed_selected_pixels": 3908
+    },
+    {
+      "seed": 728415,
+      "mode": "move",
+      "target": "arm",
+      "visual_guidance": "visual_reference_v1",
+      "generation_canvas": [
+        288,
+        320
+      ],
+      "output_size": [
+        1280,
+        720
+      ],
+      "edit_seconds": 20.249,
+      "protected_face_pixels": 13499,
+      "changed_face_pixels": 0,
+      "changed_unselected_pixels": 0,
+      "changed_selected_pixels": 7483
+    }
+  ],
+  "observations": {
+    "shirt_recolor": "Passed visual review: yellow shirt and preserved red vest.",
+    "addition": "Initial un-guided flower fell outside mask. A rectangular guide left a visible box. Final small-marker guidance placed flower inside selection with clean surrounding ground.",
+    "hand_movement": "Arm/hand selections and protected composition passed. Exact requested hand pose was not reliable in these runs; wider limb selection and retries remain necessary."
+  },
+  "verification": {
+    "macos_tests": 56,
+    "docker_tests": 56,
+    "check": "passed",
+    "concurrent_selector_request_status": 409,
+    "helper_without_token_status": 401,
+    "viewports": [
+      "desktop",
+      "390x844 touch portrait",
+      "844x390 touch landscape"
+    ],
+    "private_user_images_used": false,
+    "test_library": "isolated temporary library",
+    "saved_mask_reuse": "Restored arm target, Move mode, destination and protected-face mask after reload.",
+    "protection_toggle_keeps_brush_refinements": true,
+    "deployment": "Docker healthy; all 286 pre-update saved files and all existing library records retained; PIN unchanged.",
+    "docker_real_selection": {
+      "seconds": 8.68108,
+      "clothing_candidates": 5,
+      "detected_faces": 6,
+      "library_records_created": 0
+    }
+  }
+}

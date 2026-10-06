@@ -9,8 +9,11 @@ services:
       COMFY_URL: http://host.docker.internal:8188
       ENGINE_PROJECT_ROOT: "${ENGINE_PROJECT_ROOT:?Use Start Web Studio.command to configure your Mac path}"
       STUDIO_LAN_URL: "${STUDIO_LAN_URL:-http://localhost:7878}"
+      SAM3_URL: http://host.docker.internal:7877
+      SAM3_TOKEN_FILE: /run/secrets/sam3_token
     volumes:
       - ./studio-data:/data
+      - ./runtime/sam3-token.txt:/run/secrets/sam3_token:ro
     restart: unless-stopped
     init: true
     mem_limit: 768m

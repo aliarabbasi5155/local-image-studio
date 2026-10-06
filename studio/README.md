@@ -94,11 +94,11 @@ links; importing the old library leaves its PNGs and recipes unchanged.
 
 ## Selected-area editing (mask / inpainting)
 
-Open a project and select the image you want to change. Click **Paint an area**:
+Open a project and select the image you want to change. Click **Select an area**:
 
 1. Use **Brush** to paint pink over the parts that may change. **Erase**, **Undo**,
    and **Clear** help correct the selection. Pinch with two fingers to zoom, or
-   use the zoom buttons. **Move** pans the photo when zoomed.
+   use the zoom buttons. **Pan** moves the photo when zoomed.
 2. Adjust **Edge softness** if needed. Start with 8 pixels; 0 gives a sharp edge.
    Click **Use this area**. Cancel keeps the earlier selection.
 3. Describe the change in the usual edit box and click **Edit image**. Quality,
@@ -106,7 +106,7 @@ Open a project and select the image you want to change. Click **Paint an area**:
    same project, with its mask and settings saved in its recipe.
 
 **Selected area only** turns the mask on or pauses it for a whole-image edit.
-**Adjust mask** reopens the painter; **Remove mask** returns to whole-image editing.
+**Adjust selection** reopens the painter; **Remove mask** returns to whole-image editing.
 Selections belong to each individual version. Unsent masks stay in the current
 browser tab; reloading clears them. After submitting, the mask is saved on the
 server, and **Reuse settings** reloads it along with the prompt on the earlier
@@ -121,7 +121,8 @@ so a smaller working resolution also reduces the reference token workload.
 This uses the existing Flux instruction-editing model. The installed
 [Mac Flux node](https://github.com/tanis2000/comfyui-flux2klein-mlx#nodes) does not
 expose a native latent mask input, so this is crop-based masked editing rather
-than a dedicated inpainting model. No extra model download is needed.
+than a dedicated inpainting model. Manual painting uses the existing model;
+automatic selection adds the separate SAM 3 model described below.
 
 The saved PNG keeps the exact original dimensions and preserves every pixel
 outside the painted mask. Edge softness fades inward from the boundary. The
@@ -178,6 +179,65 @@ Small selections can finish faster than whole-image edits; broad selections stil
 need more work. Timing estimates use the crop's model dimensions and account for
 the different processing method. Paint the full area needed for the new object,
 including shadows; an overly tight mask can cut off an otherwise correct edit.
+
+## Automatic selection with SAM 3
+
+Type your edit instruction, then open **Select an area**. The editor suggests a
+mode and common object names from the instruction; you can change them.
+
+- **Change something existing:** enter a short English object name such as
+  `shirt`, `clothing`, `jacket`, or `hand`, then click **Find area**. If several
+  objects match, choose the correct pink preview, or **Select all**. **Extra room**
+  expands the outline to allow new shapes and smooth blending. Brush and Erase
+  refine it. If no object matches, try a simpler name or paint manually.
+- **Move a part or object:** find the existing object, choose a match, then use
+  **Draw destination** to drag a box where it should move. The original selection,
+  destination and connecting area can change. For a hand move, selecting `arm`
+  or painting its wrist/forearm too gives the model room to maintain anatomy.
+  Larger pose changes may need the elbow or shoulder included. Exact hand
+  positioning remains less reliable than clothing changes or adding objects;
+  the preview defines allowed pixels, not a guaranteed new pose.
+- **Add something new:** use **Draw placement** to drag a box for the new object
+  and its shadows. SAM cannot find an object that is not in the photo. **Find faces**
+  detects faces to protect; you can turn that protection off if it is unwanted.
+
+**Protect detected faces** is on by default for automatic selections. Blue shows
+protected regions, with a small safety margin. Brush strokes cannot enter these
+regions while protection is on. Check the preview: detection can miss small or
+hidden faces, and SAM does not decide which person your instruction refers to.
+The saved PNG copies protected faces and all unselected pixels exactly from
+the original. JPG downloads are lossy. To deliberately change a face or cover
+part of it with a new object, turn face protection off and review the selection.
+
+**Use this area** returns to your usual edit box. The final mask, protected face
+mask, selection settings and destination are saved with the edit. **Reuse settings**
+restores them. Cancelling the selection editor leaves the earlier mask unchanged.
+Add/Move edits also give Flux a second reference with a small destination marker;
+the marker is guidance and is not added by the compositor. This helps placement,
+but Flux still determines the object's shape and pose. Tight outlines can cut off
+an object or shadow; review the result and expand the mask if necessary.
+
+SAM 3 runs natively through the pinned
+[sam3.cpp Metal implementation](https://github.com/PABannier/sam3.cpp).
+The Q8 model is about 1.1 GB; versions and checksum are in `config/sam3.json`.
+The usual **Start Web Studio.command** installs/reuses it and starts the helper.
+No Flux packages or weights are changed. Each selection uses a preview of at most
+1024 pixels; original image dimensions remain intact. The native process exits
+after detection to release model/GPU memory. Website selections and generations
+run one at a time, and the helper refuses uncached inference while ComfyUI is busy.
+Eight recent selections are cached in memory for up to an hour, so adjusting a
+margin or choosing a match needs no new inference.
+
+On the public test photo, selection plus face detection took about 9 seconds
+after the first run (17 seconds initially), using about 2 GB peak memory.
+Small Fast patch edits took roughly 17–20 seconds; these are sample results,
+not a promise for large selections or other quality settings. Timing estimates
+learn placement-guided and ordinary edits separately. If selection is unavailable,
+manual painting still works. To reinstall/start only the selector:
+
+```bash
+.venv/bin/python scripts/setup_sam3.py --start
+```
 
 ## Timing and server status
 
@@ -283,6 +343,7 @@ time waiting in the queue. See [the measured runs](../benchmarks/20261005-output
 | `images/` | Original generated PNGs, with embedded recipe and ComfyUI workflow |
 | `uploads/` | Saved editing sources, normalized to PNG |
 | `thumbs/` | Small gallery previews |
+| `masks/` | Saved editing selections and protected face masks |
 | `access-pin.txt` | Your local access PIN |
 
 Restarting or rebuilding the container preserves this directory. To back up the
@@ -302,13 +363,19 @@ or finishes a committed one. It does not put deleted results back in Archive.
 
 ## Docker and developer commands
 
-The launcher starts/reuses ComfyUI natively on the Mac, then builds and runs the
+The launcher starts/reuses ComfyUI and the SAM 3 selector natively on the Mac, then builds and runs the
 website in Docker. Docker Desktop's documented GPU support does not provide
 Apple Metal GPU access to Linux containers, so the MLX engine stays native.
 The container reaches it through `host.docker.internal`; the engine itself stays
 on loopback port 8188. See [Docker GPU support](https://docs.docker.com/desktop/features/gpu/)
 and [host networking](https://docs.docker.com/desktop/features/networking/networking-how-tos/).
 Existing model files are reused and are not copied into the Docker image.
+The selector listens only on loopback port 7877 and requires a separate random
+token in `runtime/sam3-token.txt` (owner-readable). Docker mounts only that token
+as a read-only secret and reaches the helper through `host.docker.internal`.
+Images remain local. Stopping Docker leaves the native helpers running; SAM
+keeps no loaded model while idle. After restarting the Mac, use the launcher
+to start both native helpers before using the website.
 The web launcher automatically installs the roughly 5 MB upscaler from the
 [official Real-ESRGAN release](https://github.com/xinntao/Real-ESRGAN/releases/tag/v0.2.5.0),
 checks its pinned SHA256, and makes it available to native ComfyUI. Its source

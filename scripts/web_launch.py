@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from download_upscaler import install as install_upscaler
+from setup_sam3 import install as install_sam3, start as start_sam3
 
 ROOT = Path(__file__).resolve().parents[1]
 URL = "http://127.0.0.1:7878"
@@ -53,6 +54,11 @@ def main():
         if engine.returncode:
             raise SystemExit(engine.stdout + engine.stderr)
         install_upscaler()
+        try:
+            install_sam3()
+            start_sam3()
+        except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+            print(f"Automatic selection needs attention: {error}\nYou can still paint masks by hand.", flush=True)
         print("Your Mac’s image engine is ready.", flush=True)
         if args.native:
             if not ready():

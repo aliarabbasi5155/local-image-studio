@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/PABannier/sam3.cpp.git",
+  "commit": "416186c501d060df7ca02989d49b38080f5f81f3",
+  "model_repository": "PABannier/sam3.cpp",
+  "model_revision": "a3892b63b918e872671322e116982a8910f0ffb7",
+  "filename": "sam3-q8_0.ggml",
+  "sha256": "c79474957db14899efc4fe2f20d6dc03c056e1126a39cee609bbfe14f9f69f77",
+  "size": 1099391742,
+  "cmake": "4.2.3"
+}
