@@ -182,6 +182,8 @@ class Projects:
             if not used_elsewhere:
                 removable_sources.append(source["id"])
         files = [("images",v["id"],".png") for v in members if v["kind"] == "image"]
+        masks = [mask for source_id in removable_sources for mask in self.store.rows("SELECT id FROM masks WHERE source_id=?", (source_id,))]
+        files += [("masks",mask["id"],".png") for mask in masks]
         files += [("uploads",source_id,".png") for source_id in removable_sources]
         files += [("thumbs",image_id,".webp") for image_id in {v["id"] for v in members} | set(removable_sources)]
         staged = []
@@ -197,6 +199,7 @@ class Projects:
                     self.store.db.execute("DELETE FROM images WHERE id=?", (version["id"],))
                     self.store.db.execute("DELETE FROM jobs WHERE id=?", (version["id"],))
                 for source_id in removable_sources:
+                    self.store.db.execute("DELETE FROM masks WHERE source_id=?", (source_id,))
                     self.store.db.execute("DELETE FROM uploads WHERE id=?", (source_id,))
                 self.store.db.execute("DELETE FROM project_sources WHERE project_id=?", (project_id,))
                 self.store.db.execute("DELETE FROM versions WHERE project_id=?", (project_id,))

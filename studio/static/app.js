@@ -53,7 +53,7 @@ function toast(message, action, callback) {
 }
 function showLogin() {
   state.authenticated = false; $('#app').hidden = true; $('#login').hidden = false;
-  $('#delete-dialog').close(); $('#detail-dialog').close(); $('#info-dialog').close(); $('#metrics-dialog').close(); $('#pin').focus();
+  $('#delete-dialog').close(); $('#detail-dialog').close(); $('#info-dialog').close(); $('#metrics-dialog').close(); $('#mask-dialog').close(); $('#pin').focus();
 }
 async function enterStudio() {
   state.options = await api('/api/options');
@@ -153,7 +153,7 @@ function imageHTML(project) {
   const pending = project.pending.filter(v => activeStatuses.includes(v.status));
   const failed = project.pending.find(v => v.status === 'failed');
   const job = pending[0]?.job;
-  return `<article class="image-card project-card"><div class="card-preview"><button class="image-open" data-action="project" data-id="${project.id}" aria-label="Open project: ${escapeHTML(project.title.slice(0,100))}">${cover ? `<img src="${cover.thumbnail}" alt="${escapeHTML(project.title)}" loading="lazy">` : `<span class="project-placeholder">${icon('spark')}<span>${failed ? 'Needs attention' : 'Creating the original…'}</span></span>`}</button><div class="card-actions"><button data-action="project-favorite" data-id="${project.id}" class="${project.favorite ? 'favorited' : ''}" aria-label="${project.favorite ? 'Remove project from favorites' : 'Favorite project'}" aria-pressed="${project.favorite}">${icon('heart')}</button><button data-action="project-archive" data-id="${project.id}" aria-label="${project.archived ? 'Restore project' : 'Archive project'}">${icon(project.archived ? 'restore' : 'archive')}</button><button data-action="project-delete" data-id="${project.id}" class="delete-image" aria-label="Delete whole project">${icon('trash')}</button></div>${cover ? `<details class="card-download"><summary aria-label="Download original image" title="Choose PNG or JPG">${icon('download')}</summary><div class="download-menu">${downloadLinks(cover,true)}</div></details>` : ''}</div><div class="card-info"><p>${escapeHTML(project.title)}</p><div class="card-meta"><span class="tag">${cover?.kind === 'upload' ? 'Uploaded' : 'Original'}</span><span>${project.edits} ${project.edits === 1 ? 'edit' : 'edits'}</span><span class="date">${dateText(project.created)}</span></div>${job ? `<div class="project-job"><span>${escapeHTML(job.phase)}</span><span data-job-eta="${job.id}"></span><div class="progress-track"><span style="width:${Math.round(job.progress*100)}%"></span></div></div>` : failed ? '<div class="job-error">An image needs attention. Open to retry.</div>' : ''}</div></article>`;
+  return `<article class="image-card project-card"><div class="card-preview"><button class="image-open" data-action="project" data-id="${project.id}" aria-label="Open project: ${escapeHTML(project.title.slice(0,100))}">${cover ? `<img src="${cover.thumbnail}" alt="${escapeHTML(project.title)}" loading="lazy">` : `<span class="project-placeholder">${icon('spark')}<span>${failed ? 'Needs attention' : 'Creating the original…'}</span></span>`}</button><div class="card-actions"><button data-action="project-favorite" data-id="${project.id}" class="${project.favorite ? 'favorited' : ''}" aria-label="${project.favorite ? 'Remove project from favorites' : 'Favorite project'}" aria-pressed="${project.favorite}">${icon('heart')}</button><button data-action="project-archive" data-id="${project.id}" aria-label="${project.archived ? 'Restore project' : 'Archive project'}">${icon(project.archived ? 'restore' : 'archive')}</button><button data-action="project-delete" data-id="${project.id}" class="delete-image" aria-label="Delete whole project">${icon('trash')}</button></div>${cover ? `<details class="card-download"><summary aria-label="Download original image" title="Choose PNG or JPG">${icon('download')}</summary><div class="download-menu">${downloadLinks(cover,true)}</div></details>` : ''}</div><div class="card-info"><p>${escapeHTML(project.title)}</p><div class="card-meta"><span class="tag">${cover?.kind === 'upload' ? 'Uploaded' : 'Original'}</span><span>${project.edits} ${project.edits === 1 ? 'edit' : 'edits'}</span><span class="date">${dateText(project.created)}</span></div>${job ? `<div class="project-job"><span>${escapeHTML(job.phase)}</span><span data-job-eta="${job.id}"></span><div class="progress-track"><span data-progress="${job.id}"></span></div></div>` : failed ? '<div class="job-error">An image needs attention. Open to retry.</div>' : ''}</div></article>`;
 }
 function renderGallery() {
   const signature = JSON.stringify([state.view,state.query,state.projects]);
@@ -162,6 +162,8 @@ function renderGallery() {
     $('#gallery').innerHTML = state.projects.map(imageHTML).join('') || emptyHTML();
   }
   for (const job of state.jobs) {
+    const progress = document.querySelector(`[data-progress="${job.id}"]`);
+    if (progress) progress.style.width = `${Math.round(job.progress*100)}%`;
     const element = document.querySelector(`[data-job-eta="${job.id}"]`);
     if (element && typeof jobEstimateText === 'function') element.textContent = jobEstimateText(job);
   }

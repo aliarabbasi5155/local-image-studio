@@ -10,7 +10,7 @@ from .projects import Projects
 class Store:
     def __init__(self, directory):
         self.directory = Path(directory)
-        for name in ("images", "uploads", "thumbs"):
+        for name in ("images", "uploads", "thumbs", "masks"):
             (self.directory / name).mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(self.directory / "studio.sqlite3")
         self.db.row_factory = sqlite3.Row
@@ -33,6 +33,11 @@ class Store:
                 width INTEGER NOT NULL, height INTEGER NOT NULL, sha256 TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS masks (
+                id TEXT PRIMARY KEY, source_id TEXT NOT NULL, created REAL NOT NULL,
+                width INTEGER NOT NULL, height INTEGER NOT NULL, bounds TEXT NOT NULL,
+                sha256 TEXT NOT NULL, coverage REAL NOT NULL
+            );
         """)
         self.db.commit()
         self.recover_deletions()
@@ -41,10 +46,10 @@ class Store:
     def recover_deletions(self):
         # A crash before the DB commit restores the files; after it, finish
         # removing them. Staged files cannot be served by the media route.
-        for folder in ("images", "uploads", "thumbs"):
+        for folder in ("images", "uploads", "thumbs", "masks"):
             for staged in (self.directory / folder).glob("*.deleting"):
                 original = staged.with_suffix("")
-                exists = self.one("SELECT id FROM images WHERE id=? UNION SELECT id FROM uploads WHERE id=?", (original.stem,original.stem))
+                exists = self.one("SELECT id FROM images WHERE id=? UNION SELECT id FROM uploads WHERE id=? UNION SELECT id FROM masks WHERE id=?", (original.stem,original.stem,original.stem))
                 if exists and not original.exists():
                     staged.rename(original)
                 else:

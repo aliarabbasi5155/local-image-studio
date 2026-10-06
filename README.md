@@ -26,6 +26,9 @@ The library groups originals and their edits into projects, including upload-onl
 photos. Its fullscreen editor supports parent/original comparison, pinch zoom,
 branching edit histories, and per-image deletion. Local timing estimates and a
 server status panel show progress and available Mac memory.
+For local changes, Paint an area adds an optional brush mask. The editor works on
+a crop and blends the selected area back into the original, preserving unpainted
+pixels and the original dimensions. Masks are saved with submitted image recipes.
 
 The website runs in Docker; ComfyUI runs natively so MLX can use the Mac's GPU.
 Both reuse the models already installed in this checkout.

@@ -52,6 +52,7 @@ function viewerHTML() {
     <div class="viewer-canvas"><div class="viewer-frame" tabindex="0" role="group" aria-label="Image comparison. Drag to compare. Pinch to zoom. Tap to toggle controls."><div id="viewer-photo"></div><div class="viewer-divider" aria-hidden="true"><span class="compare-handle">${icon('compare')}</span></div></div><p class="viewer-controls-hint">Tap the photo to show controls</p></div>
     <div class="viewer-history"><div class="viewer-split"><label class="sr-only" for="viewer-range">Original photo visible</label><input id="viewer-range" type="range" min="0" max="100" value="50"><button id="viewer-reset-split" type="button">Reset split</button><span id="viewer-compare-hint"></span></div><div class="version-strip" role="group" aria-label="Images in chronological order"></div></div>
     <form id="viewer-edit-form" class="viewer-editor"><div class="viewer-caption"><strong id="viewer-image-label"></strong><details id="viewer-prompt-details"><summary id="viewer-prompt-summary"></summary><p id="viewer-made-prompt"></p></details><div id="viewer-downloads"></div></div><label class="sr-only" for="viewer-edit-prompt">Edit the selected image</label><div class="viewer-edit-line"><textarea id="viewer-edit-prompt" rows="2" maxlength="5000" required placeholder="Describe what to change in this image…"></textarea><button class="primary" id="viewer-generate" type="submit">Edit image ${icon('arrow')}</button></div>
+      <div class="edit-mask-row"><button id="viewer-paint-mask" type="button">Paint an area</button><label><input id="viewer-use-mask" type="checkbox">Selected area only</label><button id="viewer-remove-mask" type="button" hidden>Remove mask</button><span id="viewer-mask-hint"></span></div>
       <details class="viewer-settings"><summary>Edit settings</summary><div class="viewer-setting-grid"><label>Quality<select id="edit-quality"><option value="fast">Fast</option><option value="balanced">Balanced</option><option value="high">High</option></select></label><label>Output size<select id="edit-size"><option value="original">Match original</option><option value="preset">Preset</option><option value="2k">2K</option><option value="4k">4K</option></select></label><label>Resize<select id="edit-resize"><option value="auto">Resize / AI upscale</option><option value="native">No resize · native size</option><option value="direct">No resize · full size</option></select></label><label>Variations<select id="edit-variations"><option value="1">1 image</option><option value="2">2 images</option><option value="3">3 images</option><option value="4">4 images</option></select></label><label>Seed<input id="edit-seed" type="number" min="0" max="4294967295" placeholder="Random"></label><label class="edit-snofs"><input id="edit-snofs" type="checkbox">SNOFS</label></div></details>
       <p id="viewer-estimate" class="estimate-hint" aria-live="polite"></p><p id="viewer-job-status" aria-live="polite"></p><p id="viewer-error" class="error" role="alert" hidden></p>
     </form>
@@ -100,7 +101,7 @@ function renderSelected(resetZoom=true) {
   const version = selectedVersion();
   if (!version) return;
   if (resetZoom) { viewer.zoom = 1; viewer.x = viewer.y = 0; }
-  $('#viewer-image-label').textContent = `Image ${version.sequence}${version.sequence === 0 ? ' · Original' : ''}`;
+  $('#viewer-image-label').textContent = `Image ${version.sequence}${version.sequence === 0 ? ' · Original' : version.recipe?.masked_edit ? ' · Selected area edit' : ''}`;
   $('#viewer-prompt-summary').textContent = version.recipe ? `Prompt: ${version.prompt.slice(0,150)}${version.prompt.length>150 ? '…' : ''}` : 'Uploaded original · no generation prompt';
   $('#viewer-made-prompt').textContent = version.recipe ? version.prompt : 'This image was uploaded and saved without an edit.';
   $('#viewer-prompt-details').open = false;
@@ -117,7 +118,7 @@ function renderSelected(resetZoom=true) {
   $('#viewer-recipe').href = `/api/images/${version.id}/recipe`;
   $('#viewer-archive').textContent = viewer.project.archived ? 'Restore project' : 'Archive project';
   $('#viewer-error').hidden = true;
-  renderPhoto(); updateEditorSettings(); scheduleViewerEstimate(); updateViewerJobStatus();
+  renderPhoto(); updateEditorSettings(); updateMaskControls(); scheduleViewerEstimate(); updateViewerJobStatus();
 }
 function renderPhoto() {
   const version = selectedVersion();
@@ -208,7 +209,11 @@ function updateEditorSettings() {
   if(!state.options.resize_modes[settings.resize_mode])settings.resize_mode='auto';
   $('#edit-quality').value=settings.quality;$('#edit-size').value=settings.output_size;$('#edit-resize').value=settings.resize_mode;
   $('#edit-variations').value=settings.variations;$('#edit-snofs').checked=settings.snofs;$('#edit-seed').value=settings.seed ?? '';
-  $('#edit-size').disabled=settings.resize_mode==='native';
+  const masked=!!currentMask()?.enabled;
+  $('#edit-size').disabled=settings.resize_mode==='native' || masked;
+  $('#edit-resize').disabled=masked;
+  $('#edit-resize option[value="masked"]')?.remove();
+  if(masked){$('#edit-size').value='original';$('#edit-resize').add(new Option('Selected crop only','masked'));$('#edit-resize').value='masked';}
 }
 function bindViewer() {
   $('#previous-project').onclick=()=>navigateProject(-1).catch(error=>toast(error.message));
@@ -234,8 +239,11 @@ function bindViewer() {
     $(`#${id}`).onchange=event=>{viewer.settings[key]=key==='snofs'?event.target.checked:key==='variations'?Number(event.target.value):key==='seed'?(event.target.value===''?null:Number(event.target.value)):event.target.value;saveEditor();updateEditorSettings();scheduleViewerEstimate();};
   }
   $('#viewer-edit-form').onsubmit=submitViewerEdit;
+  $('#viewer-paint-mask').onclick=()=>openMaskEditor().catch(error=>toast(error.message));
+  $('#viewer-use-mask').onchange=event=>{const mask=currentMask();if(mask)mask.enabled=event.target.checked;updateMaskControls();updateEditorSettings();scheduleViewerEstimate();};
+  $('#viewer-remove-mask').onclick=()=>{maskSelections.delete(draftKey());updateMaskControls();updateEditorSettings();scheduleViewerEstimate();};
   $('#viewer-favorite').onclick=()=>action('version-favorite',viewer.selected);
-  $('#viewer-reuse').onclick=()=>reuseInViewer(selectedVersion().recipe);
+  $('#viewer-reuse').onclick=()=>reuseInViewer(selectedVersion().recipe).catch(error=>toast(error.message));
   $('#viewer-archive').onclick=()=>action('project-archive',viewer.project.id);
   $('#viewer-delete-image').onclick=()=>action('version-delete',viewer.selected);
   $('#viewer-delete-project').onclick=()=>action('project-delete',viewer.project.id);
@@ -247,7 +255,8 @@ function scheduleViewerEstimate() {
   viewerEstimateTimer=setTimeout(async()=>{
     const version=selectedVersion();if(!version?.ready || !$('#detail-dialog').open)return;
     try {
-      const result=await send('/api/estimate',{mode:'edit',project_id:viewer.project.id,version_id:version.id,aspect:version.width>version.height?'landscape':version.width<version.height?'portrait':'square',...viewer.settings});
+      const mask=currentMask();
+      const result=await send('/api/estimate',{mode:'edit',project_id:viewer.project.id,version_id:version.id,aspect:version.width>version.height?'landscape':version.width<version.height?'portrait':'square',...viewer.settings,...(mask?.enabled?{mask_bounds:mask.bounds,mask_feather:mask.feather}:{})});
       if(revision===viewerEstimateRevision && $('#viewer-estimate')) {$('#viewer-estimate').textContent=estimateText(result,viewer.settings.variations);$('#viewer-estimate').title=`${result.reason}. ${result.samples} matching recent runs.`;}
     } catch(error) {if(revision===viewerEstimateRevision && $('#viewer-estimate'))$('#viewer-estimate').textContent=error.message;}
   },250);
@@ -260,8 +269,9 @@ async function submitViewerEdit(event) {
   try {
     let source=viewer.sources.get(version.id);
     if(!source) {source=await send(`/api/projects/${projectId}/versions/${version.id}/edit-source`,{});viewer.sources.set(version.id,source);}
+    const maskPayload=await prepareMask(source,`${projectId}:${version.id}`);
     const result=await send('/api/generate',{mode:'edit',prompt,project_id:projectId,source_id:source.id,parent_image_id:source.parent_image_id,
-      aspect:version.width>version.height?'landscape':version.width<version.height?'portrait':'square',...viewer.settings});
+      aspect:version.width>version.height?'landscape':version.width<version.height?'portrait':'square',...viewer.settings,...maskPayload});
     viewer.autoSelect={id:result.jobs[0],from:version.id};viewer.drafts[`${projectId}:${version.id}`]='';saveEditor();
     if(viewer.project?.id===projectId && viewer.selected===version.id)$('#viewer-edit-prompt').value='';
     await refresh();updateViewerJobStatus();
@@ -298,6 +308,8 @@ async function reuseInViewer(recipe) {
     if(binding)selectVersion(binding.id);
   }
   Object.assign(viewer.settings,{quality:recipe.quality,output_size:recipe.output_size || 'preset',resize_mode:recipe.resize_mode || 'auto',snofs:recipe.snofs,seed:recipe.seed,variations:1});
+  if(recipe.masked_edit)await reuseMask(recipe);
+  else maskSelections.delete(draftKey());
   viewer.drafts[draftKey()]=recipe.prompt;saveEditor();renderSelected(false);$('.viewer-settings').open=true;$('#viewer-edit-prompt').focus();
 }
 async function projectAction(name,id) {
@@ -344,7 +356,7 @@ $('#detail-dialog').addEventListener('close',()=>{
   if(document.fullscreenElement?.classList.contains('project-viewer'))document.exitFullscreen().catch(()=>{});
 });
 document.addEventListener('keydown',event=>{
-  if(!$('#detail-dialog').open || $('#delete-dialog').open || !viewer.project || event.target.closest('textarea,input,select,summary,button'))return;
+  if(!$('#detail-dialog').open || $('#delete-dialog').open || $('#mask-dialog').open || !viewer.project || event.target.closest('textarea,input,select,summary,button'))return;
   if(event.key.toLowerCase()==='h'){event.preventDefault();toggleViewerControls();}
   if(event.key==='ArrowLeft' || event.key==='ArrowRight') {
     event.preventDefault();const direction=event.key==='ArrowLeft'?-1:1;

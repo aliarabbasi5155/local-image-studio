@@ -17,6 +17,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from .engine import Engine, QUALITIES, make_thumbnail
 from .storage import Store
 from .metrics import Metrics
+from .masking import normalize_mask, masked_size
 from .sizing import OUTPUT_SIZES, RESIZE_MODES, MAX_PIXELS, plan_size
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,7 +62,7 @@ async def index(request):
 
 async def static_file(request):
     name = request.match_info["name"]
-    if name not in ("app.js", "projects.js", "style.css", "projects.css", "icon.svg", "manifest.json"):
+    if name not in ("app.js", "projects.js", "masking.js", "style.css", "projects.css", "masking.css", "icon.svg", "manifest.json"):
         raise web.HTTPNotFound()
     return web.FileResponse(STATIC / name)
 
@@ -170,6 +171,43 @@ async def edit_source(request):
     return web.json_response(result, status=201)
 
 
+async def upload_mask(request):
+    store = request.app[STATE]["store"]
+    source_id = request.match_info["id"]
+    source = store.one("SELECT * FROM uploads WHERE id=?", (source_id,))
+    if not source:
+        raise web.HTTPNotFound()
+    reader = await request.multipart()
+    part = await reader.next()
+    if not part or part.name != "mask":
+        return failure("Paint a selection mask first.")
+    content = bytearray()
+    while chunk := await part.read_chunk():
+        content.extend(chunk)
+        if len(content) > MAX_UPLOAD:
+            return failure("Choose a smaller selection mask.", 413)
+    mask_id = str(uuid.uuid4())
+    path = store.directory / "masks" / (mask_id + ".png")
+    try:
+        result = await asyncio.to_thread(normalize_mask, bytes(content), source, path)
+        store.execute("INSERT INTO masks VALUES (?,?,?,?,?,?,?,?)",
+                      (mask_id, source_id, time.time(), result["width"], result["height"],
+                       json.dumps(result["bounds"]), result["sha256"], result["coverage"]))
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError):
+        path.unlink(missing_ok=True)
+        raise ValueError("Paint a non-empty PNG mask matching this photo.")
+    return web.json_response(dict(result, id=mask_id, source_id=source_id, url=f"/media/mask/{mask_id}"), status=201)
+
+
+async def mask_detail(request):
+    mask = request.app[STATE]["store"].one("SELECT * FROM masks WHERE id=?", (request.match_info["id"],))
+    if not mask:
+        raise web.HTTPNotFound()
+    mask["bounds"] = json.loads(mask["bounds"])
+    mask["url"] = f"/media/mask/{mask['id']}"
+    return web.json_response(mask)
+
+
 async def generate(request):
     state = request.app[STATE]
     payload = await request.json()
@@ -199,15 +237,22 @@ async def generate(request):
     if payload.get("project_id") and (not binding or binding["project_id"] != payload["project_id"]):
         return failure("Choose an editing photo from this project.")
     parent_id = binding["parent_id"] if binding and state["store"].image(binding["parent_id"]) else None
-    if parent_id and not state["store"].image(parent_id):
-        # The saved editing source is independent of the parent image, so a
-        # reused recipe still works after that earlier result is deleted.
-        parent_id = None
     pending = state["store"].one("SELECT COUNT(*) AS count FROM jobs WHERE status IN ('queued','submitted','running')")["count"]
     if pending + count > 24:
         return failure("Your queue is full. Wait for some images to finish before adding more.", 409)
-    sizing = plan_size(quality, aspect, mode, source, payload.get("output_size", "preset"), QUALITIES,
-                       state["upscaler"], payload.get("resize_mode", "auto"))
+    mask_id = payload.get("mask_id")
+    mask = None
+    if mask_id is not None:
+        if mode != "edit" or not isinstance(mask_id, str):
+            return failure("Select an editing photo and paint an area first.")
+        mask = state["store"].one("SELECT * FROM masks WHERE id=? AND source_id=?", (mask_id, source_id))
+        if not mask:
+            return failure("This selection belongs to a different photo. Paint it again.")
+        sizing = masked_size(source, json.loads(mask["bounds"]), payload.get("mask_feather", 8),
+                             quality, aspect, QUALITIES, state["upscaler"])
+    else:
+        sizing = plan_size(quality, aspect, mode, source, payload.get("output_size", "preset"), QUALITIES,
+                           state["upscaler"], payload.get("resize_mode", "auto"))
     model = QUALITIES[quality]["model"]
     recipe = {"version": 2, "mode": mode, "prompt": prompt.strip(), "quality": quality, "aspect": aspect,
               **sizing, "model": model, "model_source": state["models"][model],
@@ -216,6 +261,11 @@ async def generate(request):
               "source_id": source_id if mode == "edit" else None,
               "source": {k: source[k] for k in ("name", "width", "height", "sha256")} if source else None,
               "parent_image_id": parent_id if mode == "edit" else None}
+    if mask:
+        recipe["masked_edit"] = {"mask_id": mask_id, "sha256": mask["sha256"],
+                                  "bounds": json.loads(mask["bounds"]), "crop": sizing["processing"]["crop"],
+                                  "feather": payload.get("mask_feather", 8), "context_padding": 64,
+                                  "method": "crop_edit_blend", "preserve_unselected": True}
     base_seed = seed if seed is not None else secrets.randbits(32)
     recipes = [dict(recipe, seed=(base_seed + i) % 2**32) for i in range(count)]
     result = state["store"].add_jobs(recipes)
@@ -337,7 +387,12 @@ async def estimate(request):
             source = {"width":version["width"],"height":version["height"]}
     if mode == "edit" and not source:
         return failure("Choose a photo first.")
-    size = plan_size(quality,aspect,mode,source,payload.get("output_size","preset"),QUALITIES,state["upscaler"],payload.get("resize_mode","auto"))
+    if payload.get("mask_bounds") is not None:
+        if mode != "edit":
+            return failure("Selected-area editing requires a photo.")
+        size = masked_size(source,payload["mask_bounds"],payload.get("mask_feather",8),quality,aspect,QUALITIES,state["upscaler"])
+    else:
+        size = plan_size(quality,aspect,mode,source,payload.get("output_size","preset"),QUALITIES,state["upscaler"],payload.get("resize_mode","auto"))
     recipe = dict(size,mode=mode,model=QUALITIES[quality]["model"])
     prediction = state["metrics"].estimate(recipe)
     queue = state["metrics"].queue()
@@ -448,19 +503,20 @@ async def media(request):
     except ValueError:
         raise web.HTTPNotFound()
     kind = request.match_info["kind"]
-    folders = {"image": ("images", ".png"), "upload": ("uploads", ".png"), "thumb": ("thumbs", ".webp")}
+    folders = {"image": ("images", ".png"), "upload": ("uploads", ".png"), "thumb": ("thumbs", ".webp"), "mask": ("masks", ".png")}
     if kind not in folders:
         raise web.HTTPNotFound()
     image_exists = state["store"].one("SELECT id FROM images WHERE id=?", (media_id,))
     upload_exists = state["store"].one("SELECT id FROM uploads WHERE id=?", (media_id,))
-    if not {"image": image_exists, "upload": upload_exists, "thumb": image_exists or upload_exists}[kind]:
+    mask_exists = state["store"].one("SELECT id FROM masks WHERE id=?", (media_id,)) if kind == "mask" else None
+    if not {"image": image_exists, "upload": upload_exists, "thumb": image_exists or upload_exists, "mask": mask_exists}[kind]:
         raise web.HTTPNotFound()
     folder, suffix = folders[kind]
     path = state["store"].directory / folder / (media_id + suffix)
     if not path.is_file():
         raise web.HTTPNotFound()
     output_format = request.query.get("format")
-    if output_format is not None and (kind == "thumb" or output_format not in ("png", "jpg", "jpeg")):
+    if output_format is not None and (kind not in ("image", "upload") or output_format not in ("png", "jpg", "jpeg")):
         return failure("Choose PNG or JPG for a full-size image download.")
     headers = {}
     jpeg = output_format in ("jpg", "jpeg")
@@ -512,6 +568,7 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
         web.patch("/api/projects/{id}/versions/{version_id}",update_version),
         web.delete("/api/projects/{id}/versions/{version_id}",delete_version),
         web.post("/api/estimate",estimate), web.get("/api/metrics",metrics),
+        web.post("/api/uploads/{id}/mask",upload_mask), web.get("/api/masks/{id}",mask_detail),
         web.post("/api/uploads", upload), web.post("/api/generate", generate),
         web.get("/api/jobs", jobs), web.post("/api/jobs/{id}/cancel", cancel),
         web.get("/api/images", library), web.get("/api/images/{id}", image_detail),

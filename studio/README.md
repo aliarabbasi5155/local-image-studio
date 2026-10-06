@@ -74,6 +74,46 @@ links; importing the old library leaves its PNGs and recipes unchanged.
   95, with transparent areas flattened to white. **Download recipe** saves a
   generated version's settings separately.
 
+## Selected-area editing (mask / inpainting)
+
+Open a project and select the image you want to change. Click **Paint an area**:
+
+1. Use **Brush** to paint pink over the parts that may change. **Erase**, **Undo**,
+   and **Clear** help correct the selection. Pinch with two fingers to zoom, or
+   use the zoom buttons. **Move** pans the photo when zoomed.
+2. Adjust **Edge softness** if needed. Start with 8 pixels; 0 gives a sharp edge.
+   Click **Use this area**. Cancel keeps the earlier selection.
+3. Describe the change in the usual edit box and click **Edit image**. Quality,
+   variations, seed and SNOFS still apply. The result is another version in the
+   same project, with its mask and settings saved in its recipe.
+
+**Selected area only** turns the mask on or pauses it for a whole-image edit.
+**Adjust mask** reopens the painter; **Remove mask** returns to whole-image editing.
+Selections belong to each individual version. Unsent masks stay in the current
+browser tab; reloading clears them. After submitting, the mask is saved on the
+server, and **Reuse settings** reloads it along with the prompt on the earlier
+parent (or on the saved result when its parent was deleted).
+
+The website edits a crop around the selection with 64 pixels of surrounding
+context, fits the edited crop back into place, then blends only the painted area.
+This uses the existing Flux instruction-editing model. The installed
+[Mac Flux node](https://github.com/tanis2000/comfyui-flux2klein-mlx#nodes) does not
+expose a native latent mask input, so this is crop-based masked editing rather
+than a dedicated inpainting model. No extra model download is needed.
+
+The saved PNG keeps the exact original dimensions and preserves every pixel
+outside the painted mask. Edge softness blends inside that boundary. Output-size
+and whole-image resize controls are disabled while the mask is active; quality
+controls the crop's working resolution. The crop may be resized to fit back into
+the original, while the rest of the photo is copied directly. JPG downloads are
+lossy sharing copies. For exact preserved pixels, download PNG.
+
+For local edits on a 2K/4K photo, upload or select that full-size photo first.
+Small selections can finish faster than whole-image edits; broad selections still
+need more work. Timing estimates use the crop's model dimensions and account for
+the different processing method. Paint the full area needed for the new object,
+including shadows; an overly tight mask can cut off an otherwise correct edit.
+
 ## Timing and server status
 
 The Create panel and editor show approximate duration ranges learned from recent

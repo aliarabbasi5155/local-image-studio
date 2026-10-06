@@ -1,0 +1,57 @@
+{
+  "real_engine_test": true,
+  "synthetic_image": true,
+  "status": "complete",
+  "quality": "fast",
+  "SNOFS": true,
+  "generation_seconds": 17.0,
+  "source_size": [
+    751,
+    497
+  ],
+  "saved_size": [
+    751,
+    497
+  ],
+  "crop": [
+    271,
+    211,
+    174,
+    199
+  ],
+  "model_canvas": [
+    176,
+    192
+  ],
+  "unselected_pixels_identical": true,
+  "selected_pixels_changed": true,
+  "PNG_recipe_saved": true,
+  "workflow_has_mask_compositor": true,
+  "tests_passed": 30,
+  "browser_checks": [
+    "desktop and portrait/landscape phone painter layouts",
+    "brush, erase, undo and empty-mask guard",
+    "two-pointer zoom and pan preserve mask alignment",
+    "mask submit uses correct source and project parent",
+    "saved mask and prompt restored after page reload with Reuse settings",
+    "paused mask restores whole-image controls",
+    "pending-project progress bar renders without CSP violations"
+  ],
+  "deployment": {
+    "all_existing_files_and_pin_unchanged": true,
+    "old_records_unchanged": {
+      "images": true,
+      "uploads": true,
+      "jobs": true,
+      "projects": true,
+      "versions": true,
+      "project_sources": true
+    },
+    "library_projects": 36,
+    "engine_ready": true,
+    "login_succeeded": true,
+    "health_status": 200,
+    "all_assets_match": true
+  },
+  "database_backup": "studio-data/backups/before-masked-editing-20261006T183227Z.sqlite3"
+}

@@ -15,6 +15,14 @@ Open a project to see Image 0, its generated or uploaded original.
 The thumbnails below show all its edits in time order. Tap one to select it.
 Type in the box below the photo to edit that selected image. Each variation becomes
 another child in the same project. The prompt that made the image is shown too.
+To edit only part of a photo, click Paint an area. Brush pink over the parts that
+may change; Erase and Undo correct the mask. Pinch to zoom, and use Move to pan.
+Use this area activates Selected area only. Type the change and click Edit image.
+The result keeps the original dimensions and copies all unpainted pixels exactly.
+Output size and Resize are disabled for masked edits; Quality still applies.
+Adjust mask reopens the painter. Uncheck Selected area only for a whole-image edit.
+Submitted masks are saved with each recipe; Reuse settings restores the mask.
+Unsent masks stay only in the current browser tab and clear when you reload.
 Compare with Immediate parent or Original (Image 0), then move the divider/slider.
 Deleted parents stay available as comparison sources; their thumbnail disappears.
 Use the previous/next arrows at the top to switch projects.
