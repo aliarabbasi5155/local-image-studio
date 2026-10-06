@@ -5,7 +5,7 @@
   <meta name="theme-color" content="#141416"><meta name="apple-mobile-web-app-capable" content="yes">
   <title>Image Studio</title>
   <link rel="icon" href="/static/icon.svg"><link rel="manifest" href="/static/manifest.json">
-  <link rel="stylesheet" href="/static/style.css"><script src="/static/app.js" defer></script>
+  <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/projects.css"><script src="/static/app.js" defer></script><script src="/static/projects.js" defer></script>
 </head>
 <body>
   <svg class="symbols" aria-hidden="true"><defs>
@@ -25,6 +25,11 @@
     <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></symbol>
     <symbol id="icon-restore" viewBox="0 0 24 24"><path d="M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l3 2"/></symbol>
     <symbol id="icon-compare" viewBox="0 0 24 24"><path d="m9 8-4 4 4 4m6-8 4 4-4 4"/></symbol>
+    <symbol id="icon-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+    <symbol id="icon-collapse" viewBox="0 0 24 24"><path d="M3 8h5V3m13 5h-5V3M8 21v-5H3m13 5v-5h5"/></symbol>
+    <symbol id="icon-back" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol>
+    <symbol id="icon-next" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="icon-menu" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
     <symbol id="icon-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
   </defs></svg>
   <section id="login" class="login-screen" hidden>
@@ -51,11 +56,12 @@
     </aside>
     <main>
       <header class="topbar"><div><span class="eyebrow">A LITTLE IMAGINATION, ALL YOURS</span><h1 id="page-title">Your library<span id="page-count">0 images</span></h1></div><label class="search"><svg><use href="#icon-search"/></svg><input id="search" type="search" placeholder="Find a prompt…" aria-label="Search your images"></label></header>
+      <button id="server-status" class="server-summary" type="button" aria-haspopup="dialog">Checking your Mac…</button>
       <section id="gallery" class="gallery" aria-label="Image library"></section>
       <button id="load-more" class="secondary load-more" hidden>Show more images</button>
       <section class="composer-wrap" aria-label="Create or edit an image">
         <form id="compose-form" class="composer">
-          <div class="composer-top"><div class="mode-tabs" role="group" aria-label="Image mode"><button type="button" data-mode="create" class="selected"><svg><use href="#icon-spark"/></svg>Create</button><button type="button" data-mode="edit"><svg><use href="#icon-edit"/></svg>Edit image</button></div><div class="composer-actions"><span class="saved-hint"><span class="status-dot"></span> Every result is saved</span><button type="button" id="composer-toggle" class="composer-toggle" aria-expanded="true" aria-controls="composer-body" aria-label="Minimize Create/Edit panel"><span id="composer-toggle-label">Minimize</span><svg aria-hidden="true"><use href="#icon-chevron"/></svg></button></div></div>
+          <div class="composer-top"><div class="mode-tabs" role="group" aria-label="Start a project"><button type="button" data-mode="create" class="selected"><svg><use href="#icon-spark"/></svg>Create</button><button type="button" id="upload-root"><svg><use href="#icon-image"/></svg>Upload image</button></div><div class="composer-actions"><span class="saved-hint"><span class="status-dot"></span> Every result is saved</span><button type="button" id="composer-toggle" class="composer-toggle" aria-expanded="true" aria-controls="composer-body" aria-label="Minimize Create panel"><span id="composer-toggle-label">Minimize</span><svg aria-hidden="true"><use href="#icon-chevron"/></svg></button></div></div>
           <div id="composer-body">
           <div id="source-area" class="source-area" hidden><button type="button" id="upload-button" class="upload-button"><svg><use href="#icon-image"/></svg><span>Choose a photo<small>PNG, JPG or WebP · up to 20 MB</small></span><span>＋</span></button><div id="source-preview" hidden></div><input id="upload" type="file" accept="image/png,image/jpeg,image/webp" hidden></div>
           <label class="sr-only" for="prompt">Describe your image</label><textarea id="prompt" rows="2" maxlength="5000" placeholder="Describe an image you’d love to see…" required></textarea>
@@ -68,6 +74,7 @@
             <label class="snofs-toggle"><input id="snofs" type="checkbox" checked><span>SNOFS</span></label>
           </div><button class="primary generate" id="generate" type="submit"><span id="generate-label">Create image</span><svg><use href="#icon-arrow"/></svg></button></div>
           <p id="output-hint" class="output-hint" aria-live="polite"></p>
+          <p id="estimate-hint" class="estimate-hint" aria-live="polite"></p>
           <div class="composer-foot"><span id="quality-hint">Everyday detail</span><button type="button" id="seed-toggle">Random seed</button><input id="seed" type="number" min="0" max="4294967295" placeholder="Seed" aria-label="Fixed seed" hidden><span id="queue-hint">Variations render one at a time</span></div>
           <p id="compose-error" class="error" role="alert" hidden></p>
           </div>
@@ -77,6 +84,7 @@
     </main>
   </div>
   <dialog id="detail-dialog"><div id="detail-content"></div></dialog>
+  <dialog id="metrics-dialog" class="info-dialog" aria-labelledby="metrics-title"><button class="icon-button dialog-close" data-close="metrics-dialog" aria-label="Close server status"><svg><use href="#icon-close"/></svg></button><span class="eyebrow">YOUR MAC AT WORK</span><h2 id="metrics-title">Studio performance</h2><div id="metrics-content"></div></dialog>
   <dialog id="delete-dialog" class="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description">
     <span class="eyebrow">PERMANENT DELETION</span><h2 id="delete-title">Delete this image?</h2>
     <div class="delete-preview"><img id="delete-thumbnail" alt="Image selected for deletion"><div><p id="delete-prompt"></p><small id="delete-size"></small></div></div>
@@ -85,6 +93,6 @@
     <p id="delete-error" class="error" role="alert" hidden></p>
     <div class="delete-actions"><button type="button" class="secondary" id="delete-cancel" autofocus>Keep image</button><button type="button" class="primary danger" id="delete-confirm">Delete permanently</button></div>
   </dialog>
-  <dialog id="info-dialog" class="info-dialog"><button class="icon-button dialog-close" data-close="info-dialog" aria-label="Close"><svg><use href="#icon-close"/></svg></button><span class="eyebrow">MADE FOR YOUR EVERYDAY</span><h2>Your studio, anywhere at home.</h2><p>Connect your phone to the same Wi-Fi as your Mac, then open:</p><a id="phone-url" class="phone-url"></a><p>Use the same PIN as on your Mac. Keep your Mac awake while images are being made.</p><div class="info-tip"><strong>Make it feel like an app</strong><p>On iPhone, tap Share → Add to Home Screen. On Android, use your browser’s Add to Home Screen option.</p></div><hr><h3>A few useful basics</h3><p>Fast is a quick starting point. Balanced and High use the more detailed model. With Preset output, High also generates more pixels.</p><p>With Resize / AI upscale, Match original keeps an edit’s exact photo dimensions. 2K and 4K use 2048 or 4096 pixels on the longest edge. Edits keep your photo’s shape; the final size appears below the controls.</p><p>Choose No resize · native size to save the model output without enlargement. Choose No resize · full size to generate directly at the selected size; larger images take longer and use more memory. No-resize dimensions use 16-pixel steps. Your choice is saved with each image.</p><p>Favorites keep your best images together. Archive moves an image out of the library; you can restore it anytime. Delete permanently removes an image after you confirm.</p><p>Open any image to reuse its settings, edit it, or download the PNG and its recipe. Edits create a new image and keep the original.</p></dialog>
+  <dialog id="info-dialog" class="info-dialog"><button class="icon-button dialog-close" data-close="info-dialog" aria-label="Close"><svg><use href="#icon-close"/></svg></button><span class="eyebrow">MADE FOR YOUR EVERYDAY</span><h2>Your studio, anywhere at home.</h2><p>Connect your phone to the same Wi-Fi as your Mac, then open:</p><a id="phone-url" class="phone-url"></a><p>Use the same PIN as on your Mac. Keep your Mac awake while images are being made.</p><div class="info-tip"><strong>Make it feel like an app</strong><p>On iPhone, tap Share → Add to Home Screen. On Android, use your browser’s Add to Home Screen option.</p></div><hr><h3>A few useful basics</h3><p>Each library card is a project. Create an image or upload a photo to start one. Open it, choose a thumbnail, and use the edit box to make a child of that image. Uploads stay saved even without an edit.</p><p>Compare an edit with its immediate parent or Image 0. Pinch to zoom; Hide controls or a tap on the photo gives you an uncluttered view. Use the top arrows to switch projects.</p><p>Fast is a quick starting point. Balanced and High use the more detailed model. With Preset output, High also generates more pixels.</p><p>With Resize / AI upscale, Match original keeps an edit’s exact photo dimensions. 2K and 4K use 2048 or 4096 pixels on the longest edge. Edits keep your photo’s shape; the final size appears below the controls.</p><p>Choose No resize · native size to save the model output without enlargement. Choose No resize · full size to generate directly at the selected size; larger images take longer and use more memory. No-resize dimensions use 16-pixel steps. Your choice is saved with each image.</p><p>Favorites keep your best images together. Archive moves an image out of the library; you can restore it anytime. Delete permanently removes an image after you confirm.</p><p>Open any image to reuse its settings, edit it, or download the PNG and its recipe. Edits create a new image and keep the original.</p></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </body></html>

@@ -22,52 +22,73 @@ the studio again. If the router changes the Mac's address, the next launch
 prints the new phone address. Your phone can add the page to its home screen
 from the browser's Share/menu controls.
 
-## Make and edit images
+## Projects and editing
 
-- **Minimize the bottom panel:** tap **Minimize** beside the Create/Edit tabs to
-  make room for browsing your images. Tap **Expand** to bring the controls back.
-  Your prompt, chosen photo and settings stay in place, and that browser remembers
-  whether the panel was minimized after a refresh. Choosing Create, Edit image,
-  New creation, Edit this image or Reuse settings opens it automatically.
-  Ctrl/Cmd + Enter opens a minimized panel; when expanded, it submits your prompt.
-- **Create:** describe what you want, choose quality, shape, output size and 1–4 variations,
-  then tap **Create image**. Each variation uses a different seed and saves as
-  it finishes. Images run one at a time to fit this Mac's memory.
-- **Edit:** choose **Edit image**, upload a PNG, JPEG or WebP photo, and describe
-  the change. Or open a library image and choose **Edit this image**.
-  **Match original** keeps the photo's exact width and height. Tell the
-  model what should stay the same, for example: “Make the coat red. Keep the
-  same face, scarf and background.” Your source remains saved.
-- **Compare an edit:** open an edited image to see **Before / after**. The original
-  is on the left and the edited result is on the right. Drag the divider, swipe
-  horizontally on the photo, or move the slider underneath. **Reset** returns to
-  a half-and-half view. With the slider focused, arrow keys adjust the split;
-  Home shows the full edit and End shows the full original. This also works for
-  earlier saved edits. Both photos fit the same viewing area without stretching
-  or cropping, including when an edit has a different size or shape.
+The library shows one card per **project**. Each generated image or uploaded photo
+starts a project. Existing images are grouped using their saved parent and source
+links; importing the old library leaves its PNGs and recipes unchanged.
 
-  ![Original and edited photo with a draggable comparison divider](../examples/studio-before-after.png)
-- **Heart:** adds an image to Favorites. Tap it again to remove the favorite.
-- **Download:** tap the down-arrow button at the bottom left of any thumbnail,
-  then choose **PNG** or **JPG**. Both download at the full saved dimensions.
-  It works in Library, Favorites and Archive without opening the image details;
-  the details also have separate **Download PNG** and **Download JPG** buttons.
-  PNG includes the embedded settings and workflow. JPG is a high-quality
-  sharing copy (quality 95) without those embedded settings. Your saved PNG,
-  editing source and studio recipe remain unchanged. Any transparent areas
-  become white in JPG. Choose **Save recipe** to download the settings separately.
-- **Archive:** moves an image out of the library. Open Archive and choose
-  **Restore** to bring it back. Its image, source and settings are kept.
-- **Delete:** tap the trash icon on an image, or open it and choose **Delete
-  image**. Check the preview, then choose **Delete permanently**. **Keep image**
-  cancels. This removes that result, its thumbnail and saved settings from the
-  website, including Favorites and Archive. There is no restore after deletion;
-  use Archive when you may want the result again. Other images and saved editing
-  source photos are kept, so later edits and reused recipes remain usable.
-- **Open an image:** download its PNG or JPG, view its settings, download the recipe,
-  reuse its settings, or make another edit. **Reuse settings** restores the
-  prompt, seed, quality, shape, output size, SNOFS and editing source for that result.
-- **Stop:** stops only that variation. Other queued variations can finish.
+- **Create:** describe an image in the bottom panel, choose quality, shape, size
+  and 1–4 variations. Every variation starts its own project. **Minimize** and
+  **Expand** keep the draft and give you more browsing space.
+- **Upload image:** saves a PNG, JPG or WebP as **Image 0** and opens its editor.
+  Editing is optional; close the viewer and the uploaded original remains saved.
+- **Open a project:** the screen-filling viewer starts on Image 0. A horizontal
+  thumbnail strip shows its edits in time order. Select a thumbnail, then type
+  in the edit box to make a child of that particular image. Multiple edit
+  variations are sibling versions in the same project. Branch labels show
+  which earlier image each version came from. Drafts are remembered per image.
+- **Compare:** select an edit and choose **Immediate parent** or **Original ·
+  Image 0**. Drag the divider or move the slider. **Reset split** restores 50/50.
+  If an earlier result was deleted, its independent saved source still supports
+  parent comparison. Deleted versions disappear from the strip; later image
+  numbers and parent links stay intact.
+- **Zoom:** pinch with two fingers, or use **+**, **−**, and **100%**. Both images
+  zoom together. Drag to pan when zoomed; drag to compare at 100%.
+- **Fullscreen and controls:** the viewer fills the page immediately; its
+  fullscreen button also hides browser chrome when supported. **Hide controls**
+  or a tap on the photo/background hides the interface; tap again to reveal it.
+  **H** toggles controls. Arrow keys move between versions when the photo is
+  focused; Shift + arrow keys switch projects. The top previous/next buttons
+  switch between projects in the current collection.
+- **Edit settings:** choose quality, output size, resizing, variations, seed and
+  SNOFS. Changes are remembered. The prompt that produced the selected version
+  appears above its edit box; expand it to read the full prompt. **Reuse settings**
+  copies the prompt and settings, selecting the earlier parent when it is still
+  present. If that parent was deleted, the saved result becomes the editing target.
+- **Favorites:** the project card's heart favorites a project. The viewer menu
+  favorites a particular version, including an uploaded original. Favorites
+  shows projects marked as favorites or containing a favorited image. Removing
+  a project favorite clears its image favorites too.
+- **Archive:** archives the whole project, retaining its original and all edits.
+  Open Archive and choose **Restore project** to bring it back.
+- **Delete this image:** in the viewer menu, deletes only the selected edit after
+  confirmation. Its children and saved parent comparisons remain usable. To
+  remove Image 0 and the whole family, use **Delete whole project** in the menu
+  or the trash button on the library card. Stop that project's pending jobs
+  before deleting it. Permanent deletion has no restore; Archive is reversible.
+- **Download:** the arrow on a library thumbnail downloads the original as PNG
+  or JPG. The viewer's download buttons save the selected version. Both retain
+  the full saved dimensions. Generated PNGs include their settings and workflow;
+  uploaded originals have no generation recipe. JPG is a sharing copy at quality
+  95, with transparent areas flattened to white. **Download recipe** saves a
+  generated version's settings separately.
+
+## Timing and server status
+
+The Create panel and editor show approximate duration ranges learned from recent
+completed jobs on this Mac. Quality/model, create versus edit, generation pixels,
+and resize/upscale processing affect the estimate. Sparse or unfamiliar settings
+use a wider range; a new model/mode shows **Learning** until a run finishes.
+Queued images include the studio queue and show an approximate completion time.
+An image exceeding its predicted range shows **Taking longer** rather than a
+misleading zero-second countdown. Other Mac activity and external ComfyUI jobs
+can change the actual completion time.
+
+Tap the status strip above the library for available Mac memory, waiting images,
+last and average image times, free image storage, engine response time and website
+uptime. Mac memory comes from the native image engine, not the Docker container.
+The server reads these values periodically; no extra monitoring service is needed.
 
 AI edits can also change details you asked to keep; inspect the result. The
 upload accepts photos up to 20 MB and 16,777,216 pixels (including 4096 × 4096).
@@ -76,7 +97,7 @@ JPEG or PNG before uploading.
 
 ## Output size
 
-Choose **Output size** before creating or editing. The line below the controls
+Choose **Output size** in Create or the viewer’s **Edit settings**. The line below the controls
 shows the dimensions that will be saved.
 
 The **Resize** menu lets you choose how the output is made:

@@ -5,11 +5,11 @@ const escapeHTML = text => String(text ?? '').replace(/[&<>"']/g, c => ({'&':'&a
 const activeStatuses = ['queued', 'submitted', 'running'];
 let saved;
 try { saved = JSON.parse(localStorage.getItem('studio-composer') || '{}'); } catch { saved = {}; }
-const state = {view:'library', images:[], jobs:[], total:0, query:'', options:null, detail:null,
-  mode:saved.mode || 'create', quality:saved.quality || 'balanced', aspect:saved.aspect || 'square',
+const state = {view:'library', projects:[], jobs:[], total:0, query:'', options:null, detail:null,
+  mode:'create', quality:saved.quality || 'balanced', aspect:saved.aspect || 'square',
   outputSize:saved.outputSize || (saved.mode === 'edit' ? 'original' : 'preset'),
   resizeMode:saved.resizeMode || 'auto',
-  variations:saved.variations || 1, snofs:saved.snofs !== false, source:saved.source || null,
+  variations:saved.variations || 1, snofs:saved.snofs !== false, source:null,
   drafts:saved.drafts || {create:'',edit:''}, seed:saved.seed ?? null,
   composerCollapsed:saved.composerCollapsed === true, authenticated:false};
 let toastTimer, searchTimer, refreshing = false, gallerySignature = '', fetching = false;
@@ -35,7 +35,7 @@ function renderComposerVisibility() {
   $('.composer-wrap').classList.toggle('is-collapsed',state.composerCollapsed);
   $('#composer-body').hidden = state.composerCollapsed;
   $('#composer-toggle').setAttribute('aria-expanded',String(!state.composerCollapsed));
-  $('#composer-toggle').setAttribute('aria-label',state.composerCollapsed ? 'Expand Create/Edit panel' : 'Minimize Create/Edit panel');
+  $('#composer-toggle').setAttribute('aria-label',state.composerCollapsed ? 'Expand Create panel' : 'Minimize Create panel');
   $('#composer-toggle-label').textContent = state.composerCollapsed ? 'Expand' : 'Minimize';
 }
 function setComposerCollapsed(collapsed) {
@@ -53,12 +53,12 @@ function toast(message, action, callback) {
 }
 function showLogin() {
   state.authenticated = false; $('#app').hidden = true; $('#login').hidden = false;
-  $('#delete-dialog').close(); $('#detail-dialog').close(); $('#info-dialog').close(); $('#pin').focus();
+  $('#delete-dialog').close(); $('#detail-dialog').close(); $('#info-dialog').close(); $('#metrics-dialog').close(); $('#pin').focus();
 }
 async function enterStudio() {
   state.options = await api('/api/options');
   state.authenticated = true; $('#login').hidden = true; $('#app').hidden = false;
-  renderComposer(); renderEngine(); await refresh();
+  renderComposer(); renderEngine(); if (typeof refreshMetrics === 'function') refreshMetrics(); await refresh();
 }
 function renderEngine() {
   $('#engine-dot').classList.toggle('offline', !state.options.engine_ready);
@@ -119,7 +119,7 @@ function renderComposer() {
   $('#generate-label').textContent = state.mode === 'edit' ? (state.variations > 1 ? `Make ${state.variations} edits` : 'Edit image') : (state.variations > 1 ? `Create ${state.variations} images` : 'Create image');
   $('#seed').hidden = state.seed === null; $('#seed').value = state.seed ?? '';
   $('#seed-toggle').textContent = state.seed === null ? 'Random seed' : 'Fixed seed · switch to random';
-  qualityHint(); renderComposerVisibility(); persist();
+  qualityHint(); renderComposerVisibility(); persist(); if (typeof scheduleEstimate === 'function') scheduleEstimate();
 }
 function dateText(timestamp) {
   const day = new Date(timestamp*1000);
@@ -143,46 +143,47 @@ function jobHTML(job) {
 function downloadLinks(image, compact=false) {
   return ['png','jpg'].map(format => {
     const name = format.toUpperCase();
-    const hint = format === 'png' ? 'Original + settings' : 'Easy to share';
+    const hint = format === 'png' ? (image.kind === 'upload' ? 'Original image' : 'Original + settings') : 'Easy to share';
     const query = format === 'jpg' ? '&format=jpg' : '';
-    return `<a class="${compact ? 'download-option' : 'secondary'}" href="/media/image/${image.id}?download=1${query}" download="studio-${image.id}.${format}" aria-label="Download ${name}" title="${hint}">${icon('download')}${compact ? `<span>${name}<small>${hint}</small></span>` : `Download ${name}`}</a>`;
+    return `<a class="${compact ? 'download-option' : 'secondary'}" href="${image.url || `/media/image/${image.id}`}?download=1${query}" download="studio-${image.id}.${format}" aria-label="Download ${name}" title="${hint}">${icon('download')}${compact ? `<span>${name}<small>${hint}</small></span>` : `Download ${name}`}</a>`;
   }).join('');
 }
-function imageHTML(image) {
-  const recipe = image.recipe;
-  return `<article class="image-card"><div class="card-preview"><button class="image-open" data-action="detail" data-id="${image.id}" aria-label="Open image: ${escapeHTML(recipe.prompt.slice(0,100))}"><img src="/media/thumb/${image.id}" alt="${escapeHTML(recipe.prompt)}" loading="lazy"></button><div class="card-actions"><button data-action="favorite" data-id="${image.id}" class="${image.favorite ? 'favorited' : ''}" aria-label="${image.favorite ? 'Remove from favorites' : 'Add to favorites'}" aria-pressed="${image.favorite}">${icon('heart')}</button><button data-action="archive" data-id="${image.id}" aria-label="${image.archived ? 'Restore image' : 'Archive image'}">${icon(image.archived ? 'restore' : 'archive')}</button><button data-action="delete" data-id="${image.id}" class="delete-image" aria-label="Delete image">${icon('trash')}</button></div><details class="card-download"><summary aria-label="Download image" title="Choose PNG or JPG">${icon('download')}</summary><div class="download-menu">${downloadLinks(image,true)}</div></details></div><div class="card-info"><p>${escapeHTML(recipe.prompt)}</p><div class="card-meta"><span class="tag ${recipe.mode === 'edit' ? 'edited' : ''}">${recipe.mode === 'edit' ? 'Edited' : recipe.quality}</span><span>${recipe.width} × ${recipe.height}</span><span class="date">${dateText(image.created)}</span></div></div></article>`;
+function imageHTML(project) {
+  const cover = project.cover;
+  const pending = project.pending.filter(v => activeStatuses.includes(v.status));
+  const failed = project.pending.find(v => v.status === 'failed');
+  const job = pending[0]?.job;
+  return `<article class="image-card project-card"><div class="card-preview"><button class="image-open" data-action="project" data-id="${project.id}" aria-label="Open project: ${escapeHTML(project.title.slice(0,100))}">${cover ? `<img src="${cover.thumbnail}" alt="${escapeHTML(project.title)}" loading="lazy">` : `<span class="project-placeholder">${icon('spark')}<span>${failed ? 'Needs attention' : 'Creating the original…'}</span></span>`}</button><div class="card-actions"><button data-action="project-favorite" data-id="${project.id}" class="${project.favorite ? 'favorited' : ''}" aria-label="${project.favorite ? 'Remove project from favorites' : 'Favorite project'}" aria-pressed="${project.favorite}">${icon('heart')}</button><button data-action="project-archive" data-id="${project.id}" aria-label="${project.archived ? 'Restore project' : 'Archive project'}">${icon(project.archived ? 'restore' : 'archive')}</button><button data-action="project-delete" data-id="${project.id}" class="delete-image" aria-label="Delete whole project">${icon('trash')}</button></div>${cover ? `<details class="card-download"><summary aria-label="Download original image" title="Choose PNG or JPG">${icon('download')}</summary><div class="download-menu">${downloadLinks(cover,true)}</div></details>` : ''}</div><div class="card-info"><p>${escapeHTML(project.title)}</p><div class="card-meta"><span class="tag">${cover?.kind === 'upload' ? 'Uploaded' : 'Original'}</span><span>${project.edits} ${project.edits === 1 ? 'edit' : 'edits'}</span><span class="date">${dateText(project.created)}</span></div>${job ? `<div class="project-job"><span>${escapeHTML(job.phase)}</span><span data-job-eta="${job.id}"></span><div class="progress-track"><span style="width:${Math.round(job.progress*100)}%"></span></div></div>` : failed ? '<div class="job-error">An image needs attention. Open to retry.</div>' : ''}</div></article>`;
 }
 function renderGallery() {
-  const visibleJobs = state.view === 'library' && !state.query ? state.jobs.filter(job => activeStatuses.includes(job.status) || job.status === 'failed') : [];
-  const signature = JSON.stringify([state.view,state.query,state.images,visibleJobs.map(j => [j.id,j.status,j.phase,j.progress,j.cancel_requested,j.error])]);
+  const signature = JSON.stringify([state.view,state.query,state.projects]);
   if (signature !== gallerySignature) {
     gallerySignature = signature;
-    $('#gallery').innerHTML = [...visibleJobs.map(jobHTML), ...state.images.map(imageHTML)].join('') || emptyHTML();
+    $('#gallery').innerHTML = state.projects.map(imageHTML).join('') || emptyHTML();
   }
-  for (const job of visibleJobs) {
-    const element = document.querySelector(`[data-elapsed="${job.id}"]`);
-    if (element) element.textContent = elapsedText(job);
-    const progress = document.querySelector(`[data-progress="${job.id}"]`);
-    if (progress) progress.style.width = `${Math.round(job.progress*100)}%`;
+  for (const job of state.jobs) {
+    const element = document.querySelector(`[data-job-eta="${job.id}"]`);
+    if (element && typeof jobEstimateText === 'function') element.textContent = jobEstimateText(job);
   }
-  $('#load-more').hidden = state.images.length >= state.total;
+  $('#load-more').hidden = state.projects.length >= state.total;
   $('#page-title').firstChild.textContent = {library:'Your library',favorites:'Your favorites',archive:'Your archive'}[state.view];
-  $('#page-count').textContent = `${state.total} ${state.total === 1 ? 'image' : 'images'}`;
+  $('#page-count').textContent = `${state.total} ${state.total === 1 ? 'project' : 'projects'}`;
   document.querySelectorAll('[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === state.view));
 }
 async function refresh(loadMore=false) {
   if (!state.authenticated || fetching) return;
   fetching = true;
   try {
-    const offset = loadMore ? state.images.length : 0;
+    const offset = loadMore ? state.projects.length : 0;
     const view = state.view, query = state.query, revision = libraryRevision;
-    const limit = loadMore ? 48 : Math.max(48,state.images.length);
-    const [library, jobs] = await Promise.all([api(`/api/images?section=${view}&q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`), api('/api/jobs')]);
+    const limit = loadMore ? 48 : Math.max(48,state.projects.length);
+    const [library, jobs] = await Promise.all([api(`/api/projects?section=${view}&q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`), api('/api/jobs')]);
     if (view !== state.view || query !== state.query || revision !== libraryRevision) { setTimeout(refresh,0); return; }
-    if (loadMore) state.images.push(...library.images); else state.images = library.images;
+    if (loadMore) state.projects.push(...library.projects); else state.projects = library.projects;
     state.jobs = jobs.jobs; state.total = library.total;
     for (const view of ['library','favorites','archive']) $(`#count-${view}`).textContent = library.counts[view];
     renderGallery();
+    if (typeof refreshOpenProject === 'function') await refreshOpenProject();
   } catch (error) { if (state.authenticated) toast(error.message); }
   finally { fetching = false; }
 }
@@ -195,168 +196,17 @@ function setMode(mode) {
   $('#compose-error').hidden = true; renderComposer(); $('#prompt').focus();
 }
 function reuse(recipe) {
-  state.mode = recipe.mode; state.quality = recipe.quality; state.aspect = recipe.aspect;
-  state.outputSize = recipe.output_size || 'preset';
-  state.resizeMode = recipe.resize_mode || 'auto';
+  if (recipe.mode === 'edit') return reuseInViewer(recipe);
+  state.mode = 'create'; state.quality = recipe.quality; state.aspect = recipe.aspect;
+  state.outputSize = recipe.output_size || 'preset'; state.resizeMode = recipe.resize_mode || 'auto';
   state.snofs = recipe.snofs; state.seed = recipe.seed; state.variations = 1;
-  state.drafts[recipe.mode] = recipe.prompt;
-  if (recipe.source_id) state.source = {id:recipe.source_id,name:recipe.source.name,width:recipe.source.width,height:recipe.source.height,
-    thumbnail:`/media/thumb/${recipe.source_id}`,url:`/media/upload/${recipe.source_id}`,parent_image_id:recipe.parent_image_id};
-  state.composerCollapsed = false;
-  renderComposer(); $('#detail-dialog').close(); changeView('library'); $('#prompt').focus(); toast('Settings restored. Change anything, then create.');
+  state.drafts.create = recipe.prompt; state.composerCollapsed = false;
+  renderComposer(); $('#detail-dialog').close(); changeView('library'); $('#prompt').focus();
+  toast('Settings restored. Change anything, then create.');
 }
-function detailImageHTML(image) {
-  const r = image.recipe;
-  if (r.mode !== 'edit' || !r.source_id) return `<img src="/media/image/${image.id}" alt="${escapeHTML(r.prompt)}">`;
-  return `<div class="image-comparison" role="group" aria-label="Original and edited image comparison">
-    <div class="compare-heading"><span>BEFORE / AFTER</span><button type="button" id="comparison-reset" aria-label="Reset comparison to half original and half edited">Reset</button></div>
-    <div class="compare-stage">
-      <div class="compare-layer compare-original"><img src="/media/upload/${r.source_id}" alt="Original photo before editing" draggable="false"><span class="compare-label">Original</span></div>
-      <div class="compare-layer compare-edited"><img src="/media/image/${image.id}" alt="Edited photo: ${escapeHTML(r.prompt)}" draggable="false"><span class="compare-label">Edited</span></div>
-      <div class="compare-divider" aria-hidden="true"><span class="compare-handle">${icon('compare')}</span></div>
-    </div>
-    <label class="sr-only" for="comparison-position">Original photo visible</label>
-    <input id="comparison-position" class="compare-range" type="range" min="0" max="100" step="1" value="50" aria-describedby="comparison-hint">
-    <p id="comparison-hint" class="compare-hint">Drag the photo or slider to compare.</p>
-  </div>`;
+async function action(name,id) {
+  try { await projectAction(name,id); } catch (error) { toast(error.message); }
 }
-function initComparison(image, position=50) {
-  const comparison = $('.image-comparison');
-  if (!comparison) return;
-  const stage = comparison.querySelector('.compare-stage');
-  const range = $('#comparison-position');
-  const reset = $('#comparison-reset');
-  stage.style.aspectRatio = `${image.recipe.width} / ${image.recipe.height}`;
-  const update = value => {
-    const percent = Math.max(0,Math.min(100,Math.round(value)));
-    range.value = percent;
-    range.setAttribute('aria-valuetext',`${percent}% original, ${100-percent}% edited`);
-    stage.style.setProperty('--compare-position',`${percent}%`);
-  };
-  range.addEventListener('input', () => update(Number(range.value)));
-  reset.addEventListener('click', () => update(50));
-  let pointerId = null;
-  const move = event => {
-    const rect = stage.getBoundingClientRect();
-    if (rect.width) update((event.clientX-rect.left)/rect.width*100);
-  };
-  stage.addEventListener('pointerdown', event => {
-    if (range.disabled || pointerId !== null || !event.isPrimary || event.button !== 0) return;
-    if (event.pointerType === 'mouse') event.preventDefault();
-    pointerId = event.pointerId;
-    stage.setPointerCapture(pointerId);
-    stage.classList.add('dragging');
-    range.focus({preventScroll:true});
-    move(event);
-  });
-  stage.addEventListener('pointermove', event => { if (event.pointerId === pointerId) move(event); });
-  const end = event => {
-    if (event.pointerId !== pointerId) return;
-    pointerId = null;
-    stage.classList.remove('dragging');
-    if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId);
-  };
-  stage.addEventListener('pointerup', event => { if (event.pointerId === pointerId) move(event); end(event); });
-  stage.addEventListener('pointercancel', end);
-  stage.addEventListener('lostpointercapture', end);
-  const original = comparison.querySelector('.compare-original img');
-  const missingOriginal = () => {
-    comparison.classList.add('compare-unavailable');
-    range.disabled = reset.disabled = true;
-    $('#comparison-hint').textContent = 'Original photo unavailable. Showing the saved edit.';
-  };
-  original.addEventListener('error',missingOriginal);
-  if (original.complete && !original.naturalWidth) missingOriginal();
-  update(position);
-}
-function detailHTML(image) {
-  const r = image.recipe;
-  const processing = r.processing?.method;
-  const outputLabel = r.resize_mode === 'native' ? 'Native size' : {preset:'Preset',original:'Match original','2k':'2K','4k':'4K'}[r.output_size || 'preset'];
-  const resizeLabel = {auto:'Resize / AI upscale',native:'No resize · native size',direct:'No resize · full size'}[r.resize_mode || 'auto'];
-  const sizeInfo = `<div><dt>Output size</dt><dd>${outputLabel}</dd></div><div><dt>Resize</dt><dd>${resizeLabel}</dd></div><div><dt>Generated at</dt><dd>${r.generation_width || r.width} × ${r.generation_height || r.height}</dd></div>`;
-  const processingInfo = processing === 'ai_upscale' ? `<p class="processing-note">AI upscaled with ${escapeHTML(r.processing.upscaler.name)} and fitted to the saved size.</p>` : processing === 'resize' ? '<p class="processing-note">Fitted to your photo’s exact dimensions.</p>' : r.resize_mode === 'native' ? '<p class="processing-note">Saved at native resolution without resizing or AI upscaling.</p>' : r.resize_mode === 'direct' ? '<p class="processing-note">Generated directly at the saved size without resizing or AI upscaling. Dimensions use 16-pixel steps.</p>' : '';
-  return `<div class="detail-layout"><button class="icon-button dialog-close" data-close="detail-dialog" aria-label="Close image">${icon('close')}</button><div class="detail-image">${detailImageHTML(image)}</div><div class="detail-info"><span class="eyebrow">${r.mode === 'edit' ? 'AN IMAGE, REIMAGINED' : 'FROM YOUR IMAGINATION'}</span><h2>${r.mode === 'edit' ? 'Your edited image' : 'Your creation'}</h2><div class="detail-prompt">${escapeHTML(r.prompt)}</div><dl class="recipe-grid"><div><dt>Quality</dt><dd>${escapeHTML(r.quality)}</dd></div><div><dt>Size</dt><dd>${r.width} × ${r.height}</dd></div>${sizeInfo}<div><dt>Seed</dt><dd>${r.seed}</dd></div><div><dt>Variation</dt><dd>${r.variation}</dd></div><div><dt>Created</dt><dd>${dateText(image.created)}</dd></div><div><dt>SNOFS</dt><dd>${r.snofs ? 'On' : 'Off'}</dd></div></dl>${processingInfo}${r.source_id ? `<a class="source-link" href="/media/upload/${r.source_id}?download=1"><img src="/media/thumb/${r.source_id}" alt="Source photo"><span>Original photo · download source</span></a>` : ''}<div class="detail-actions"><button class="primary" data-action="edit" data-id="${image.id}">${icon('edit')}Edit this image</button><div class="detail-downloads">${downloadLinks(image)}</div><button class="secondary" data-action="reuse" data-id="${image.id}">${icon('repeat')}Reuse settings</button><button class="secondary ${image.favorite ? 'favorited' : ''}" data-action="favorite" data-id="${image.id}">${icon('heart')}${image.favorite ? 'Favorited' : 'Favorite'}</button><button class="secondary" data-action="archive" data-id="${image.id}">${icon(image.archived ? 'restore' : 'archive')}${image.archived ? 'Restore' : 'Archive'}</button><a class="secondary" href="/api/images/${image.id}/recipe">${icon('download')}Save recipe</a><button class="secondary danger" data-action="delete" data-id="${image.id}">${icon('trash')}Delete image</button></div><details><summary>Full generation settings</summary><pre>${escapeHTML(JSON.stringify(r,null,2))}</pre></details></div></div>`;
-}
-async function showDetail(id) {
-  const position = state.detail?.id === id ? Number($('#comparison-position')?.value ?? 50) : 50;
-  state.detail = await api(`/api/images/${id}`);
-  $('#detail-content').innerHTML = detailHTML(state.detail);
-  initComparison(state.detail,position);
-  if (!$('#detail-dialog').open) $('#detail-dialog').showModal();
-}
-function confirmDelete(image) {
-  if (deletePending) return;
-  deletingImage = image;
-  $('#delete-thumbnail').src = `/media/thumb/${image.id}`;
-  $('#delete-prompt').textContent = image.recipe.prompt;
-  $('#delete-size').textContent = `${image.recipe.width} × ${image.recipe.height}`;
-  $('#delete-error').hidden = true;
-  $('#delete-dialog').showModal();
-  $('#delete-cancel').focus();
-}
-$('#delete-confirm').onclick = async () => {
-  if (!deletingImage || deletePending) return;
-  const image = deletingImage;
-  deletePending = true;
-  $('#delete-confirm').disabled = $('#delete-cancel').disabled = true;
-  $('#delete-confirm').textContent = 'Deleting…';
-  $('#delete-error').hidden = true;
-  try {
-    await send(`/api/images/${image.id}`, {confirm:true}, 'DELETE');
-    libraryRevision++;
-    $('#delete-dialog').close();
-    if (state.detail?.id === image.id) { $('#detail-dialog').close(); state.detail = null; }
-    if (state.source?.parent_image_id === image.id) { state.source.parent_image_id = null; persist(); }
-    if (state.images.some(item => item.id === image.id)) state.total = Math.max(0,state.total - 1);
-    state.images = state.images.filter(item => item.id !== image.id);
-    state.jobs = state.jobs.filter(job => job.id !== image.id);
-    gallerySignature = ''; renderGallery(); await refresh();
-    toast('Image deleted permanently.');
-  } catch (error) {
-    $('#delete-error').textContent = error.message;
-    $('#delete-error').hidden = false;
-  } finally {
-    deletePending = false;
-    $('#delete-confirm').disabled = $('#delete-cancel').disabled = false;
-    $('#delete-confirm').textContent = 'Delete permanently';
-  }
-};
-$('#delete-cancel').onclick = () => { if (!deletePending) $('#delete-dialog').close(); };
-$('#delete-dialog').addEventListener('close', () => { deletingImage = null; });
-$('#delete-dialog').addEventListener('cancel', event => { if (deletePending) event.preventDefault(); });
-async function action(actionName,id) {
-  try {
-    if (actionName === 'detail') return await showDetail(id);
-    if (actionName === 'cancel') { await send(`/api/jobs/${id}/cancel`,{}); await refresh(); return toast('Stopping this variation. Other images will keep going.'); }
-    if (actionName === 'retry') return reuse(state.jobs.find(job => job.id === id).recipe);
-    const image = state.images.find(image => image.id === id) || (state.detail?.id === id ? state.detail : await api(`/api/images/${id}`));
-    if (actionName === 'delete') return confirmDelete(image);
-    if (actionName === 'reuse') return reuse(image.recipe);
-    if (actionName === 'edit') {
-      const source = await send(`/api/images/${id}/edit-source`,{});
-      state.source = source; state.drafts.edit = ''; state.mode = 'edit'; state.seed = null;
-      state.outputSize = 'original';
-      state.quality = image.recipe.quality; state.aspect = image.recipe.aspect;
-      state.composerCollapsed = false;
-      renderComposer(); $('#detail-dialog').close(); await changeView('library'); $('#prompt').focus();
-      return toast('Photo ready. Describe what you want to change.');
-    }
-    if (actionName === 'favorite') {
-      await send(`/api/images/${id}`,{favorite:!image.favorite},'PATCH');
-      if ($('#detail-dialog').open && state.detail?.id === id) await showDetail(id);
-      await refresh();
-    }
-    if (actionName === 'archive') {
-      const archived = !image.archived;
-      await send(`/api/images/${id}`,{archived},'PATCH'); $('#detail-dialog').close(); await refresh();
-      toast(archived ? 'Moved to Archive. Image and settings are kept.' : 'Image restored to your library.', 'Undo', async () => {
-        try { await send(`/api/images/${id}`,{archived:!archived},'PATCH'); await refresh(); } catch (error) { toast(error.message); }
-      });
-    }
-  } catch (error) { toast(error.message); }
-}
-
 document.addEventListener('click', event => {
   const download = event.target.closest('.card-download');
   document.querySelectorAll('.card-download[open]').forEach(menu => {
@@ -389,14 +239,14 @@ $('#compose-form').onsubmit = async event => {
   } catch (error) { errorElement.textContent = error.message; errorElement.hidden = false; }
   finally { refreshing = false; $('#generate').disabled = false; }
 };
-$('#upload-button').onclick = () => $('#upload').click();
+$('#upload-root').onclick = $('#upload-button').onclick = () => $('#upload').click();
 $('#upload').onchange = async event => {
   const file = event.target.files[0]; if (!file) return;
   if (file.size > 20*1024*1024) { toast('Choose a photo smaller than 20 MB.'); event.target.value = ''; return; }
-  const form = new FormData(); form.append('image',file); $('#upload-button').disabled = true;
-  try { state.source = await api('/api/uploads',{method:'POST',body:form}); renderComposer(); toast('Photo uploaded. Your original stays unchanged.'); }
+  const form = new FormData(); form.append('image',file); $('#upload-root').disabled = $('#upload-button').disabled = true;
+  try { const root = await api('/api/uploads',{method:'POST',body:form}); await refresh(); await showProject(root.project_id,root.id); toast('Original saved. You can edit it now or come back later.'); }
   catch (error) { toast(error.message); }
-  finally { $('#upload-button').disabled = false; event.target.value = ''; }
+  finally { $('#upload-root').disabled = $('#upload-button').disabled = false; event.target.value = ''; }
 };
 for (const name of ['quality','aspect','variations','snofs']) $(`#${name}`).onchange = event => {
   persist(); state[name] = name === 'snofs' ? event.target.checked : name === 'variations' ? Number(event.target.value) : event.target.value;
@@ -408,7 +258,7 @@ $('#prompt').oninput = persist;
 $('#seed-toggle').onclick = () => { state.seed = state.seed === null ? 123 : null; renderComposer(); if (state.seed !== null) $('#seed').focus(); };
 $('#seed').oninput = event => { state.seed = event.target.value === '' ? null : Number(event.target.value); persist(); };
 $('#composer-toggle').onclick = () => setComposerCollapsed(!state.composerCollapsed);
-$('#new-image').onclick = () => { state.drafts.create = ''; state.mode = 'create'; state.seed = null; state.composerCollapsed = false; renderComposer(); changeView('library'); $('#prompt').focus(); };
+$('#new-image').onclick = () => { $('#detail-dialog').close(); state.drafts.create = ''; state.mode = 'create'; state.seed = null; state.composerCollapsed = false; renderComposer(); changeView('library'); $('#prompt').focus(); };
 function searchImages(immediate=false) {
   clearTimeout(searchTimer); state.query = $('#search').value; gallerySignature = '';
   if (immediate) refresh(); else searchTimer = setTimeout(refresh,250);

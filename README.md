@@ -22,6 +22,11 @@ results after confirmation,
 and reuse the settings saved with every image. The library persists in
 `studio-data/`. See [the website guide](studio/README.md).
 
+The library groups originals and their edits into projects, including upload-only
+photos. Its fullscreen editor supports parent/original comparison, pinch zoom,
+branching edit histories, and per-image deletion. Local timing estimates and a
+server status panel show progress and available Mac memory.
+
 The website runs in Docker; ComfyUI runs natively so MLX can use the Mac's GPU.
 Both reuse the models already installed in this checkout.
 The launcher also installs a verified 5 MB Real-ESRGAN upscaler. Large outputs

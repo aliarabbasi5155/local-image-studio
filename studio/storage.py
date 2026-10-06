@@ -4,6 +4,7 @@ import sqlite3
 import time
 import uuid
 from pathlib import Path
+from .projects import Projects
 
 
 class Store:
@@ -35,14 +36,15 @@ class Store:
         """)
         self.db.commit()
         self.recover_deletions()
+        self.projects = Projects(self)
 
     def recover_deletions(self):
         # A crash before the DB commit restores the files; after it, finish
         # removing them. Staged files cannot be served by the media route.
-        for folder in ("images", "thumbs"):
+        for folder in ("images", "uploads", "thumbs"):
             for staged in (self.directory / folder).glob("*.deleting"):
                 original = staged.with_suffix("")
-                exists = self.one("SELECT id FROM images WHERE id=?", (original.stem,))
+                exists = self.one("SELECT id FROM images WHERE id=? UNION SELECT id FROM uploads WHERE id=?", (original.stem,original.stem))
                 if exists and not original.exists():
                     staged.rename(original)
                 else:
@@ -60,6 +62,7 @@ class Store:
             with self.db:
                 self.db.execute("DELETE FROM images WHERE id=?", (image_id,))
                 self.db.execute("DELETE FROM jobs WHERE id=?", (image_id,))
+                self.db.execute("UPDATE versions SET deleted=1 WHERE id=?", (image_id,))
         except BaseException:
             for original, temporary in reversed(staged):
                 temporary.rename(original)
@@ -89,6 +92,8 @@ class Store:
             for index, recipe in enumerate(recipes, 1):
                 job_id = str(uuid.uuid4())
                 recipe = dict(recipe, image_id=job_id, batch_id=batch_id, variation=index)
+                project_id, parent_id = self.projects.add_version(job_id, recipe, time.time())
+                recipe.update(project_id=project_id, parent_version_id=parent_id)
                 self.db.execute("INSERT INTO jobs (id,batch_id,variation,created,status,recipe) VALUES (?,?,?,?,?,?)",
                                 (job_id, batch_id, index, time.time(), "queued", json.dumps(recipe)))
                 ids.append(job_id)

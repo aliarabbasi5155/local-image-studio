@@ -1,0 +1,45 @@
+{
+  "database_records_unchanged": true,
+  "existing_images": 63,
+  "existing_uploads": 47,
+  "projects": 39,
+  "versions": 98,
+  "library_projects": 36,
+  "tests_passed": 24,
+  "browser_checks": [
+    "desktop and portrait/landscape phone layouts",
+    "chronological branch labels and deleted-parent comparisons",
+    "root/parent comparison choice",
+    "fullscreen and hidden controls",
+    "synchronized two-pointer zoom",
+    "edit submission and automatic selection of completed result",
+    "upload-only root, JPG download, uploaded-image favorite",
+    "project navigation and preserved editor settings",
+    "single-version and whole-project deletion through confirmation dialogs"
+  ],
+  "test_images": "synthetic only",
+  "deployment": {
+    "health_status": 200,
+    "all_assets_match": true,
+    "all_existing_files_and_pin_unchanged": true,
+    "old_database_records_unchanged": {
+      "images": true,
+      "uploads": true,
+      "jobs": true
+    },
+    "login_status": 200,
+    "library_projects": 36,
+    "project_counts": {
+      "library": 36,
+      "favorites": 21,
+      "archive": 3
+    },
+    "engine_ready": true,
+    "mac_memory_detected": true,
+    "active_images": 0,
+    "estimate_available": true,
+    "matching_runs": 5,
+    "logout_status": 200
+  },
+  "database_backup": "studio-data/backups/before-project-editor-20261006T180836Z.sqlite3"
+}

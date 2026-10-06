@@ -7,27 +7,42 @@ THE PHONE-FRIENDLY WEBSITE
 4. For your phone, use the "On your phone" address on the same Wi-Fi.
 
 Create = type a description, choose quality, size and variations, then Create image.
-Minimize folds the bottom panel away. Expand brings it back with your draft kept.
-Your browser remembers this choice. Starting an edit or a new creation opens it.
-Edit image = upload a photo and describe what should change.
-Output size: Match original keeps the exact photo dimensions when editing.
-2K = 2048 pixels on the longest edge; 4K = 4096 pixels on the longest edge.
-Edits keep the photo's shape. Create uses your chosen Square/Portrait/Landscape.
-Resize: Resize / AI upscale keeps the usual behavior. No resize - native size
-saves the model output as-is. No resize - full size generates at the selected
-size directly, takes longer and uses more memory. Dimensions use 16-pixel steps.
-The final size is shown before you start. Reuse settings keeps your Resize choice.
-Preset uses the normal quality/shape size. Edit this image starts at Match original.
-Tap an image to edit it again, download it or reuse its saved settings.
-Open an edited image and drag the Before / after divider left or right.
-Original is on the left; Edited is on the right. Reset returns to half-and-half.
-The heart adds a favorite. Archive keeps the image; Restore brings it back.
-The down arrow on a thumbnail lets you download PNG or JPG at the full saved size.
-PNG includes saved settings; JPG is easy to share. Recipes stay in your studio.
-The trash icon, or Delete image in the image details, opens a confirmation.
-Delete permanently removes the result and its settings from the website.
-Keep image cancels. Use Archive if you may want to restore it later.
-Other images and saved editing photos stay available.
+Each generated image starts a project. Upload image saves a photo as a new project
+and opens its editor. You can close it without doing an edit; the original stays.
+Minimize folds the main Create panel away. Expand brings your draft back.
+
+Open a project to see Image 0, its generated or uploaded original.
+The thumbnails below show all its edits in time order. Tap one to select it.
+Type in the box below the photo to edit that selected image. Each variation becomes
+another child in the same project. The prompt that made the image is shown too.
+Compare with Immediate parent or Original (Image 0), then move the divider/slider.
+Deleted parents stay available as comparison sources; their thumbnail disappears.
+Use the previous/next arrows at the top to switch projects.
+Pinch the photo to zoom, or use the +/- and 100% buttons. Drag to pan while zoomed.
+Fullscreen uses the whole screen when the browser supports it. Hide controls,
+or tap the photo/background, for an uncluttered view; tap again to show controls.
+Escape returns from browser fullscreen. H toggles controls. Left/right move
+between versions; Shift + left/right move between projects when the photo is focused.
+
+Edit settings contains Quality, Output size, Resize, Variations, Seed and SNOFS.
+Match original keeps the exact photo dimensions with Resize / AI upscale.
+2K / 4K = 2048 / 4096 pixels on the longest edge. Edits keep the photo's shape.
+No resize - native size saves the smaller model output directly. No resize -
+full size generates directly at the selected size, in 16-pixel steps; it takes
+longer and uses more memory. Choices and prompts stay saved in each image recipe.
+
+The menu beside the project arrows lets you favorite the selected image,
+reuse settings, download its recipe, archive the project or delete it.
+Delete this image removes only that version. Its descendants are kept.
+Delete whole project removes its original and all edits after confirmation.
+The down arrow on a library thumbnail downloads the original as PNG or JPG.
+Downloads below the selected image save that version. JPG is easy to share;
+PNG keeps generation settings. Uploaded originals have no generation recipe.
+
+Estimated times are approximate ranges, learned from completed runs on your Mac.
+Queued images show estimated time remaining, including the studio queue.
+Tap the server status above the library for memory, recent image times, queue,
+engine response and free image storage. These readings refresh automatically.
 Start with Fast quality while exploring. All results save automatically.
 Keep your Mac awake and Docker Desktop running while generating.
 Your PIN and library stay in studio-data. Full guide: studio/README.md.

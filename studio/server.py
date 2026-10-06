@@ -16,6 +16,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .engine import Engine, QUALITIES, make_thumbnail
 from .storage import Store
+from .metrics import Metrics
 from .sizing import OUTPUT_SIZES, RESIZE_MODES, MAX_PIXELS, plan_size
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,7 +61,7 @@ async def index(request):
 
 async def static_file(request):
     name = request.match_info["name"]
-    if name not in ("app.js", "style.css", "icon.svg", "manifest.json"):
+    if name not in ("app.js", "projects.js", "style.css", "projects.css", "icon.svg", "manifest.json"):
         raise web.HTTPNotFound()
     return web.FileResponse(STATIC / name)
 
@@ -124,7 +125,7 @@ def normalized_upload(content, path, thumb):
     return width, height, hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-async def save_upload(state, content, name):
+async def save_upload(state, content, name, create_project=False):
     upload_id = str(uuid.uuid4())
     directory = state["store"].directory
     path = directory / "uploads" / (upload_id + ".png")
@@ -134,7 +135,11 @@ async def save_upload(state, content, name):
         path.unlink(missing_ok=True)
         raise ValueError("Choose a valid PNG, JPEG or WebP photo under 20 MB and 16 megapixels.")
     state["store"].execute("INSERT INTO uploads VALUES (?,?,?,?,?,?)", (upload_id, time.time(), name[:150], width, height, digest))
-    return {"id": upload_id, "name": name[:150], "width": width, "height": height, "url": f"/media/upload/{upload_id}", "thumbnail": f"/media/thumb/{upload_id}"}
+    result = {"id": upload_id, "name": name[:150], "width": width, "height": height, "url": f"/media/upload/{upload_id}", "thumbnail": f"/media/thumb/{upload_id}"}
+    if create_project:
+        result["project_id"] = state["store"].projects.create_upload(state["store"].one("SELECT * FROM uploads WHERE id=?", (upload_id,)))
+        result["parent_version_id"] = upload_id
+    return result
 
 
 async def upload(request):
@@ -147,7 +152,7 @@ async def upload(request):
         chunks.extend(chunk)
         if len(chunks) > MAX_UPLOAD:
             return failure("Choose an image smaller than 20 MB.", 413)
-    return web.json_response(await save_upload(request.app[STATE], bytes(chunks), part.filename or "Photo"), status=201)
+    return web.json_response(await save_upload(request.app[STATE], bytes(chunks), part.filename or "Photo", create_project=True), status=201)
 
 
 async def edit_source(request):
@@ -158,6 +163,10 @@ async def edit_source(request):
     data = (state["store"].directory / "images" / image["filename"]).read_bytes()
     result = await save_upload(state, data, "Studio image")
     result["parent_image_id"] = image["id"]
+    state["store"].projects.sync()
+    member = state["store"].one("SELECT * FROM versions WHERE id=?", (image["id"],))
+    state["store"].projects.bind_source(result["id"], member["project_id"], image["id"])
+    result.update(project_id=member["project_id"], parent_version_id=image["id"])
     return web.json_response(result, status=201)
 
 
@@ -184,7 +193,12 @@ async def generate(request):
     source = state["store"].one("SELECT * FROM uploads WHERE id=?", (source_id,)) if mode == "edit" else None
     if mode == "edit" and not source:
         return failure("Upload a photo or choose an image from your library first.")
-    parent_id = payload.get("parent_image_id")
+    if source and not state["store"].projects.source(source_id):
+        state["store"].projects.create_upload(source)
+    binding = state["store"].projects.source(source_id) if source else None
+    if payload.get("project_id") and (not binding or binding["project_id"] != payload["project_id"]):
+        return failure("Choose an editing photo from this project.")
+    parent_id = binding["parent_id"] if binding and state["store"].image(binding["parent_id"]) else None
     if parent_id and not state["store"].image(parent_id):
         # The saved editing source is independent of the parent image, so a
         # reused recipe still works after that earlier result is deleted.
@@ -212,7 +226,128 @@ async def generate(request):
 async def jobs(request):
     store = request.app[STATE]["store"]
     rows = store.rows("SELECT id FROM jobs WHERE status IN ('queued','submitted','running') OR created>? ORDER BY created DESC,variation LIMIT 100", (time.time() - 86400,))
-    return web.json_response({"jobs": [store.job(row["id"]) for row in rows]})
+    estimates = request.app[STATE]["metrics"].queue()
+    return web.json_response({"jobs": [dict(store.job(row["id"]), estimate=estimates.get(row["id"])) for row in rows]})
+
+
+async def project_library(request):
+    section = request.query.get("section","library")
+    if section not in ("library","favorites","archive"):
+        return failure("Choose Library, Favorites or Archive.")
+    result = request.app[STATE]["store"].projects.library(section,request.query.get("q","")[:200],
+                  max(0,int(request.query.get("offset",0))), min(1000,max(1,int(request.query.get("limit",48)))))
+    return web.json_response(result)
+
+
+async def project_detail(request):
+    project = request.app[STATE]["store"].projects.detail(request.match_info["id"])
+    if not project:
+        raise web.HTTPNotFound()
+    return web.json_response(project)
+
+
+async def update_project(request):
+    store = request.app[STATE]["store"]
+    project_id = request.match_info["id"]
+    if not store.projects.detail(project_id):
+        raise web.HTTPNotFound()
+    payload = await request.json()
+    if not isinstance(payload,dict) or not payload or set(payload)-{"favorite","archived"} or any(type(v) is not bool for v in payload.values()):
+        return failure("Choose favorite or archive as true or false.")
+    with store.db:
+        store.db.execute(f"UPDATE projects SET {','.join(k+'=?' for k in payload)} WHERE id=?", (*map(int,payload.values()),project_id))
+        if payload.get("favorite") is False:
+            store.db.execute("UPDATE images SET favorite=0 WHERE id IN (SELECT id FROM versions WHERE project_id=?)", (project_id,))
+            store.db.execute("UPDATE versions SET favorite=0 WHERE project_id=?", (project_id,))
+    return web.json_response(store.projects.detail(project_id))
+
+
+async def project_edit_source(request):
+    state = request.app[STATE]
+    version = state["store"].projects.version(request.match_info["version_id"])
+    if not version or version["project_id"] != request.match_info["id"] or not version["ready"]:
+        raise web.HTTPNotFound()
+    if version["kind"] == "image":
+        content = (state["store"].directory / "images" / (version["id"]+".png")).read_bytes()
+        result = await save_upload(state,content,"Studio image")
+        state["store"].projects.bind_source(result["id"],version["project_id"],version["id"])
+        result["parent_image_id"] = version["id"]
+    else:
+        upload = state["store"].one("SELECT * FROM uploads WHERE id=?", (version["id"],))
+        result = {"id":upload["id"],"name":upload["name"],"width":upload["width"],"height":upload["height"],
+                  "url":version["url"],"thumbnail":version["thumbnail"]}
+    result.update(project_id=version["project_id"],parent_version_id=version["id"])
+    return web.json_response(result, status=201)
+
+
+async def update_version(request):
+    store = request.app[STATE]["store"]
+    version = store.projects.version(request.match_info["version_id"])
+    if not version or version["project_id"] != request.match_info["id"] or not version["ready"]:
+        raise web.HTTPNotFound()
+    payload = await request.json()
+    if not isinstance(payload,dict) or set(payload) != {"favorite"} or type(payload["favorite"]) is not bool:
+        return failure("Choose favorite as true or false.")
+    table = "images" if version["kind"] == "image" else "versions"
+    store.execute(f"UPDATE {table} SET favorite=? WHERE id=?", (int(payload["favorite"]),version["id"]))
+    return web.json_response(store.projects.version(version["id"]))
+
+
+async def delete_project(request):
+    store = request.app[STATE]["store"]
+    if not store.projects.detail(request.match_info["id"]):
+        raise web.HTTPNotFound()
+    payload = await request.json()
+    if not isinstance(payload,dict) or payload.get("confirm") is not True:
+        return failure("Confirm permanent deletion of the whole project first.")
+    try:
+        store.projects.delete(request.match_info["id"])
+    except ValueError as error:
+        return failure(str(error),409)
+    return web.json_response({"ok":True})
+
+
+async def delete_version(request):
+    store = request.app[STATE]["store"]
+    project = store.projects.detail(request.match_info["id"])
+    version = store.projects.version(request.match_info["version_id"])
+    if not project or not version or version["project_id"] != project["id"]:
+        raise web.HTTPNotFound()
+    if version["id"] == project["root_id"]:
+        return failure("Use Delete project in the menu to remove the original and its edits.",409)
+    if version["status"] in ACTIVE:
+        return failure("Stop the queued image first, or wait for it to finish.",409)
+    payload = await request.json()
+    if not isinstance(payload,dict) or payload.get("confirm") is not True:
+        return failure("Confirm deletion of this image first.")
+    store.delete_image(version["id"])
+    return web.json_response({"ok":True})
+
+
+async def estimate(request):
+    state = request.app[STATE]
+    payload = await request.json()
+    quality,aspect,mode = payload.get("quality","balanced"),payload.get("aspect","square"),payload.get("mode","create")
+    if quality not in QUALITIES or aspect not in QUALITIES[quality]["sizes"] or mode not in ("create","edit"):
+        return failure("Choose a valid quality and shape.")
+    source = state["store"].one("SELECT * FROM uploads WHERE id=?", (payload.get("source_id"),)) if mode == "edit" else None
+    if mode == "edit" and payload.get("version_id"):
+        version = state["store"].projects.version(payload["version_id"])
+        if version and version["ready"] and version["project_id"] == payload.get("project_id"):
+            source = {"width":version["width"],"height":version["height"]}
+    if mode == "edit" and not source:
+        return failure("Choose a photo first.")
+    size = plan_size(quality,aspect,mode,source,payload.get("output_size","preset"),QUALITIES,state["upscaler"],payload.get("resize_mode","auto"))
+    recipe = dict(size,mode=mode,model=QUALITIES[quality]["model"])
+    prediction = state["metrics"].estimate(recipe)
+    queue = state["metrics"].queue()
+    last = list(queue.values())[-1] if queue else None
+    prediction.update(queue_low=last["remaining_low"] if last else 0,queue_high=last["remaining_high"] if last else 0)
+    return web.json_response(prediction)
+
+
+async def metrics(request):
+    return web.json_response(await request.app[STATE]["metrics"].status())
 
 
 async def cancel(request):
@@ -361,6 +496,7 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
                   "adapter": json.loads((ROOT / "config/loras.json").read_text())["snofs-klein-9b-v1.4"],
                   "upscaler": json.loads((ROOT / "config/upscaler.json").read_text()),
                   "runtime": json.loads((ROOT / "config/runtime.json").read_text())}
+    app[STATE]["metrics"] = Metrics(store,engine)
     if start_worker:
         app.cleanup_ctx.append(engine.context)
     async def close_store(app):
@@ -370,6 +506,12 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
         web.get("/", index), web.get("/static/{name}", static_file),
         web.get("/api/auth", auth), web.post("/api/login", login), web.post("/api/logout", logout),
         web.get("/api/health", health), web.get("/api/options", options),
+        web.get("/api/projects",project_library), web.get("/api/projects/{id}",project_detail),
+        web.patch("/api/projects/{id}",update_project), web.delete("/api/projects/{id}",delete_project),
+        web.post("/api/projects/{id}/versions/{version_id}/edit-source",project_edit_source),
+        web.patch("/api/projects/{id}/versions/{version_id}",update_version),
+        web.delete("/api/projects/{id}/versions/{version_id}",delete_version),
+        web.post("/api/estimate",estimate), web.get("/api/metrics",metrics),
         web.post("/api/uploads", upload), web.post("/api/generate", generate),
         web.get("/api/jobs", jobs), web.post("/api/jobs/{id}/cancel", cancel),
         web.get("/api/images", library), web.get("/api/images/{id}", image_detail),
