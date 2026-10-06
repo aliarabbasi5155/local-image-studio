@@ -24,8 +24,12 @@ and reuse the settings saved with every image. The library persists in
 
 The library groups originals and their edits into projects, including upload-only
 photos. Its fullscreen editor supports parent/original comparison, pinch zoom,
-branching edit histories, and per-image deletion. Local timing estimates and a
-server status panel show progress and available Mac memory.
+branching edit histories, and per-image deletion. Compare can be toggled, controls
+fade in and out, and tapping the photo edges moves between images and projects.
+Projects sort by their latest edit; Favorites shows individual images. Selection
+tools provide bulk favorites, deletion and full-size PNG/JPG ZIP downloads.
+Measured engine-step progress, timing from similar completed runs and a server
+status panel show the Mac's work and available memory.
 For local changes, Paint an area adds an optional brush mask. The editor works on
 a crop and blends the selected area back into the original, preserving unpainted
 pixels and the original dimensions. Masks are saved with submitted image recipes.

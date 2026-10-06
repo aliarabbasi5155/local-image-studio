@@ -222,7 +222,8 @@ class Engine:
                 fraction = data["value"] / max(1, data["max"])
                 processed = self.store.job(job_id)["recipe"].get("processing", {}).get("method", "none") != "none"
                 self.store.update_job(job_id, status="running", phase="Enhancing image detail" if enhancing else "Creating your image",
-                                      progress=min(0.95, .65 + .3 * fraction if enhancing else fraction * (.6 if processed else .95)))
+                                      progress=min(0.95, .65 + .3 * fraction if enhancing else fraction * (.6 if processed else .95)),
+                                      progress_detail=json.dumps({"stage":"enhancing" if enhancing else "sampling", "value":data["value"], "total":data["max"]}))
 
     async def finish(self, job, history):
         recipe = job["recipe"]
@@ -259,7 +260,7 @@ class Engine:
         with self.store.db:
             self.store.db.execute("INSERT OR IGNORE INTO images (id,created,filename,recipe) VALUES (?,?,?,?)",
                                   (job["id"], time.time(), path.name, json.dumps(recipe)))
-            self.store.db.execute("UPDATE jobs SET status='complete',phase='Complete',progress=1,finished=? WHERE id=?",
+            self.store.db.execute("UPDATE jobs SET status='complete',phase='Complete',progress=1,progress_detail=NULL,finished=? WHERE id=?",
                                   (time.time(), job["id"]))
 
     async def run_job(self, job):

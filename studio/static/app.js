@@ -5,7 +5,7 @@ const escapeHTML = text => String(text ?? '').replace(/[&<>"']/g, c => ({'&':'&a
 const activeStatuses = ['queued', 'submitted', 'running'];
 let saved;
 try { saved = JSON.parse(localStorage.getItem('studio-composer') || '{}'); } catch { saved = {}; }
-const state = {view:'library', projects:[], jobs:[], total:0, query:'', options:null, detail:null,
+const state = {view:'library', projects:[], navigation:[], jobs:[], total:0, query:'', options:null, detail:null,
   mode:'create', quality:saved.quality || 'balanced', aspect:saved.aspect || 'square',
   outputSize:saved.outputSize || (saved.mode === 'edit' ? 'original' : 'preset'),
   resizeMode:saved.resizeMode || 'auto',
@@ -21,7 +21,7 @@ async function api(path, options={}) {
   const body = await response.json();
   if (!response.ok) {
     if (response.status === 401 && path !== '/api/login') showLogin();
-    throw new Error(body.error || 'Something went wrong. Please try again.');
+    const error=new Error(body.error || 'Something went wrong. Please try again.');error.status=response.status;throw error;
   }
   return body;
 }
@@ -152,24 +152,23 @@ function imageHTML(project) {
   const cover = project.cover;
   const pending = project.pending.filter(v => activeStatuses.includes(v.status));
   const failed = project.pending.find(v => v.status === 'failed');
-  const job = pending[0]?.job;
-  return `<article class="image-card project-card"><div class="card-preview"><button class="image-open" data-action="project" data-id="${project.id}" aria-label="Open project: ${escapeHTML(project.title.slice(0,100))}">${cover ? `<img src="${cover.thumbnail}" alt="${escapeHTML(project.title)}" loading="lazy">` : `<span class="project-placeholder">${icon('spark')}<span>${failed ? 'Needs attention' : 'Creating the original…'}</span></span>`}</button><div class="card-actions"><button data-action="project-favorite" data-id="${project.id}" class="${project.favorite ? 'favorited' : ''}" aria-label="${project.favorite ? 'Remove project from favorites' : 'Favorite project'}" aria-pressed="${project.favorite}">${icon('heart')}</button><button data-action="project-archive" data-id="${project.id}" aria-label="${project.archived ? 'Restore project' : 'Archive project'}">${icon(project.archived ? 'restore' : 'archive')}</button><button data-action="project-delete" data-id="${project.id}" class="delete-image" aria-label="Delete whole project">${icon('trash')}</button></div>${cover ? `<details class="card-download"><summary aria-label="Download original image" title="Choose PNG or JPG">${icon('download')}</summary><div class="download-menu">${downloadLinks(cover,true)}</div></details>` : ''}</div><div class="card-info"><p>${escapeHTML(project.title)}</p><div class="card-meta"><span class="tag">${cover?.kind === 'upload' ? 'Uploaded' : 'Original'}</span><span>${project.edits} ${project.edits === 1 ? 'edit' : 'edits'}</span><span class="date">${dateText(project.created)}</span></div>${job ? `<div class="project-job"><span>${escapeHTML(job.phase)}</span><span data-job-eta="${job.id}"></span><div class="progress-track"><span data-progress="${job.id}"></span></div></div>` : failed ? '<div class="job-error">An image needs attention. Open to retry.</div>' : ''}</div></article>`;
+  const job = state.jobs.find(j=>j.id===pending[0]?.id) || pending[0]?.job;
+  return `<article class="image-card project-card ${bulk.gallery.ids.has(project.id)?'is-selected':''}"><div class="card-preview"><button class="image-open" data-action="project" data-id="${project.id}" aria-label="Open project: ${escapeHTML(project.title.slice(0,100))}">${cover ? `<img src="${cover.thumbnail}" alt="${escapeHTML(project.title)}" loading="lazy">` : `<span class="project-placeholder">${icon('spark')}<span>${failed ? 'Needs attention' : 'Creating the original…'}</span></span>`}</button>${bulkBox('gallery',project.id,project.title)}<div class="card-actions"><button data-action="project-favorite" data-id="${project.id}" class="${project.favorite ? 'favorited' : ''}" aria-label="${project.favorite ? `Contains ${project.favorite_count} favorite images. Remove all image favorites` : 'Favorite all images in project'}" title="${project.favorite_count ? `${project.favorite_count} favorite images · click to unfavorite all` : 'Favorite all images'}" aria-pressed="${project.favorite}">${icon('heart')}</button><button data-action="project-archive" data-id="${project.id}" aria-label="${project.archived ? 'Restore project' : 'Archive project'}">${icon(project.archived ? 'restore' : 'archive')}</button><button data-action="project-delete" data-id="${project.id}" class="delete-image" aria-label="Delete whole project">${icon('trash')}</button></div>${cover ? `<details class="card-download"><summary aria-label="Download original image" title="Choose PNG or JPG">${icon('download')}</summary><div class="download-menu">${downloadLinks(cover,true)}</div></details>` : ''}${job?progressHTML(job):''}</div><div class="card-info"><p>${escapeHTML(project.title)}</p><div class="card-meta"><span class="tag">${cover?.kind === 'upload' ? 'Uploaded' : 'Original'}</span><span>${project.edits} ${project.edits === 1 ? 'edit' : 'edits'}</span>${project.favorite_count?`<span class="favorite-count" title="Favorite images">♥ ${project.favorite_count}</span>`:''}<span class="date">${dateText(project.updated)}</span></div>${failed?'<div class="job-error">An image needs attention. Open to retry.</div>':''}</div></article>`;
+}
+function favoriteHTML(image) {
+  return `<article class="image-card favorite-card ${bulk.gallery.ids.has(image.id)?'is-selected':''}"><div class="card-preview"><button class="image-open" data-action="favorite-open" data-id="${image.id}" aria-label="Open favorite image: ${escapeHTML(image.prompt.slice(0,100))}"><img src="${image.thumbnail}" alt="${escapeHTML(image.prompt)}" loading="lazy"></button>${bulkBox('gallery',image.id,image.prompt)}<div class="card-actions"><button data-action="favorite-toggle" data-id="${image.id}" class="favorited" aria-label="Remove image from favorites" aria-pressed="true">${icon('heart')}</button><button data-action="favorite-delete" data-id="${image.id}" class="delete-image" aria-label="Delete this image">${icon('trash')}</button></div><details class="card-download"><summary aria-label="Download favorite image">${icon('download')}</summary><div class="download-menu">${downloadLinks(image,true)}</div></details></div><div class="card-info"><p>${escapeHTML(image.recipe?image.prompt:image.project_title)}</p><div class="card-meta"><span class="tag">${image.is_root?'Original':image.recipe?.masked_edit?'Area edit':'Edit'}</span><span>${image.width} × ${image.height}</span><span class="date">${dateText(image.created)}</span></div></div></article>`;
 }
 function renderGallery() {
-  const signature = JSON.stringify([state.view,state.query,state.projects]);
+  const signature = JSON.stringify([state.view,state.query,state.projects.map(p=>[p.id,p.title,p.favorite,p.favorite_count,p.updated,p.edits,p.cover?.id,p.pending?.map(v=>[v.id,v.status])])]);
   if (signature !== gallerySignature) {
     gallerySignature = signature;
-    $('#gallery').innerHTML = state.projects.map(imageHTML).join('') || emptyHTML();
+    $('#gallery').innerHTML = state.projects.map(state.view==='favorites'?favoriteHTML:imageHTML).join('') || emptyHTML();
   }
-  for (const job of state.jobs) {
-    const progress = document.querySelector(`[data-progress="${job.id}"]`);
-    if (progress) progress.style.width = `${Math.round(job.progress*100)}%`;
-    const element = document.querySelector(`[data-job-eta="${job.id}"]`);
-    if (element && typeof jobEstimateText === 'function') element.textContent = jobEstimateText(job);
-  }
+  updateWorkBadges();renderBulk('gallery');
   $('#load-more').hidden = state.projects.length >= state.total;
   $('#page-title').firstChild.textContent = {library:'Your library',favorites:'Your favorites',archive:'Your archive'}[state.view];
-  $('#page-count').textContent = `${state.total} ${state.total === 1 ? 'project' : 'projects'}`;
+  const unit=state.view==='favorites'?'image':'project';
+  $('#page-count').textContent = `${state.total} ${unit}${state.total===1?'':'s'}`;
   document.querySelectorAll('[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === state.view));
 }
 async function refresh(loadMore=false) {
@@ -179,10 +178,11 @@ async function refresh(loadMore=false) {
     const offset = loadMore ? state.projects.length : 0;
     const view = state.view, query = state.query, revision = libraryRevision;
     const limit = loadMore ? 48 : Math.max(48,state.projects.length);
-    const [library, jobs] = await Promise.all([api(`/api/projects?section=${view}&q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`), api('/api/jobs')]);
+    const [library, jobs] = await Promise.all([api(`${view==='favorites'?'/api/favorites':'/api/projects'}?section=${view}&q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`), api('/api/jobs')]);
     if (view !== state.view || query !== state.query || revision !== libraryRevision) { setTimeout(refresh,0); return; }
-    if (loadMore) state.projects.push(...library.projects); else state.projects = library.projects;
-    state.jobs = jobs.jobs; state.total = library.total;
+    const entries=view==='favorites'?library.images:library.projects;
+    if (loadMore) {const seen=new Set(state.projects.map(p=>p.id));state.projects.push(...entries.filter(p=>!seen.has(p.id)));} else state.projects = entries;
+    state.navigation=library.navigation;state.jobs = jobs.jobs; state.total = library.total;
     for (const view of ['library','favorites','archive']) $(`#count-${view}`).textContent = library.counts[view];
     renderGallery();
     if (typeof refreshOpenProject === 'function') await refreshOpenProject();
@@ -190,7 +190,7 @@ async function refresh(loadMore=false) {
   finally { fetching = false; }
 }
 async function changeView(view) {
-  state.view = view; gallerySignature = ''; await refresh(); window.scrollTo({top:0,behavior:'smooth'});
+  libraryRevision++;state.view = view;state.projects=[];state.total=0;bulk.gallery.active=false;bulk.gallery.ids.clear();gallerySignature = ''; await refresh(); window.scrollTo({top:0,behavior:'smooth'});
 }
 function setMode(mode) {
   persist(); if (mode === 'edit' && state.mode !== 'edit' && state.outputSize === 'preset') state.outputSize = 'original';

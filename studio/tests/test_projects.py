@@ -107,7 +107,11 @@ class ProjectTests(unittest.IsolatedAsyncioTestCase):
         six, = await self.edit(pid,five)
         self.assertEqual(self.store.job(six)['recipe']['parent_version_id'],five)
         self.assertEqual((await (await self.client.get('/api/projects')).json())['total'],1)
-        self.assertEqual((await self.client.delete(f'/api/projects/{pid}/versions/{root["id"]}',json={'confirm':True})).status,409)
+        self.assertEqual((await self.client.delete(f'/api/projects/{pid}/versions/{root["id"]}',json={'confirm':True})).status,200)
+        project = await (await self.client.get('/api/projects/'+pid)).json()
+        self.assertNotIn(root['id'],[v['id'] for v in project['versions']])
+        self.assertTrue(project['root']['recovered'])
+        self.assertEqual((await self.client.get(project['root']['url'])).status,200)
 
     async def test_cross_project_source_is_rejected_and_parent_is_derived_from_saved_source(self):
         root,other = await self.upload(),await self.upload()

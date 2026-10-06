@@ -1,27 +1,16 @@
 'use strict';
 let editorSaved = {};
 try { editorSaved = JSON.parse(localStorage.getItem('studio-editor') || '{}'); } catch {}
-const viewer = {project:null, selected:null, compare:'parent', controls:true, position:50,
+const viewer = {project:null, selected:null, compare:'parent', comparison:editorSaved.comparison !== false, controls:true, position:50,
   zoom:1, x:0, y:0, sources:new Map(), drafts:editorSaved.drafts || {},
   settings:{quality:state.quality,output_size:'original',resize_mode:state.resizeMode,variations:1,snofs:state.snofs,seed:null,...editorSaved.settings},
-  autoSelect:null, loading:0, observer:null};
+  autoSelect:null, loading:0, observer:null, controlsTimer:null};
 let mainEstimateTimer, viewerEstimateTimer, estimateRevision=0, viewerEstimateRevision=0;
 const duration = seconds => seconds >= 60 ? `${Math.max(1,Math.round(seconds/60))} min` : `${Math.max(1,Math.round(seconds))} sec`;
 const timeRange = (low,high) => low == null || high == null ? null :
   high >= 60 ? `${Math.max(1,Math.floor(low/60))}–${Math.max(1,Math.ceil(high/60))} min` : `${Math.max(1,Math.floor(low))}–${Math.max(1,Math.ceil(high))} sec`;
-function jobEstimateText(job) {
-  if (!job.estimate) return 'Estimating…';
-  if (job.estimate.overdue) return 'Taking longer than the recent average';
-  const range = timeRange(job.estimate.remaining_low,job.estimate.remaining_high);
-  const clock = seconds => new Date(Date.now()+seconds*1000).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
-  return range ? `About ${range} left · around ${clock(job.estimate.remaining_low)}–${clock(job.estimate.remaining_high)}${job.estimate.queue_position ? ' · includes queue' : ''}` : 'Learning the timing for this size';
-}
 function estimateText(prediction,count=1) {
-  const range = timeRange(prediction.low,prediction.high);
-  if (!range) return prediction.reason;
-  const total = timeRange(prediction.low*count+(prediction.queue_low || 0),prediction.high*count+(prediction.queue_high || 0));
-  const queueUnknown = prediction.queue_high == null;
-  return `About ${range} per image${count > 1 || prediction.queue_high ? ` · ${total} for this request, including the queue` : ''}${queueUnknown ? ' · queue wait not yet known' : ''} · approximate`;
+  return prediction.seconds==null ? 'Timing · learning this size' : `≈${duration(prediction.seconds)}${count>1?' per image':''} · ${prediction.samples} similar run${prediction.samples===1?'':'s'}`;
 }
 function scheduleEstimate() {
   clearTimeout(mainEstimateTimer);
@@ -29,7 +18,7 @@ function scheduleEstimate() {
   mainEstimateTimer = setTimeout(async () => {
     if (!state.authenticated) return;
     try {
-      const estimate = await send('/api/estimate',{mode:'create',quality:state.quality,aspect:state.aspect,output_size:state.outputSize,resize_mode:state.resizeMode});
+      const estimate = await send('/api/estimate',{mode:'create',quality:state.quality,aspect:state.aspect,output_size:state.outputSize,resize_mode:state.resizeMode,snofs:state.snofs});
       if (revision === estimateRevision) { $('#estimate-hint').textContent = estimateText(estimate,state.variations); $('#estimate-hint').title = `${estimate.reason}. ${estimate.samples} matching recent runs.`; }
     } catch (error) { if (revision === estimateRevision) $('#estimate-hint').textContent = error.message; }
   },250);
@@ -37,7 +26,7 @@ function scheduleEstimate() {
 function saveEditor() {
   const keys = Object.keys(viewer.drafts);
   for (const key of keys.slice(0,Math.max(0,keys.length-200))) delete viewer.drafts[key];
-  try { localStorage.setItem('studio-editor',JSON.stringify({settings:viewer.settings,drafts:viewer.drafts})); } catch {}
+  try { localStorage.setItem('studio-editor',JSON.stringify({settings:viewer.settings,drafts:viewer.drafts,comparison:viewer.comparison})); } catch {}
 }
 const selectedVersion = () => viewer.project?.versions.find(version => version.id === viewer.selected);
 const draftKey = () => `${viewer.project.id}:${viewer.selected}`;
@@ -47,13 +36,13 @@ function projectMenuHTML() {
 function viewerHTML() {
   return `<section class="project-viewer" aria-label="Project image editor">
     <header class="viewer-header"><div class="viewer-heading"><button class="icon-button" data-close="detail-dialog" aria-label="Back to library">${icon('close')}</button><div><span class="eyebrow">ORIGINAL + EVERY EDIT</span><h2 id="viewer-title"></h2></div><div class="project-navigation"><button class="icon-button" id="previous-project" aria-label="Previous project">${icon('back')}</button><span id="project-counter"></span><button class="icon-button" id="next-project" aria-label="Next project">${icon('next')}</button></div>${projectMenuHTML()}</div>
-      <div class="viewer-tools"><label>Compare with<select id="viewer-compare"><option value="parent">Immediate parent</option><option value="root">Original · Image 0</option></select></label><span id="viewer-lineage"></span><div class="viewer-zoom"><button type="button" id="zoom-out" aria-label="Zoom out">−</button><button type="button" id="zoom-reset" aria-label="Reset zoom">100%</button><button type="button" id="zoom-in" aria-label="Zoom in">＋</button></div><button class="viewer-tool" id="viewer-hide">Hide controls</button><button class="icon-button" id="viewer-fullscreen" aria-label="Fullscreen" aria-pressed="false">${icon('expand')}</button></div>
+      <div class="viewer-tools"><button type="button" id="viewer-compare-toggle" class="viewer-tool compare-toggle" aria-pressed="${viewer.comparison}">${icon('compare')} Compare</button><label id="viewer-reference-choice">With<select id="viewer-compare"><option value="parent">Immediate parent</option><option value="root">Original</option></select></label><span id="viewer-lineage"></span><div class="viewer-zoom"><button type="button" id="zoom-out" aria-label="Zoom out">−</button><button type="button" id="zoom-reset" aria-label="Reset zoom">100%</button><button type="button" id="zoom-in" aria-label="Zoom in">＋</button></div><button class="viewer-tool" id="viewer-hide">Hide controls</button><button class="icon-button" id="viewer-fullscreen" aria-label="Fullscreen" aria-pressed="false">${icon('expand')}</button></div>
     </header>
-    <div class="viewer-canvas"><div class="viewer-frame" tabindex="0" role="group" aria-label="Image comparison. Drag to compare. Pinch to zoom. Tap to toggle controls."><div id="viewer-photo"></div><div class="viewer-divider" aria-hidden="true"><span class="compare-handle">${icon('compare')}</span></div></div><p class="viewer-controls-hint">Tap the photo to show controls</p></div>
-    <div class="viewer-history"><div class="viewer-split"><label class="sr-only" for="viewer-range">Original photo visible</label><input id="viewer-range" type="range" min="0" max="100" value="50"><button id="viewer-reset-split" type="button">Reset split</button><span id="viewer-compare-hint"></span></div><div class="version-strip" role="group" aria-label="Images in chronological order"></div></div>
-    <form id="viewer-edit-form" class="viewer-editor"><div class="viewer-caption"><strong id="viewer-image-label"></strong><details id="viewer-prompt-details"><summary id="viewer-prompt-summary"></summary><p id="viewer-made-prompt"></p></details><div id="viewer-downloads"></div></div><label class="sr-only" for="viewer-edit-prompt">Edit the selected image</label><div class="viewer-edit-line"><textarea id="viewer-edit-prompt" rows="2" maxlength="5000" required placeholder="Describe what to change in this image…"></textarea><button class="primary" id="viewer-generate" type="submit">Edit image ${icon('arrow')}</button></div>
+    <div class="viewer-canvas"><div class="viewer-frame" tabindex="0" role="group" aria-label="Image viewer. Drag to compare. Pinch to zoom. Tap the center for controls or the edges to navigate."><div id="viewer-photo"></div><div class="viewer-divider" aria-hidden="true"><span class="compare-handle">${icon('compare')}</span></div><div class="image-edge edge-left" aria-hidden="true"></div><div class="image-edge edge-right" aria-hidden="true"></div></div><div id="viewer-work"></div><p class="viewer-controls-hint">Tap the center to show controls · edges to navigate</p></div>
+    <div class="viewer-history"><div class="viewer-split"><label class="sr-only" for="viewer-range">Reference photo visible</label><input id="viewer-range" type="range" min="0" max="100" value="50"><button id="viewer-reset-split" type="button">Reset split</button><span id="viewer-compare-hint"></span></div><div id="viewer-bulk"></div><div class="version-strip" role="group" aria-label="Images in chronological order"></div></div>
+    <form id="viewer-edit-form" class="viewer-editor"><div class="viewer-caption"><strong id="viewer-image-label"></strong><details id="viewer-prompt-details"><summary id="viewer-prompt-summary"></summary><p id="viewer-made-prompt"></p></details><button type="button" class="icon-button" id="viewer-copy-prompt" aria-label="Copy image prompt" title="Copy prompt">${icon('copy')}</button><div id="viewer-downloads"></div></div><label class="sr-only" for="viewer-edit-prompt">Edit the selected image</label><div class="viewer-edit-line"><textarea id="viewer-edit-prompt" rows="2" maxlength="5000" required placeholder="Describe what to change in this image…"></textarea><button class="primary" id="viewer-generate" type="submit">Edit image ${icon('arrow')}</button></div>
       <div class="edit-mask-row"><button id="viewer-paint-mask" type="button">Paint an area</button><label><input id="viewer-use-mask" type="checkbox">Selected area only</label><button id="viewer-remove-mask" type="button" hidden>Remove mask</button><span id="viewer-mask-hint"></span></div>
-      <details class="viewer-settings"><summary>Edit settings</summary><div class="viewer-setting-grid"><label>Quality<select id="edit-quality"><option value="fast">Fast</option><option value="balanced">Balanced</option><option value="high">High</option></select></label><label>Output size<select id="edit-size"><option value="original">Match original</option><option value="preset">Preset</option><option value="2k">2K</option><option value="4k">4K</option></select></label><label>Resize<select id="edit-resize"><option value="auto">Resize / AI upscale</option><option value="native">No resize · native size</option><option value="direct">No resize · full size</option></select></label><label>Variations<select id="edit-variations"><option value="1">1 image</option><option value="2">2 images</option><option value="3">3 images</option><option value="4">4 images</option></select></label><label>Seed<input id="edit-seed" type="number" min="0" max="4294967295" placeholder="Random"></label><label class="edit-snofs"><input id="edit-snofs" type="checkbox">SNOFS</label></div></details>
+      <details class="viewer-settings"><summary>${icon('settings')} Edit settings ${icon('chevron')}</summary><div class="settings-recipe"><span id="viewer-recipe-summary"></span><button type="button" id="viewer-copy-settings">${icon('copy')} Copy saved settings</button></div><div class="viewer-setting-grid"><label>Quality<select id="edit-quality"><option value="fast">Fast</option><option value="balanced">Balanced</option><option value="high">High</option></select></label><label>Output size<select id="edit-size"><option value="original">Match original</option><option value="preset">Preset</option><option value="2k">2K</option><option value="4k">4K</option></select></label><label>Resize<select id="edit-resize"><option value="auto">Resize / AI upscale</option><option value="native">No resize · native size</option><option value="direct">No resize · full size</option></select></label><label>Variations<select id="edit-variations"><option value="1">1 image</option><option value="2">2 images</option><option value="3">3 images</option><option value="4">4 images</option></select></label><label>Seed<input id="edit-seed" type="number" min="0" max="4294967295" placeholder="Random"></label><label class="edit-snofs"><input id="edit-snofs" type="checkbox">SNOFS</label></div></details>
       <p id="viewer-estimate" class="estimate-hint" aria-live="polite"></p><p id="viewer-job-status" aria-live="polite"></p><p id="viewer-error" class="error" role="alert" hidden></p>
     </form>
   </section>`;
@@ -62,46 +51,66 @@ async function showProject(projectId,versionId=null) {
   const revision = ++viewer.loading;
   const project = await api(`/api/projects/${projectId}`);
   if (revision !== viewer.loading) return;
+  if(!project.versions.length)return;
+  clearTimeout(viewer.controlsTimer);bulk.viewer.active=false;bulk.viewer.ids.clear();
   viewer.project = project; viewer.controls = true; viewer.autoSelect = null; viewer.position = 50;
+  if(versionId==='last')versionId=project.versions.at(-1)?.id;
   viewer.selected = project.versions.some(v=>v.id===versionId) ? versionId : project.versions.some(v=>v.id===project.root_id) ? project.root_id : project.versions[0]?.id;
   viewer.observer?.disconnect();
   $('#detail-dialog').className = 'project-dialog';
   $('#detail-content').innerHTML = viewerHTML();
-  bindViewer(); renderSelected(); renderTimeline(); renderProjectNavigation();
+  bindViewer();
   if (!$('#detail-dialog').open) $('#detail-dialog').showModal();
   syncViewerHeight();
+  renderSelected(); renderTimeline(); renderProjectNavigation();
   viewer.observer = new ResizeObserver(fitViewerImage);
   viewer.observer.observe($('.viewer-canvas'));
 }
 function renderProjectNavigation() {
   $('#viewer-title').textContent = viewer.project.title;
-  const index = state.projects.findIndex(p=>p.id===viewer.project.id);
-  $('#project-counter').textContent = index >= 0 ? `${index+1} / ${state.total}` : '';
+  const index = state.navigation.findIndex(p=>p.id===viewer.project.id);
+  $('#project-counter').textContent = index >= 0 ? `${index+1} / ${state.navigation.length}` : '';
   $('#previous-project').disabled = index <= 0;
-  $('#next-project').disabled = index < 0 || index+1 >= state.total;
+  $('#next-project').disabled = index < 0 || index+1 >= state.navigation.length;
+  renderImageNavigation();
 }
-async function navigateProject(direction) {
-  let index = state.projects.findIndex(p=>p.id===viewer.project.id);
-  if (direction > 0 && index+1 >= state.projects.length && state.projects.length < state.total) await refresh(true);
-  index = state.projects.findIndex(p=>p.id===viewer.project.id);
-  const next = state.projects[index+direction];
-  if (next) await showProject(next.id);
+async function navigateProject(direction,edge=false) {
+  const index = state.navigation.findIndex(p=>p.id===viewer.project.id);
+  const next = index<0?null:state.navigation[index+direction];
+  if (next) await showProject(next.id,edge && direction<0?'last':null);
 }
+function renderImageNavigation() {
+  const index=viewer.project.versions.findIndex(v=>v.id===viewer.selected),projectIndex=state.navigation.findIndex(p=>p.id===viewer.project.id);
+  for(const direction of [-1,1]){
+    const edge=$(direction<0?'.edge-left':'.edge-right');if(!edge)return;
+    const within=!!viewer.project.versions[index+direction],cross=!within && projectIndex>=0 && !!state.navigation[projectIndex+direction];
+    edge.classList.toggle('boundary',cross);edge.hidden=!within&&!cross;
+    edge.innerHTML=`${icon(direction<0?'back':'next')}${cross?`<span>${icon('grid')}${direction<0?'Previous':'Next'} project</span>`:''}`;
+  }
+}
+async function navigateImage(direction) {
+  const index=viewer.project.versions.findIndex(v=>v.id===viewer.selected),next=viewer.project.versions[index+direction];
+  if(next)selectVersion(next.id);else await navigateProject(direction,true);
+}
+const versionLabel = version => version.id===viewer.project.root_id ? 'Original' : version.recipe?.masked_edit ? 'Area edit' : 'Edit';
+const versionTime = timestamp => new Date(timestamp*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
 function renderTimeline() {
-  $('.version-strip').innerHTML = viewer.project.versions.map(version => `<button type="button" class="version-thumb ${version.id === viewer.selected ? 'selected' : ''}" data-version="${version.id}" aria-pressed="${version.id === viewer.selected}" aria-label="Image ${version.sequence}${version.parent ? `, based on Image ${version.parent.sequence ?? '?'}${version.parent.deleted ? ', deleted' : ''}` : ', original'}">${version.ready ? `<img src="${version.thumbnail}" alt="" loading="lazy">` : `<span class="version-pending">${icon('spark')}</span>`}<span>Image ${version.sequence}${version.sequence === 0 ? ' · Original' : ''}</span><small>${version.parent ? `↳ Image ${version.parent.sequence ?? '?'}${version.parent.deleted ? ' · deleted' : ''}` : dateText(version.created)}${version.favorite ? ' ♥' : ''}${!version.ready ? ` · ${version.status}` : ''}</small></button>`).join('');
+  const strip=$('.version-strip'),scroll=strip.scrollLeft;
+  strip.innerHTML = `<div class="version-rail">${viewer.project.versions.map(version => `<div class="version-cell ${bulk.viewer.ids.has(version.id)?'is-selected':''}"><button type="button" class="version-thumb ${version.id === viewer.selected ? 'selected' : ''}" data-version="${version.id}" aria-pressed="${version.id === viewer.selected}" aria-label="${versionLabel(version)}, ${versionTime(version.created)}${version.favorite?', favorite':''}">${version.ready ? `<img src="${version.thumbnail}" alt="" loading="lazy">` : `<span class="version-pending">${icon('spark')}</span>`}<span>${versionLabel(version)}${version.favorite?' ♥':''}</span><small>${versionTime(version.created)}${!version.ready ? ` · ${version.status}` : ''}</small></button>${bulkBox('viewer',version.id,`${versionLabel(version)} ${versionTime(version.created)}`)}</div>`).join('')}</div>`;
+  strip.scrollLeft=scroll;renderBulk('viewer');
 }
 function selectVersion(id,userAction=true) {
   if (viewer.selected === id) return;
   viewer.selected = id; viewer.position = 50;
   if (userAction) viewer.autoSelect = null;
   renderSelected(); renderTimeline();
-  $(`[data-version="${id}"]`)?.scrollIntoView({block:'nearest',inline:'nearest'});
+  $(`[data-version="${id}"]`)?.scrollIntoView({block:'nearest',inline:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
 }
 function renderSelected(resetZoom=true) {
   const version = selectedVersion();
   if (!version) return;
   if (resetZoom) { viewer.zoom = 1; viewer.x = viewer.y = 0; }
-  $('#viewer-image-label').textContent = `Image ${version.sequence}${version.sequence === 0 ? ' · Original' : version.recipe?.masked_edit ? ' · Selected area edit' : ''}`;
+  $('#viewer-image-label').textContent = versionLabel(version);
   $('#viewer-prompt-summary').textContent = version.recipe ? `Prompt: ${version.prompt.slice(0,150)}${version.prompt.length>150 ? '…' : ''}` : 'Uploaded original · no generation prompt';
   $('#viewer-made-prompt').textContent = version.recipe ? version.prompt : 'This image was uploaded and saved without an edit.';
   $('#viewer-prompt-details').open = false;
@@ -109,13 +118,16 @@ function renderSelected(resetZoom=true) {
   $('#viewer-downloads').innerHTML = version.ready ? downloadLinks(version) : '';
   $('#viewer-generate').disabled = !version.ready;
   $('#viewer-edit-prompt').disabled = !version.ready;
-  $('#viewer-delete-image').hidden = version.id === viewer.project.root_id;
+  $('#viewer-delete-image').hidden = false;
   $('#viewer-delete-image').disabled = activeStatuses.includes(version.status);
   $('#viewer-favorite').hidden = !version.ready;
   $('#viewer-favorite').textContent = version.favorite ? 'Remove image from favorites' : 'Favorite image';
   $('#viewer-reuse').hidden = !version.recipe;
   $('#viewer-recipe').hidden = !version.recipe || !version.ready;
   $('#viewer-recipe').href = `/api/images/${version.id}/recipe`;
+  $('#viewer-copy-prompt').disabled=!version.recipe;
+  $('#viewer-copy-settings').disabled=!version.recipe;
+  $('#viewer-recipe-summary').textContent=version.recipe?`${state.options.qualities[version.recipe.quality]?.label || version.recipe.quality} · ${version.width} × ${version.height} · Seed ${version.recipe.seed}${version.duration_seconds?` · Took ${duration(version.duration_seconds)}`:''}`:'Uploaded original';
   $('#viewer-archive').textContent = viewer.project.archived ? 'Restore project' : 'Archive project';
   $('#viewer-error').hidden = true;
   renderPhoto(); updateEditorSettings(); updateMaskControls(); scheduleViewerEstimate(); updateViewerJobStatus();
@@ -123,16 +135,22 @@ function renderSelected(resetZoom=true) {
 function renderPhoto() {
   const version = selectedVersion();
   const reference = viewer.compare === 'root' ? viewer.project.root?.url : version.parent?.url;
-  const comparing = version.ready && version.sequence > 0 && !!reference;
+  const available = version.ready && version.parent && !!reference;
+  const comparing = available && viewer.comparison;
   $('.project-viewer').classList.toggle('has-comparison',comparing);
+  $('#viewer-compare-toggle').disabled=!available;
+  $('#viewer-compare-toggle').setAttribute('aria-pressed',String(comparing));
+  $('#viewer-reference-choice').hidden=!comparing;
   $('#viewer-compare').disabled = !comparing;
   $('#viewer-compare').value = viewer.compare;
-  $('#viewer-lineage').textContent = version.parent ? `Image ${version.sequence} ← Image ${version.parent.sequence ?? '?'}${version.parent.deleted ? ' (deleted)' : ''}` : 'Image 0 · the original';
-  $('#viewer-compare-hint').textContent = comparing ? `Comparing with ${viewer.compare === 'root' ? 'Image 0 · original' : `Image ${version.parent.sequence ?? '?'}${version.parent.deleted ? ' · saved parent' : ''}`}` : 'Original image · pinch to zoom';
-  $('#viewer-photo').innerHTML = version.ready ? `${comparing ? `<div class="viewer-layer viewer-reference"><img src="${reference}" alt="${viewer.compare === 'root' ? 'Original root image' : 'Immediate parent image'}" draggable="false"><span class="compare-label">${viewer.compare === 'root' ? 'Original' : 'Parent'}</span></div>` : ''}<div class="viewer-layer viewer-edited"><img src="${version.url}" alt="Image ${version.sequence}: ${escapeHTML(version.prompt)}" draggable="false"><span class="compare-label">Image ${version.sequence}</span></div>` : `<div class="viewer-pending"><span>${icon('spark')}</span><strong>${version.status === 'failed' ? 'This image needs attention' : version.status === 'cancelled' ? 'This image was stopped' : 'Your image is on its way'}</strong><p>${escapeHTML(version.job?.error || version.job?.phase || '')}</p>${activeStatuses.includes(version.status) ? `<button type="button" class="secondary" data-action="cancel" data-id="${version.id}">Stop this image</button>` : `<button type="button" class="secondary" data-action="retry" data-id="${version.id}">Reuse its settings</button>`}</div>`;
+  $('#viewer-lineage').textContent = version.parent ? `From ${version.parent.id===viewer.project.root_id?'original':versionTime(version.parent.created)}${version.parent.deleted ? ' · saved parent' : ''}` : 'Your original';
+  $('#viewer-compare-hint').textContent = comparing ? `Comparing with ${viewer.compare === 'root' ? 'original' : 'parent'}` : 'Pinch to zoom · tap edges to navigate';
+  $('#viewer-photo').innerHTML = version.ready ? `${comparing ? `<div class="viewer-layer viewer-reference"><img src="${reference}" alt="${viewer.compare === 'root' ? 'Original root image' : 'Immediate parent image'}" draggable="false"><span class="compare-label">${viewer.compare === 'root' ? 'Original' : 'Parent'}</span></div>` : ''}<div class="viewer-layer viewer-edited"><img src="${version.url}" alt="${versionLabel(version)}: ${escapeHTML(version.prompt)}" draggable="false"><span class="compare-label">${versionLabel(version)}</span></div>` : `<div class="viewer-pending"><span>${icon('spark')}</span><strong>${version.status === 'failed' ? 'This image needs attention' : version.status === 'cancelled' ? 'This image was stopped' : 'Your image is on its way'}</strong><p>${escapeHTML(version.job?.error || '')}</p>${activeStatuses.includes(version.status) ? `<button type="button" class="secondary" data-action="cancel" data-id="${version.id}">Stop this image</button>` : `<button type="button" class="secondary" data-action="retry" data-id="${version.id}">Reuse its settings</button>`}</div>`;
+  $('#viewer-photo').getAnimations().forEach(animation=>animation.cancel());
+  if(!matchMedia('(prefers-reduced-motion: reduce)').matches)$('#viewer-photo').animate([{opacity:.2},{opacity:1}],{duration:220,easing:'ease-out'});
   const original = $('.viewer-reference img');
   if (original) original.onerror = () => { $('.project-viewer')?.classList.remove('has-comparison'); $('#viewer-compare-hint').textContent = 'Comparison source unavailable. Showing the saved image.'; };
-  $('#viewer-range').value = viewer.position; applySplit(); fitViewerImage(); renderZoom();
+  $('#viewer-range').value = viewer.position; applySplit(); fitViewerImage(); renderZoom();renderImageNavigation();
 }
 function fitViewerImage() {
   const version = selectedVersion(), canvas = $('.viewer-canvas'), frame = $('.viewer-frame');
@@ -163,7 +181,11 @@ function setZoom(scale,x=0,y=0) {
 }
 function toggleViewerControls(show=!viewer.controls) {
   viewer.controls = show;
-  $('.project-viewer').classList.toggle('controls-hidden',!show);
+  clearTimeout(viewer.controlsTimer);
+  const surface=$('.project-viewer'),motion=!matchMedia('(prefers-reduced-motion: reduce)').matches;
+  surface.querySelectorAll('.viewer-header,.viewer-history,.viewer-editor').forEach(element=>{element.inert=!show;element.setAttribute('aria-hidden',String(!show));});
+  if(show){surface.classList.remove('controls-hidden');requestAnimationFrame(()=>surface.classList.remove('chrome-fading'));}
+  else {surface.classList.add('chrome-fading');viewer.controlsTimer=setTimeout(()=>{surface.classList.add('controls-hidden');fitViewerImage();},motion?180:0);}
   if (!show) { $('#project-menu').open = false; $('.viewer-frame').focus({preventScroll:true}); }
   requestAnimationFrame(fitViewerImage);
 }
@@ -196,7 +218,7 @@ function bindViewerGestures() {
     if (!pointers.has(event.pointerId)) return;
     pointers.delete(event.pointerId);
     if (frame.hasPointerCapture(event.pointerId)) frame.releasePointerCapture(event.pointerId);
-    if (!pointers.size) { if (event.type==='pointerup' && !moved && start && Date.now()-start.time<500) toggleViewerControls();start=pinch=null; }
+    if (!pointers.size) { if (event.type==='pointerup' && !moved && start && Date.now()-start.time<500) {const fraction=relative(event).x/frame.clientWidth+.5;if(fraction<.22 || fraction>.78)navigateImage(fraction<.22?-1:1).catch(error=>toast(error.message));else toggleViewerControls();}start=pinch=null; }
     else { const point=[...pointers.values()][0];start={...point,x0:viewer.x,y0:viewer.y,time:Date.now()};pinch=null;moved=true; }
   };
   frame.addEventListener('pointerup',end);frame.addEventListener('pointercancel',end);frame.addEventListener('lostpointercapture',end);
@@ -220,6 +242,9 @@ function bindViewer() {
   $('#next-project').onclick=()=>navigateProject(1).catch(error=>toast(error.message));
   $('.version-strip').onclick=event=>{const button=event.target.closest('[data-version]');if(button)selectVersion(button.dataset.version);};
   $('#viewer-compare').onchange=event=>{viewer.compare=event.target.value;renderPhoto();};
+  $('#viewer-compare-toggle').onclick=()=>{viewer.comparison=!viewer.comparison;saveEditor();renderPhoto();};
+  $('#viewer-copy-prompt').onclick=()=>copyText(selectedVersion()?.prompt,'Prompt copied.');
+  $('#viewer-copy-settings').onclick=()=>copyText(JSON.stringify(selectedVersion()?.recipe,null,2),'Saved settings copied.');
   $('#viewer-range').oninput=event=>{viewer.position=Number(event.target.value);applySplit();};
   $('#viewer-reset-split').onclick=()=>{viewer.position=50;$('#viewer-range').value=50;applySplit();};
   $('#zoom-in').onclick=()=>setZoom(viewer.zoom*1.25);$('#zoom-out').onclick=()=>setZoom(viewer.zoom/1.25);
@@ -281,19 +306,23 @@ async function submitViewerEdit(event) {
 async function refreshOpenProject() {
   if(!viewer.project || !$('#detail-dialog').open)return;
   const id=viewer.project.id,previous=selectedVersion(),oldSignature=JSON.stringify(viewer.project.versions.map(v=>[v.id,v.status,v.favorite,v.parent]));
-  const project=await api(`/api/projects/${id}`);
+  let project;
+  try{project=await api(`/api/projects/${id}`);}catch(error){if(error.status===404){$('#detail-dialog').close();viewer.project=null;return;}throw error;}
   if(viewer.project?.id!==id || !$('#detail-dialog').open)return;
   viewer.project=project;
+  if(!project.versions.length){$('#detail-dialog').close();viewer.project=null;return;}
   if(viewer.autoSelect && viewer.selected===viewer.autoSelect.from && project.versions.some(v=>v.id===viewer.autoSelect.id && v.ready)) {const next=viewer.autoSelect.id;viewer.autoSelect=null;selectVersion(next,false);}
   else if(!selectedVersion()) {viewer.selected=project.versions.find(v=>v.id===project.root_id)?.id || project.versions[0]?.id;renderSelected();}
   else if(previous?.status!==selectedVersion().status)renderSelected();
   if(oldSignature!==JSON.stringify(project.versions.map(v=>[v.id,v.status,v.favorite,v.parent])))renderTimeline();
+  if(selectedVersion()?.ready){$('#viewer-favorite').textContent=selectedVersion().favorite?'Remove image from favorites':'Favorite image';}
   renderProjectNavigation();updateViewerJobStatus();
 }
 function updateViewerJobStatus() {
   if(!viewer.project || !$('#viewer-job-status'))return;
   const job=state.jobs.find(j=>j.id===viewer.selected && activeStatuses.includes(j.status)) || state.jobs.find(j=>j.recipe.project_id===viewer.project.id && activeStatuses.includes(j.status));
-  $('#viewer-job-status').textContent=job?`${job.phase} · ${jobEstimateText(job)}`:'';
+  $('#viewer-work').innerHTML=job?progressHTML(job):'';
+  $('#viewer-job-status').textContent='';updateWorkBadges();
 }
 async function reuseInViewer(recipe) {
   if(recipe.mode==='create')return reuse(recipe);
@@ -313,6 +342,12 @@ async function reuseInViewer(recipe) {
   viewer.drafts[draftKey()]=recipe.prompt;saveEditor();renderSelected(false);$('.viewer-settings').open=true;$('#viewer-edit-prompt').focus();
 }
 async function projectAction(name,id) {
+  if(name.startsWith('favorite-')){
+    const image=state.projects.find(p=>p.id===id);if(!image)return;
+    if(name==='favorite-open')return showProject(image.project_id,id);
+    if(name==='favorite-delete')return confirmProjectDeletion({id:image.project_id,title:image.project_title},image);
+    if(name==='favorite-toggle'){await send(`/api/projects/${image.project_id}/versions/${id}`,{favorite:!image.favorite},'PATCH');await refresh();return;}
+  }
   if(name==='project')return showProject(id);
   if(name==='cancel'){await send(`/api/jobs/${id}/cancel`,{});await refresh();return;}
   if(name==='retry'){const job=state.jobs.find(j=>j.id===id);if(job)return reuse(job.recipe);return;}
@@ -330,7 +365,7 @@ async function projectAction(name,id) {
 function confirmProjectDeletion(project,version=null) {
   if(deletePending)return;
   deletingImage={project_id:project.id,version_id:version?.id,url:version?`/api/projects/${project.id}/versions/${version.id}`:`/api/projects/${project.id}`};
-  $('#delete-title').textContent=version?`Delete Image ${version.sequence}?`:'Delete this whole project?';
+  $('#delete-title').textContent=version?'Delete this image?':'Delete this whole project?';
   $('#delete-cancel').textContent=version?'Keep image':'Keep project';
   $('#delete-description').textContent=version?'Only this image will disappear from the timeline. Its children stay, with saved parent comparisons.':'This removes the original, every edit, their recipes, and the project from the library. Other projects are kept.';
   $('#delete-prompt').textContent=version?.prompt || project.title;$('#delete-size').textContent=version?`${version.width} × ${version.height}`:'Original + all edits';
@@ -341,9 +376,10 @@ $('#delete-confirm').onclick=async()=>{
   if(!deletingImage || deletePending)return;const deletion=deletingImage;deletePending=true;
   $('#delete-confirm').disabled=$('#delete-cancel').disabled=true;$('#delete-error').hidden=true;
   try {
-    await send(deletion.url,{confirm:true},'DELETE');libraryRevision++;$('#delete-dialog').close();
-    if(!deletion.version_id && viewer.project?.id===deletion.project_id){$('#detail-dialog').close();viewer.project=null;}
-    await refresh();toast(deletion.version_id?'Image deleted. Its descendants are kept.':'Project deleted permanently.');
+    await send(deletion.url,deletion.body || {confirm:true},deletion.method || 'DELETE');libraryRevision++;$('#delete-dialog').close();
+    if((!deletion.version_id && viewer.project?.id===deletion.project_id) || (deletion.body?.scope==='projects' && deletion.body.ids.includes(viewer.project?.id))){$('#detail-dialog').close();viewer.project=null;}
+    if(deletion.context){bulk[deletion.context].ids.clear();}
+    await refresh();if(deletion.context)renderSelection(deletion.context);toast(deletion.version_id || deletion.body?.scope==='images'?'Images deleted. Other edits are kept.':'Projects deleted permanently.');
   }catch(error){$('#delete-error').textContent=error.message;$('#delete-error').hidden=false;}
   finally{deletePending=false;$('#delete-confirm').disabled=$('#delete-cancel').disabled=false;}
 };
@@ -352,7 +388,7 @@ $('#delete-dialog').addEventListener('close',()=>{deletingImage=null;});
 $('#delete-dialog').addEventListener('cancel',event=>{if(deletePending)event.preventDefault();});
 $('#detail-dialog').addEventListener('cancel',event=>{if(!viewer.controls){event.preventDefault();toggleViewerControls(true);}});
 $('#detail-dialog').addEventListener('close',()=>{
-  viewer.loading++;viewer.observer?.disconnect();clearTimeout(viewerEstimateTimer);viewerEstimateRevision++;
+  viewer.loading++;viewer.observer?.disconnect();clearTimeout(viewerEstimateTimer);clearTimeout(viewer.controlsTimer);viewerEstimateRevision++;
   if(document.fullscreenElement?.classList.contains('project-viewer'))document.exitFullscreen().catch(()=>{});
 });
 document.addEventListener('keydown',event=>{
@@ -361,7 +397,7 @@ document.addEventListener('keydown',event=>{
   if(event.key==='ArrowLeft' || event.key==='ArrowRight') {
     event.preventDefault();const direction=event.key==='ArrowLeft'?-1:1;
     if(event.shiftKey)navigateProject(direction).catch(error=>toast(error.message));
-    else {const index=viewer.project.versions.findIndex(v=>v.id===viewer.selected),next=viewer.project.versions[index+direction];if(next)selectVersion(next.id);}
+    else navigateImage(direction).catch(error=>toast(error.message));
   }
 });
 let metricsBusy=false;

@@ -24,47 +24,57 @@ from the browser's Share/menu controls.
 
 ## Projects and editing
 
-The library shows one card per **project**. Each generated image or uploaded photo
+The library shows one card per **project**, ordered by its most recent image/edit.
+Each generated image or uploaded photo
 starts a project. Existing images are grouped using their saved parent and source
 links; importing the old library leaves its PNGs and recipes unchanged.
 
 - **Create:** describe an image in the bottom panel, choose quality, shape, size
   and 1–4 variations. Every variation starts its own project. **Minimize** and
   **Expand** keep the draft and give you more browsing space.
-- **Upload image:** saves a PNG, JPG or WebP as **Image 0** and opens its editor.
+- **Upload image:** saves a PNG, JPG or WebP as the **Original** and opens its editor.
   Editing is optional; close the viewer and the uploaded original remains saved.
-- **Open a project:** the screen-filling viewer starts on Image 0. A horizontal
+- **Open a project:** the screen-filling viewer starts on the original. A centered horizontal
   thumbnail strip shows its edits in time order. Select a thumbnail, then type
   in the edit box to make a child of that particular image. Multiple edit
-  variations are sibling versions in the same project. Branch labels show
-  which earlier image each version came from. Drafts are remembered per image.
-- **Compare:** select an edit and choose **Immediate parent** or **Original ·
-  Image 0**. Drag the divider or move the slider. **Reset split** restores 50/50.
+  variations are sibling versions in the same project. The header shows which
+  earlier image the selected version came from. Drafts are remembered per image.
+- **Compare:** turn **Compare** on or off; your choice is remembered. When enabled,
+  choose **Immediate parent** or **Original**. Drag the divider or move the slider.
+  **Reset split** restores 50/50.
   If an earlier result was deleted, its independent saved source still supports
-  parent comparison. Deleted versions disappear from the strip; later image
-  numbers and parent links stay intact.
+  parent comparison. Deleted versions disappear from the strip; parent links stay intact.
 - **Zoom:** pinch with two fingers, or use **+**, **−**, and **100%**. Both images
   zoom together. Drag to pan when zoomed; drag to compare at 100%.
 - **Fullscreen and controls:** the viewer fills the page immediately; its
   fullscreen button also hides browser chrome when supported. **Hide controls**
-  or a tap on the photo/background hides the interface; tap again to reveal it.
+  or a tap on the center of the photo/background fades the interface away; tap
+  again to reveal it. Reduced-motion device preferences are respected.
   **H** toggles controls. Arrow keys move between versions when the photo is
   focused; Shift + arrow keys switch projects. The top previous/next buttons
   switch between projects in the current collection.
+  Tap the left or right edge of the photo to move between images. At the first
+  or last image, a **Previous project / Next project** marker signals crossing
+  to the adjacent project. Dragging or pinching does not trigger navigation.
 - **Edit settings:** choose quality, output size, resizing, variations, seed and
   SNOFS. Changes are remembered. The prompt that produced the selected version
-  appears above its edit box; expand it to read the full prompt. **Reuse settings**
+  appears above its edit box; expand it to read the full prompt. The copy icon
+  copies that prompt, including on a phone using local HTTP. The gear opens
+  settings; **Copy saved settings** copies the selected image's complete recipe.
+  **Reuse settings**
   copies the prompt and settings, selecting the earlier parent when it is still
   present. If that parent was deleted, the saved result becomes the editing target.
-- **Favorites:** the project card's heart favorites a project. The viewer menu
-  favorites a particular version, including an uploaded original. Favorites
-  shows projects marked as favorites or containing a favorited image. Removing
-  a project favorite clears its image favorites too.
+- **Favorites:** shows individual starred images, including uploaded originals.
+  The viewer menu favorites only the selected image. A library card's heart and
+  count indicate that it contains starred images. Clicking that heart favorites
+  all its images, or removes all its image favorites. Existing project favorites
+  become a favorite on the original once; previous per-image favorites are kept.
 - **Archive:** archives the whole project, retaining its original and all edits.
   Open Archive and choose **Restore project** to bring it back.
-- **Delete this image:** in the viewer menu, deletes only the selected edit after
-  confirmation. Its children and saved parent comparisons remain usable. To
-  remove Image 0 and the whole family, use **Delete whole project** in the menu
+- **Delete this image:** in the viewer menu, deletes only the selected image after
+  confirmation. Its children and saved parent comparisons remain usable. The
+  original can also be removed from the timeline while its comparison source
+  and children stay. To remove the whole family, use **Delete whole project** in the menu
   or the trash button on the library card. Stop that project's pending jobs
   before deleting it. Permanent deletion has no restore; Archive is reversible.
 - **Download:** the arrow on a library thumbnail downloads the original as PNG
@@ -73,6 +83,14 @@ links; importing the old library leaves its PNGs and recipes unchanged.
   uploaded originals have no generation recipe. JPG is a sharing copy at quality
   95, with transparent areas flattened to white. **Download recipe** saves a
   generated version's settings separately.
+- **Bulk actions:** click **Select projects** in Library/Archive or **Select images**
+  in Favorites/the viewer. Use the check buttons and **Select shown**, then favorite,
+  unfavorite, download or delete the selection. Library/Archive actions include
+  every image in each selected project; image selections affect only those images.
+  Downloads are one ZIP of full-size PNGs (with embedded recipes) or JPG copies.
+  Pending images must finish before an image download. Project ZIPs contain all
+  finished images. Deletion always asks for confirmation. Stop selected active
+  generations before deleting them. **Done** exits selection mode.
 
 ## Selected-area editing (mask / inpainting)
 
@@ -116,14 +134,20 @@ including shadows; an overly tight mask can cut off an otherwise correct edit.
 
 ## Timing and server status
 
-The Create panel and editor show approximate duration ranges learned from recent
-completed jobs on this Mac. Quality/model, create versus edit, generation pixels,
-and resize/upscale processing affect the estimate. Sparse or unfamiliar settings
-use a wider range; a new model/mode shows **Learning** until a run finishes.
-Queued images include the studio queue and show an approximate completion time.
-An image exceeding its predicted range shows **Taking longer** rather than a
-misleading zero-second countdown. Other Mac activity and external ComfyUI jobs
-can change the actual completion time.
+The Create panel and editor show a compact timing chip based on actual completed
+runs with the same model, SNOFS choice, create/edit mode and processing method,
+and similar canvas/output sizes and shape. The median of up to eight matching
+recent runs provides the estimate. Unfamiliar sizes show **Learning**; timings
+are not extrapolated from a much smaller image.
+
+Work badges on cards and in the viewer show the engine's actual sampling-step
+percentage (for example **2 / 4 steps · 50%**) or upscale-tile progress. This is
+progress of the named stage, not a fabricated percentage of the whole request.
+Preparation, waiting, blending and saving show activity without a fake percentage.
+Elapsed time is measured from submission. When matching history exists, a compact
+remaining estimate includes queued work; if a job exceeds the observed range,
+the badge keeps showing elapsed time instead of counting down to zero.
+Other Mac activity and external ComfyUI jobs can change the actual completion time.
 
 Tap the status strip above the library for available Mac memory, waiting images,
 last and average image times, free image storage, engine response time and website

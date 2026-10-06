@@ -17,6 +17,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from .engine import Engine, QUALITIES, make_thumbnail
 from .storage import Store
 from .metrics import Metrics
+from .downloads import Downloads
 from .masking import normalize_mask, masked_size
 from .sizing import OUTPUT_SIZES, RESIZE_MODES, MAX_PIXELS, plan_size
 
@@ -62,7 +63,7 @@ async def index(request):
 
 async def static_file(request):
     name = request.match_info["name"]
-    if name not in ("app.js", "projects.js", "masking.js", "style.css", "projects.css", "masking.css", "icon.svg", "manifest.json"):
+    if name not in ("app.js", "projects.js", "masking.js", "actions.js", "style.css", "projects.css", "masking.css", "polish.css", "icon.svg", "manifest.json"):
         raise web.HTTPNotFound()
     return web.FileResponse(STATIC / name)
 
@@ -296,6 +297,12 @@ async def project_detail(request):
     return web.json_response(project)
 
 
+async def favorites(request):
+    return web.json_response(request.app[STATE]["store"].projects.favorites(
+        request.query.get("q", "")[:200], max(0, int(request.query.get("offset", 0))),
+        min(1000, max(1, int(request.query.get("limit", 48))))))
+
+
 async def update_project(request):
     store = request.app[STATE]["store"]
     project_id = request.match_info["id"]
@@ -305,10 +312,11 @@ async def update_project(request):
     if not isinstance(payload,dict) or not payload or set(payload)-{"favorite","archived"} or any(type(v) is not bool for v in payload.values()):
         return failure("Choose favorite or archive as true or false.")
     with store.db:
-        store.db.execute(f"UPDATE projects SET {','.join(k+'=?' for k in payload)} WHERE id=?", (*map(int,payload.values()),project_id))
-        if payload.get("favorite") is False:
-            store.db.execute("UPDATE images SET favorite=0 WHERE id IN (SELECT id FROM versions WHERE project_id=?)", (project_id,))
-            store.db.execute("UPDATE versions SET favorite=0 WHERE project_id=?", (project_id,))
+        if "archived" in payload:
+            store.db.execute("UPDATE projects SET archived=? WHERE id=?", (int(payload["archived"]), project_id))
+        if "favorite" in payload:
+            for version in store.projects.detail(project_id)["versions"]:
+                store.projects.set_favorite(version["id"], payload["favorite"])
     return web.json_response(store.projects.detail(project_id))
 
 
@@ -338,8 +346,8 @@ async def update_version(request):
     payload = await request.json()
     if not isinstance(payload,dict) or set(payload) != {"favorite"} or type(payload["favorite"]) is not bool:
         return failure("Choose favorite as true or false.")
-    table = "images" if version["kind"] == "image" else "versions"
-    store.execute(f"UPDATE {table} SET favorite=? WHERE id=?", (int(payload["favorite"]),version["id"]))
+    with store.db:
+        store.projects.set_favorite(version["id"], payload["favorite"])
     return web.json_response(store.projects.version(version["id"]))
 
 
@@ -363,15 +371,108 @@ async def delete_version(request):
     version = store.projects.version(request.match_info["version_id"])
     if not project or not version or version["project_id"] != project["id"]:
         raise web.HTTPNotFound()
-    if version["id"] == project["root_id"]:
-        return failure("Use Delete project in the menu to remove the original and its edits.",409)
     if version["status"] in ACTIVE:
         return failure("Stop the queued image first, or wait for it to finish.",409)
     payload = await request.json()
     if not isinstance(payload,dict) or payload.get("confirm") is not True:
         return failure("Confirm deletion of this image first.")
-    store.delete_image(version["id"])
+    await delete_versions(request.app[STATE], [version])
     return web.json_response({"ok":True})
+
+
+async def delete_versions(state, versions):
+    store = state["store"]
+    # Keep a comparison copy of generated originals before hiding just that image.
+    for version in versions:
+        project = store.projects.detail(version["project_id"])
+        if version["id"] == project["root_id"] and version["ready"]:
+            if version["kind"] == "image" and not store.one(
+                    "SELECT id FROM project_sources WHERE project_id=? AND parent_id=?", (project["id"], version["id"])):
+                source = await save_upload(state, (store.directory / "images" / (version["id"] + ".png")).read_bytes(), "Studio image")
+                store.projects.bind_source(source["id"], project["id"], version["id"])
+            elif version["kind"] == "upload":
+                store.projects.bind_source(version["id"], project["id"], version["id"])
+    store.delete_images([version["id"] for version in versions])
+    empty = [project_id for project_id in {v["project_id"] for v in versions}
+             if not store.projects.detail(project_id)["versions"]]
+    if empty:
+        store.projects.delete_many(empty)
+
+
+def bulk_selection(store, payload):
+    if not isinstance(payload, dict) or payload.get("scope") not in ("projects", "images"):
+        raise ValueError("Select projects or images first.")
+    ids = payload.get("ids")
+    if not isinstance(ids, list) or not 1 <= len(ids) <= 500 or any(not isinstance(value, str) for value in ids):
+        raise ValueError("Select between 1 and 500 entries.")
+    ids = list(dict.fromkeys(ids))
+    for value in ids:
+        uuid.UUID(value)
+    versions = []
+    for value in ids:
+        if payload["scope"] == "projects":
+            project = store.projects.detail(value)
+            if not project:
+                raise ValueError("A selected project no longer exists. Refresh your selection.")
+            versions.extend(project["versions"])
+        else:
+            version = store.projects.version(value)
+            if not version:
+                raise ValueError("A selected image no longer exists. Refresh your selection.")
+            versions.append(version)
+    return ids, versions
+
+
+async def bulk_action(request):
+    state = request.app[STATE]
+    store = state["store"]
+    payload = await request.json()
+    ids, versions = bulk_selection(store, payload)
+    if payload.get("action") == "favorite" and type(payload.get("favorite")) is bool:
+        with store.db:
+            for version in versions:
+                store.projects.set_favorite(version["id"], payload["favorite"])
+    elif payload.get("action") == "delete":
+        if payload.get("confirm") is not True:
+            return failure("Confirm permanent deletion first.")
+        if any(v["status"] in ACTIVE for v in versions):
+            return failure("Stop selected queued or running images before deleting.", 409)
+        if payload["scope"] == "projects":
+            store.projects.delete_many(ids)
+        else:
+            await delete_versions(state, versions)
+    else:
+        return failure("Choose favorite or delete.")
+    return web.json_response({"ok": True, "entries": len(ids), "images": len(versions)})
+
+
+async def bulk_download(request):
+    state = request.app[STATE]
+    payload = await request.json()
+    _, versions = bulk_selection(state["store"], payload)
+    image_format = payload.get("format", "png")
+    if image_format not in ("png", "jpg"):
+        return failure("Choose PNG or JPG.")
+    if payload["scope"] == "images" and any(not v["ready"] for v in versions):
+        return failure("Selected images must finish before downloading.", 409)
+    versions = [v for v in versions if v["ready"]]
+    if not versions:
+        return failure("There are no finished images to download.", 409)
+    files = [(f'project-{v["project_id"][:8]}/studio-{v["id"]}',
+              state["store"].directory / ("uploads" if v["kind"] == "upload" else "images") / (v["id"] + ".png")) for v in versions]
+    try:
+        result = await state["downloads"].create(files, image_format, jpeg_download)
+    except FileNotFoundError:
+        return failure("A selected image was removed. Refresh and try again.", 409)
+    return web.json_response(result)
+
+
+async def download_archive(request):
+    entry = request.app[STATE]["downloads"].get(request.match_info["token"])
+    if not entry:
+        return failure("This download expired. Select the images again.", 404)
+    return web.FileResponse(entry["path"], headers={"Content-Type": "application/zip",
+                            "Content-Disposition": 'attachment; filename="studio-images.zip"'})
 
 
 async def estimate(request):
@@ -393,7 +494,7 @@ async def estimate(request):
         size = masked_size(source,payload["mask_bounds"],payload.get("mask_feather",8),quality,aspect,QUALITIES,state["upscaler"])
     else:
         size = plan_size(quality,aspect,mode,source,payload.get("output_size","preset"),QUALITIES,state["upscaler"],payload.get("resize_mode","auto"))
-    recipe = dict(size,mode=mode,model=QUALITIES[quality]["model"])
+    recipe = dict(size,mode=mode,model=QUALITIES[quality]["model"],snofs=payload.get("snofs",True))
     prediction = state["metrics"].estimate(recipe)
     queue = state["metrics"].queue()
     last = list(queue.values())[-1] if queue else None
@@ -453,7 +554,10 @@ async def update_image(request):
     payload = await request.json()
     if not payload or set(payload) - {"favorite", "archived"} or any(type(v) is not bool for v in payload.values()):
         return failure("Choose favorite or archive as true or false.")
-    store.execute(f"UPDATE images SET {','.join(k+'=?' for k in payload)} WHERE id=?", (*map(int, payload.values()), image_id))
+    with store.db:
+        store.db.execute(f"UPDATE images SET {','.join(k+'=?' for k in payload)} WHERE id=?", (*map(int, payload.values()), image_id))
+        if "favorite" in payload:
+            store.db.execute("UPDATE versions SET favorite=? WHERE id=?", (int(payload["favorite"]), image_id))
     return web.json_response(store.image(image_id))
 
 
@@ -553,6 +657,8 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
                   "upscaler": json.loads((ROOT / "config/upscaler.json").read_text()),
                   "runtime": json.loads((ROOT / "config/runtime.json").read_text())}
     app[STATE]["metrics"] = Metrics(store,engine)
+    app[STATE]["downloads"] = Downloads()
+    app.cleanup_ctx.append(app[STATE]["downloads"].context)
     if start_worker:
         app.cleanup_ctx.append(engine.context)
     async def close_store(app):
@@ -562,6 +668,8 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
         web.get("/", index), web.get("/static/{name}", static_file),
         web.get("/api/auth", auth), web.post("/api/login", login), web.post("/api/logout", logout),
         web.get("/api/health", health), web.get("/api/options", options),
+        web.get("/api/favorites", favorites), web.post("/api/bulk", bulk_action),
+        web.post("/api/bulk-download", bulk_download), web.get("/api/downloads/{token}", download_archive),
         web.get("/api/projects",project_library), web.get("/api/projects/{id}",project_detail),
         web.patch("/api/projects/{id}",update_project), web.delete("/api/projects/{id}",delete_project),
         web.post("/api/projects/{id}/versions/{version_id}/edit-source",project_edit_source),

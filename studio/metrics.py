@@ -1,7 +1,6 @@
 """Honest duration ranges learned from completed local jobs and host memory."""
 import asyncio
 import json
-import math
 import shutil
 import statistics
 import time
@@ -20,26 +19,30 @@ class Metrics:
             "SELECT recipe,finished-started AS seconds FROM jobs WHERE status='complete' AND finished>started AND started IS NOT NULL ORDER BY finished DESC LIMIT 100")]
 
     def estimate(self, recipe):
-        pixels = recipe.get("generation_width",recipe["width"]) * recipe.get("generation_height",recipe["height"])
+        width, height = recipe.get("generation_width",recipe["width"]), recipe.get("generation_height",recipe["height"])
+        pixels = width * height
         samples = []
         for row in self.history():
             previous = row["recipe"]
-            if previous["mode"] != recipe["mode"] or previous["model"] != recipe["model"]:
+            if previous["mode"] != recipe["mode"] or previous["model"] != recipe["model"] or previous.get("snofs",True) != recipe.get("snofs",True):
                 continue
-            previous_pixels = previous.get("generation_width",previous["width"]) * previous.get("generation_height",previous["height"])
+            pw, ph = previous.get("generation_width",previous["width"]), previous.get("generation_height",previous["height"])
+            previous_pixels = pw * ph
             ratio = pixels / previous_pixels
             method_matches = previous.get("processing",{}).get("method") == recipe.get("processing",{}).get("method")
-            distance = abs(math.log2(ratio)) + (0 if method_matches else 1)
-            samples.append((distance, row["seconds"] * ratio**1.5))
+            output_ratio = recipe["width"]*recipe["height"] / (previous["width"]*previous["height"])
+            # Do not extrapolate timings across canvas sizes or processing methods.
+            if method_matches and .8 <= ratio <= 1.25 and .8 <= (width/height)/(pw/ph) <= 1.25 and .8 <= output_ratio <= 1.25:
+                samples.append(row["seconds"])
+                if len(samples) == 8:
+                    break
         if not samples:
-            return {"seconds":None,"low":None,"high":None,"samples":0,"approximate":True,"reason":"Learning from your first completed images"}
-        samples.sort(key=lambda sample:sample[0])
-        nearest = samples[:5]
-        seconds = max(1,round(statistics.median(sample[1] for sample in nearest)))
-        uncertainty = .35 if nearest[0][0] < .5 and len(nearest) >= 3 else .65
-        return {"seconds":seconds,"low":max(1,round(seconds*(1-uncertainty))),"high":round(seconds*(1+uncertainty)),
-                "samples":len(nearest),"approximate":True,
-                "reason":"Based on similar completed images" if nearest[0][0] < .5 else "Rough estimate; this size or processing mode has fewer matching runs"}
+            return {"seconds":None,"low":None,"high":None,"samples":0,"approximate":True,"reason":"No similar completed run yet"}
+        seconds = max(1,round(statistics.median(samples)))
+        margin = .25 if len(samples) < 3 else .1
+        return {"seconds":seconds,"low":max(1,round(min(min(samples),seconds*(1-margin)))),
+                "high":round(max(max(samples),seconds*(1+margin))),"samples":len(samples),"approximate":True,
+                "reason":"Measured from similar completed images"}
 
     def queue(self, jobs=None):
         if jobs is None:

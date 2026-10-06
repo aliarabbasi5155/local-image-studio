@@ -40,6 +40,8 @@ class Store:
             );
         """)
         self.db.commit()
+        if 'progress_detail' not in {row['name'] for row in self.rows('PRAGMA table_info(jobs)')}:
+            self.execute('ALTER TABLE jobs ADD COLUMN progress_detail TEXT')
         self.recover_deletions()
         self.projects = Projects(self)
 
@@ -56,18 +58,27 @@ class Store:
                     staged.unlink()
 
     def delete_image(self, image_id):
+        self.delete_images([image_id])
+
+    def delete_images(self, image_ids):
         staged = []
         try:
-            for folder, suffix in (("images", ".png"), ("thumbs", ".webp")):
-                original = self.directory / folder / (image_id + suffix)
-                if original.exists():
-                    temporary = original.with_name(original.name + ".deleting")
-                    original.rename(temporary)
-                    staged.append((original, temporary))
+            for image_id in image_ids:
+                member=self.one("SELECT kind FROM versions WHERE id=?", (image_id,))
+                # An uploaded original can remain an independent comparison source.
+                if member and member['kind']=='upload':
+                    continue
+                for folder, suffix in (("images", ".png"), ("thumbs", ".webp")):
+                    original = self.directory / folder / (image_id + suffix)
+                    if original.exists():
+                        temporary = original.with_name(original.name + ".deleting")
+                        original.rename(temporary)
+                        staged.append((original, temporary))
             with self.db:
-                self.db.execute("DELETE FROM images WHERE id=?", (image_id,))
-                self.db.execute("DELETE FROM jobs WHERE id=?", (image_id,))
-                self.db.execute("UPDATE versions SET deleted=1 WHERE id=?", (image_id,))
+                for image_id in image_ids:
+                    self.db.execute("DELETE FROM images WHERE id=?", (image_id,))
+                    self.db.execute("DELETE FROM jobs WHERE id=?", (image_id,))
+                    self.db.execute("UPDATE versions SET deleted=1,favorite=0 WHERE id=?", (image_id,))
         except BaseException:
             for original, temporary in reversed(staged):
                 temporary.rename(original)
@@ -88,6 +99,8 @@ class Store:
         return cursor
 
     def update_job(self, job_id, **values):
+        if 'phase' in values and 'progress_detail' not in values:
+            values['progress_detail']=None
         self.execute(f"UPDATE jobs SET {', '.join(k + '=?' for k in values)} WHERE id=?", (*values.values(), job_id))
 
     def add_jobs(self, recipes):
@@ -108,6 +121,7 @@ class Store:
         row = self.one("SELECT * FROM jobs WHERE id=?", (job_id,))
         if row:
             row["recipe"] = json.loads(row["recipe"])
+            row["progress_detail"] = json.loads(row["progress_detail"]) if row.get("progress_detail") else None
         return row
 
     def image(self, image_id):

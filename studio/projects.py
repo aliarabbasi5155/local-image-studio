@@ -26,10 +26,22 @@ class Projects:
             CREATE TABLE IF NOT EXISTS project_sources (
                 id TEXT PRIMARY KEY, project_id TEXT NOT NULL, parent_id TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS studio_migrations (name TEXT PRIMARY KEY);
         """)
         if 'favorite' not in {row['name'] for row in store.rows('PRAGMA table_info(versions)')}:
             store.db.execute('ALTER TABLE versions ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0')
         self.sync()
+        if not store.one("SELECT name FROM studio_migrations WHERE name='image-favorites'"):
+            with store.db:
+                for project in store.rows("SELECT root_id FROM projects WHERE favorite=1"):
+                    self.set_favorite(project["root_id"], True)
+                store.db.execute("UPDATE projects SET favorite=0")
+                store.db.execute("INSERT INTO studio_migrations VALUES ('image-favorites')")
+
+    def set_favorite(self, version_id, value):
+        # Call within the caller's transaction so bulk changes are atomic.
+        self.store.db.execute("UPDATE versions SET favorite=? WHERE id=?", (int(value), version_id))
+        self.store.db.execute("UPDATE images SET favorite=? WHERE id=?", (int(value), version_id))
 
     def create_upload(self, upload):
         existing = self.store.one("SELECT project_id FROM versions WHERE id=?", (upload["id"],))
@@ -123,14 +135,16 @@ class Projects:
                       width=recipe["width"] if recipe else upload["width"],
                       height=recipe["height"] if recipe else upload["height"],
                       prompt=recipe["prompt"] if recipe else "Uploaded original",
-                      recipe=recipe, favorite=bool(image["favorite"] if image else member["favorite"]),
+                      recipe=recipe, favorite=bool(member["favorite"] or (image and image["favorite"])),
+                      duration_seconds=round(job["finished"]-job["started"]) if job and job["finished"] and job["started"] else None,
                       url=f"/media/{'upload' if upload else 'image'}/{version_id}" if ready else None,
                       thumbnail=f"/media/thumb/{version_id}" if ready else None,
                       job=job if not ready else None)
         if member["parent_id"]:
-            parent = self.store.one("SELECT sequence,deleted FROM versions WHERE id=?", (member["parent_id"],))
+            parent = self.store.one("SELECT sequence,created,deleted FROM versions WHERE id=?", (member["parent_id"],))
             result["parent"] = {"id":member["parent_id"], "sequence":parent["sequence"] if parent else None,
                                 "deleted":bool(parent and parent["deleted"]),
+                                "created":parent["created"] if parent else None,
                                 "url":f"/media/upload/{member['source_id']}" if member["source_id"] else None}
         else:
             result["parent"] = None
@@ -146,10 +160,14 @@ class Projects:
         # Legacy image deletion can remove a root; its children's independent
         # sources can still provide the original photo for comparison.
         if not root:
+            saved = self.store.one("SELECT u.* FROM uploads u JOIN project_sources s ON u.id=s.id WHERE s.project_id=? AND s.parent_id=? ORDER BY u.created LIMIT 1", (project_id, project["root_id"]))
             child = next((version for version in versions if version["parent_id"] == project["root_id"] and version["parent"]), None)
-            if child:
-                root = {"id":project["root_id"], "url":child["parent"]["url"], "ready":True, "recovered":True}
-        project.update(favorite=bool(project["favorite"] or any(version["favorite"] for version in versions)),
+            if saved or child:
+                root = {"id":project["root_id"], "url":f"/media/upload/{saved['id']}" if saved else child["parent"]["url"], "ready":True, "recovered":True}
+        favorite_count = sum(version["favorite"] and version["ready"] for version in versions)
+        project.update(favorite=bool(favorite_count), favorite_count=favorite_count,
+                       updated=max((version["created"] for version in versions),default=project["created"]),
+                       saved_count=sum(version["ready"] for version in versions),
                        archived=bool(project["archived"]), versions=versions, root=root,
                        edits=sum(version["sequence"] > 0 for version in versions))
         return project
@@ -158,34 +176,52 @@ class Projects:
         self.sync()
         projects = [self.detail(row["id"]) for row in self.store.rows("SELECT id FROM projects ORDER BY created DESC,id")]
         projects = [project for project in projects if project["versions"]]
+        projects.sort(key=lambda project:(project["updated"],project["id"]), reverse=True)
         counts = {"library":sum(not p["archived"] for p in projects),
-                  "favorites":sum(p["favorite"] and not p["archived"] for p in projects),
+                  "favorites":sum(p["favorite_count"] for p in projects if not p["archived"]),
                   "archive":sum(p["archived"] for p in projects)}
         matches = [p for p in projects if (p["archived"] if section == "archive" else not p["archived"] and (section != "favorites" or p["favorite"]))
                    and (not query or query.lower() in (p["title"] + " " + " ".join(v["prompt"] for v in p["versions"])).lower())]
         summaries = []
         for project in matches[offset:offset+limit]:
             root = project["root"]
-            cover = root if root and root.get("thumbnail") else next((v for v in project["versions"] if v["ready"]), None)
-            summaries.append({k:project[k] for k in ("id","created","title","favorite","archived","edits","root_id")} |
+            cover = root if root and not root.get("recovered") and root.get("thumbnail") else next((v for v in project["versions"] if v["ready"]), None)
+            summaries.append({k:project[k] for k in ("id","created","updated","title","favorite","favorite_count","saved_count","archived","edits","root_id")} |
                              {"cover":cover, "pending":[v for v in project["versions"] if not v["ready"]]})
-        return {"projects":summaries, "total":len(matches), "counts":counts}
+        return {"projects":summaries, "total":len(matches), "counts":counts,
+                "navigation":[{"id":p["id"],"title":p["title"]} for p in matches]}
+
+    def favorites(self, query="", offset=0, limit=48):
+        library = self.library()
+        projects = [self.detail(row["id"]) for row in self.store.rows("SELECT id FROM projects WHERE archived=0")]
+        photos = [dict(version,project_title=p["title"],is_root=version["id"]==p["root_id"])
+                  for p in projects for version in p["versions"] if version["ready"] and version["favorite"]
+                  and (not query or query.lower() in (p["title"]+" "+version["prompt"]).lower())]
+        photos.sort(key=lambda photo:(photo["created"],photo["id"]),reverse=True)
+        matching = {photo["project_id"] for photo in photos}
+        projects.sort(key=lambda p:(p["updated"],p["id"]),reverse=True)
+        return {"images":photos[offset:offset+limit],"total":len(photos),"counts":library["counts"],
+                "navigation":[{"id":p["id"],"title":p["title"]} for p in projects if p["id"] in matching]}
 
     def delete(self, project_id):
-        members = self.store.rows("SELECT * FROM versions WHERE project_id=?", (project_id,))
-        sources = self.store.rows("SELECT id FROM project_sources WHERE project_id=?", (project_id,))
-        if self.store.one("SELECT j.id FROM jobs j JOIN versions v ON j.id=v.id WHERE v.project_id=? AND j.status IN ('queued','submitted','running')", (project_id,)):
+        self.delete_many([project_id])
+
+    def delete_many(self, project_ids):
+        marks = ','.join('?' for _ in project_ids)
+        members = self.store.rows(f"SELECT * FROM versions WHERE project_id IN ({marks})", project_ids)
+        sources = self.store.rows(f"SELECT id FROM project_sources WHERE project_id IN ({marks})", project_ids)
+        if self.store.one(f"SELECT j.id FROM jobs j JOIN versions v ON j.id=v.id WHERE v.project_id IN ({marks}) AND j.status IN ('queued','submitted','running')", project_ids):
             raise ValueError("Stop this project's queued or running images before deleting it.")
         removable_sources = []
         for source in sources:
-            used_elsewhere = self.store.one("SELECT v.id FROM versions v WHERE v.project_id!=? AND v.source_id=?", (project_id, source["id"]))
+            used_elsewhere = self.store.one(f"SELECT v.id FROM versions v WHERE v.project_id NOT IN ({marks}) AND v.source_id=?", (*project_ids, source["id"]))
             if not used_elsewhere:
                 removable_sources.append(source["id"])
         files = [("images",v["id"],".png") for v in members if v["kind"] == "image"]
         masks = [mask for source_id in removable_sources for mask in self.store.rows("SELECT id FROM masks WHERE source_id=?", (source_id,))]
         files += [("masks",mask["id"],".png") for mask in masks]
         files += [("uploads",source_id,".png") for source_id in removable_sources]
-        files += [("thumbs",image_id,".webp") for image_id in {v["id"] for v in members} | set(removable_sources)]
+        files += [("thumbs",image_id,".webp") for image_id in {v["id"] for v in members if v["kind"]=='image'} | set(removable_sources)]
         staged = []
         try:
             for folder, image_id, suffix in files:
@@ -201,9 +237,9 @@ class Projects:
                 for source_id in removable_sources:
                     self.store.db.execute("DELETE FROM masks WHERE source_id=?", (source_id,))
                     self.store.db.execute("DELETE FROM uploads WHERE id=?", (source_id,))
-                self.store.db.execute("DELETE FROM project_sources WHERE project_id=?", (project_id,))
-                self.store.db.execute("DELETE FROM versions WHERE project_id=?", (project_id,))
-                self.store.db.execute("DELETE FROM projects WHERE id=?", (project_id,))
+                self.store.db.execute(f"DELETE FROM project_sources WHERE project_id IN ({marks})", project_ids)
+                self.store.db.execute(f"DELETE FROM versions WHERE project_id IN ({marks})", project_ids)
+                self.store.db.execute(f"DELETE FROM projects WHERE id IN ({marks})", project_ids)
         except BaseException:
             for original, temporary in reversed(staged):
                 temporary.rename(original)
