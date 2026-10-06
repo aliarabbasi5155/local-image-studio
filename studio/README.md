@@ -107,33 +107,6 @@ Match original supports up to 16,777,216 pixels and 8192 pixels per side.
 Original-shape output supports aspect ratios from 1:32 to 32:1. Your saved
 source remains unchanged; the AI can change details while editing or enhancing.
 
-## Model presets
-
-**Create** uses Flux2 Klein 9B. In **Edit image**, the **Model preset** selector
-also offers Qwen Image Edit 2511:
-
-- **Qwen · Fast · SNOFS 1.3:** Q4_0, Lightning eight-step, Qwen SNOFS 1.3.
-- **Qwen · Quality · SNOFS 1.3:** Q4_K_M, 40 steps, Qwen SNOFS 1.3.
-- **Qwen · Fast · MCNL v1:** Q4_0, Lightning eight-step, MCNL v1.
-- **Qwen · Quality · MCNL v1:** Q4_K_M, 40 steps, MCNL v1.
-
-Start with a Fast Qwen preset, **Canvas detail → Fast** and one variation.
-Full-quality presets use more steps and precision. These names describe the
-settings; compare results on your own photos to choose your favorite.
-Fast canvas quality also uses a smaller editing reference to reduce memory
-and time. High keeps more reference detail. Qwen's first load takes longer;
-40-step Q4_K_M presets can take hours on a 24 GB Mac. Jobs remain cancellable
-and have a 24-hour limit so an overnight edit is not stopped after one hour.
-The adapter checkbox reflects the chosen Qwen preset and is fixed; choose a
-different preset to switch between SNOFS and MCNL. Flux's SNOFS switch remains
-optional. Model selection and drafts are remembered in your browser, and
-**Reuse settings** restores the model that made an image.
-
-Qwen requires its own model installation on the Mac. Double-click
-`Add Qwen Models.command` once, with the engine queue empty. Keep Docker Desktop
-running and refresh the website afterward. All variants share supporting
-files. See [the installation and source details](../README.md#qwen-image-edit-2511).
-
 ## Quality
 
 | Preset | Model | Square | Portrait | Landscape |
@@ -147,7 +120,7 @@ ideas, then use Balanced or High for more detail. At larger output sizes the
 generation canvas also depends on the requested dimensions, so Balanced and
 High can share a canvas size. Fast uses the 4-bit model; Balanced and High use
 the 8-bit model.
-The Flux presets use the distilled model's four steps and guidance 1.0. SNOFS is
+All presets use the distilled model's four steps and guidance 1.0. SNOFS is
 enabled by default and can be switched off. The optional fixed seed makes it
 easy to revisit the same settings; random seed gives a fresh starting point.
 
@@ -159,18 +132,6 @@ With Fast and SNOFS, an exact 751 × 497 edit took **27.41 seconds**, a 2K squar
 creation took **20.01 seconds**, and a 4096 × 2711 edit took **46.96 seconds**
 from worker submission to saved result. These include AI upscaling and exclude
 time waiting in the queue. See [the measured runs](../benchmarks/20261005-output-sizes.json).
-
-For Qwen, these canvas dimensions still apply, but the **Model preset** fixes
-the base file and step count. A Fast Qwen preset always uses eight steps, even
-when canvas quality is High; a Quality Qwen preset uses 40 steps even at a
-smaller canvas. Large saved outputs use the shared AI upscaler.
-
-The Qwen Fast presets produced real 512 × 512 edits with saved recipes and
-workflows. The full-quality MCNL stack loaded and ran a denoising step; the
-long test was stopped. Complete 40-step renders and Qwen High/2K/4K GPU paths
-remain unbenchmarked. See [the verification report](../benchmarks/20261005T230321Z-qwen-edit-presets.json).
-
-![Qwen editing controls on a phone-sized viewport](../examples/studio-qwen-presets.png)
 
 ## Where everything is saved
 

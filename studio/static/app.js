@@ -6,7 +6,7 @@ const activeStatuses = ['queued', 'submitted', 'running'];
 let saved;
 try { saved = JSON.parse(localStorage.getItem('studio-composer') || '{}'); } catch { saved = {}; }
 const state = {view:'library', images:[], jobs:[], total:0, query:'', options:null, detail:null,
-  mode:saved.mode || 'create', preset:saved.preset || 'flux', editPreset:saved.editPreset || 'flux', quality:saved.quality || 'balanced', aspect:saved.aspect || 'square',
+  mode:saved.mode || 'create', quality:saved.quality || 'balanced', aspect:saved.aspect || 'square',
   outputSize:saved.outputSize || (saved.mode === 'edit' ? 'original' : 'preset'),
   variations:saved.variations || 1, snofs:saved.snofs !== false, source:saved.source || null,
   drafts:saved.drafts || {create:'',edit:''}, seed:saved.seed ?? null,
@@ -27,7 +27,7 @@ async function api(path, options={}) {
 const send = (path, body, method='POST') => api(path, {method, body:JSON.stringify(body)});
 function persist() {
   state.drafts[state.mode] = $('#prompt').value;
-  try { localStorage.setItem('studio-composer', JSON.stringify({mode:state.mode, preset:state.preset,editPreset:state.editPreset,quality:state.quality,
+  try { localStorage.setItem('studio-composer', JSON.stringify({mode:state.mode, quality:state.quality,
     aspect:state.aspect,outputSize:state.outputSize,variations:state.variations,snofs:state.snofs,source:state.source,drafts:state.drafts,seed:state.seed,composerCollapsed:state.composerCollapsed})); } catch { /* Private browsing may disable storage. */ }
 }
 function renderComposerVisibility() {
@@ -69,7 +69,7 @@ function renderEngine() {
 function qualityHint() {
   const quality = state.options.qualities[state.quality];
   let [width,height] = quality.sizes[state.aspect];
-  $('#quality-hint').textContent = state.options.presets?.[state.preset]?.family === 'qwen' ? 'Model preset sets precision and steps' : quality.description;
+  $('#quality-hint').textContent = quality.description;
   if (state.mode === 'edit' && state.outputSize !== 'preset') {
     if (!state.source) { $('#output-hint').textContent = 'Choose a photo to see its output size.'; return; }
     width = state.source.width; height = state.source.height;
@@ -82,14 +82,6 @@ function qualityHint() {
   $('#output-hint').textContent = `${width} × ${height} · ${method}`;
 }
 function renderComposer() {
-  const presets = state.options.presets || {flux:{label:'Flux2 Klein 9B',family:'flux',modes:['create','edit']}};
-  if (!presets[state.preset] || !presets[state.preset].modes.includes(state.mode)) state.preset = 'flux';
-  $('#model-preset').innerHTML = Object.entries(presets).filter(([,preset]) => preset.modes.includes(state.mode))
-    .map(([key,preset]) => `<option value="${escapeHTML(key)}" ${preset.available === false ? 'disabled' : ''}>${escapeHTML(preset.label)}${preset.available === false ? ' · Not ready' : ''}</option>`).join('');
-  $('#model-preset').value = state.preset;
-  const preset = presets[state.preset], qwen = preset.family === 'qwen';
-  $('#quality-label').textContent = qwen ? 'Canvas detail' : 'Quality';
-  $('#preset-hint').textContent = qwen && preset.available === false ? 'Start the engine or run Add Qwen Models.command on your Mac, then refresh.' : qwen ? `${preset.description} · ${preset.lightning ? 'Slower than Flux.' : 'Can take hours on this Mac.'} Canvas detail sets the generation size; 2K/4K use AI upscaling.` : '4 steps · Create or edit · Quality controls precision and detail.';
   if (!state.options.qualities[state.quality]) state.quality = 'balanced';
   if (!state.options.qualities[state.quality].sizes[state.aspect]) state.aspect = 'square';
   if (!state.options.output_sizes?.[state.outputSize] || (state.mode === 'create' && state.outputSize === 'original')) state.outputSize = 'preset';
@@ -109,10 +101,7 @@ function renderComposer() {
   originalShapeOption.hidden = !originalShape; originalShapeOption.disabled = true;
   $('#aspect').disabled = originalShape;
   if (originalShape) $('#aspect').value = 'original';
-  $('#snofs').checked = qwen || state.snofs;
-  $('#snofs').disabled = qwen;
-  $('#adapter-label').textContent = qwen && preset.adapter === 'mcnl' ? 'MCNL v1' : qwen ? 'SNOFS 1.3' : 'SNOFS';
-  $('.snofs-toggle').title = qwen ? 'Included in this model preset' : 'Use the Flux SNOFS adapter';
+  $('#snofs').checked = state.snofs;
   $('#generate-label').textContent = state.mode === 'edit' ? (state.variations > 1 ? `Make ${state.variations} edits` : 'Edit image') : (state.variations > 1 ? `Create ${state.variations} images` : 'Create image');
   $('#seed').hidden = state.seed === null; $('#seed').value = state.seed ?? '';
   $('#seed-toggle').textContent = state.seed === null ? 'Random seed' : 'Fixed seed · switch to random';
@@ -188,18 +177,13 @@ async function changeView(view) {
 }
 function setMode(mode) {
   persist(); if (mode === 'edit' && state.mode !== 'edit' && state.outputSize === 'preset') state.outputSize = 'original';
-  if (state.mode === 'edit') state.editPreset = state.preset;
-  state.preset = mode === 'edit' ? state.editPreset : 'flux';
   state.mode = mode; state.composerCollapsed = false;
   $('#compose-error').hidden = true; renderComposer(); $('#prompt').focus();
 }
 function reuse(recipe) {
   state.mode = recipe.mode; state.quality = recipe.quality; state.aspect = recipe.aspect;
-  state.preset = recipe.preset || 'flux';
-  if (recipe.mode === 'edit') state.editPreset = state.preset;
   state.outputSize = recipe.output_size || 'preset';
-  if (recipe.family !== 'qwen') state.snofs = recipe.snofs;
-  state.seed = recipe.seed; state.variations = 1;
+  state.snofs = recipe.snofs; state.seed = recipe.seed; state.variations = 1;
   state.drafts[recipe.mode] = recipe.prompt;
   if (recipe.source_id) state.source = {id:recipe.source_id,name:recipe.source.name,width:recipe.source.width,height:recipe.source.height,
     thumbnail:`/media/thumb/${recipe.source_id}`,url:`/media/upload/${recipe.source_id}`,parent_image_id:recipe.parent_image_id};
@@ -276,7 +260,7 @@ function detailHTML(image) {
   const outputLabel = {preset:'Preset',original:'Match original','2k':'2K','4k':'4K'}[r.output_size || 'preset'];
   const sizeInfo = `<div><dt>Output size</dt><dd>${outputLabel}</dd></div><div><dt>Generated at</dt><dd>${r.generation_width || r.width} × ${r.generation_height || r.height}</dd></div>`;
   const processingInfo = processing === 'ai_upscale' ? `<p class="processing-note">AI upscaled with ${escapeHTML(r.processing.upscaler.name)} and fitted to the saved size.</p>` : processing === 'resize' ? '<p class="processing-note">Fitted to your photo’s exact dimensions.</p>' : '';
-  return `<div class="detail-layout"><button class="icon-button dialog-close" data-close="detail-dialog" aria-label="Close image">${icon('close')}</button><div class="detail-image">${detailImageHTML(image)}</div><div class="detail-info"><span class="eyebrow">${r.mode === 'edit' ? 'AN IMAGE, REIMAGINED' : 'FROM YOUR IMAGINATION'}</span><h2>${r.mode === 'edit' ? 'Your edited image' : 'Your creation'}</h2><div class="detail-prompt">${escapeHTML(r.prompt)}</div><dl class="recipe-grid"><div><dt>Model preset</dt><dd>${escapeHTML(r.preset_label || "Flux2 Klein 9B")}</dd></div><div><dt>Quality</dt><dd>${escapeHTML(r.quality)}</dd></div><div><dt>Steps</dt><dd>${r.steps || 4}</dd></div><div><dt>Size</dt><dd>${r.width} × ${r.height}</dd></div>${sizeInfo}<div><dt>Seed</dt><dd>${r.seed}</dd></div><div><dt>Variation</dt><dd>${r.variation}</dd></div><div><dt>Created</dt><dd>${dateText(image.created)}</dd></div><div><dt>Adapter</dt><dd>${r.family === "qwen" ? (r.snofs ? "Qwen SNOFS 1.3" : "MCNL v1") : r.snofs ? "Flux SNOFS 1.4" : "None"}</dd></div></dl>${processingInfo}${r.source_id ? `<a class="source-link" href="/media/upload/${r.source_id}?download=1"><img src="/media/thumb/${r.source_id}" alt="Source photo"><span>Original photo · download source</span></a>` : ''}<div class="detail-actions"><button class="primary" data-action="edit" data-id="${image.id}">${icon('edit')}Edit this image</button><div class="detail-downloads">${downloadLinks(image)}</div><button class="secondary" data-action="reuse" data-id="${image.id}">${icon('repeat')}Reuse settings</button><button class="secondary ${image.favorite ? 'favorited' : ''}" data-action="favorite" data-id="${image.id}">${icon('heart')}${image.favorite ? 'Favorited' : 'Favorite'}</button><button class="secondary" data-action="archive" data-id="${image.id}">${icon(image.archived ? 'restore' : 'archive')}${image.archived ? 'Restore' : 'Archive'}</button><a class="secondary" href="/api/images/${image.id}/recipe">${icon('download')}Save recipe</a><button class="secondary danger" data-action="delete" data-id="${image.id}">${icon('trash')}Delete image</button></div><details><summary>Full generation settings</summary><pre>${escapeHTML(JSON.stringify(r,null,2))}</pre></details></div></div>`;
+  return `<div class="detail-layout"><button class="icon-button dialog-close" data-close="detail-dialog" aria-label="Close image">${icon('close')}</button><div class="detail-image">${detailImageHTML(image)}</div><div class="detail-info"><span class="eyebrow">${r.mode === 'edit' ? 'AN IMAGE, REIMAGINED' : 'FROM YOUR IMAGINATION'}</span><h2>${r.mode === 'edit' ? 'Your edited image' : 'Your creation'}</h2><div class="detail-prompt">${escapeHTML(r.prompt)}</div><dl class="recipe-grid"><div><dt>Quality</dt><dd>${escapeHTML(r.quality)}</dd></div><div><dt>Size</dt><dd>${r.width} × ${r.height}</dd></div>${sizeInfo}<div><dt>Seed</dt><dd>${r.seed}</dd></div><div><dt>Variation</dt><dd>${r.variation}</dd></div><div><dt>Created</dt><dd>${dateText(image.created)}</dd></div><div><dt>SNOFS</dt><dd>${r.snofs ? 'On' : 'Off'}</dd></div></dl>${processingInfo}${r.source_id ? `<a class="source-link" href="/media/upload/${r.source_id}?download=1"><img src="/media/thumb/${r.source_id}" alt="Source photo"><span>Original photo · download source</span></a>` : ''}<div class="detail-actions"><button class="primary" data-action="edit" data-id="${image.id}">${icon('edit')}Edit this image</button><div class="detail-downloads">${downloadLinks(image)}</div><button class="secondary" data-action="reuse" data-id="${image.id}">${icon('repeat')}Reuse settings</button><button class="secondary ${image.favorite ? 'favorited' : ''}" data-action="favorite" data-id="${image.id}">${icon('heart')}${image.favorite ? 'Favorited' : 'Favorite'}</button><button class="secondary" data-action="archive" data-id="${image.id}">${icon(image.archived ? 'restore' : 'archive')}${image.archived ? 'Restore' : 'Archive'}</button><a class="secondary" href="/api/images/${image.id}/recipe">${icon('download')}Save recipe</a><button class="secondary danger" data-action="delete" data-id="${image.id}">${icon('trash')}Delete image</button></div><details><summary>Full generation settings</summary><pre>${escapeHTML(JSON.stringify(r,null,2))}</pre></details></div></div>`;
 }
 async function showDetail(id) {
   const position = state.detail?.id === id ? Number($('#comparison-position')?.value ?? 50) : 50;
@@ -338,8 +322,6 @@ async function action(actionName,id) {
       state.source = source; state.drafts.edit = ''; state.mode = 'edit'; state.seed = null;
       state.outputSize = 'original';
       state.quality = image.recipe.quality; state.aspect = image.recipe.aspect;
-      state.preset = image.recipe.preset || state.editPreset;
-      state.editPreset = state.preset;
       state.composerCollapsed = false;
       renderComposer(); $('#detail-dialog').close(); await changeView('library'); $('#prompt').focus();
       return toast('Photo ready. Describe what you want to change.');
@@ -385,7 +367,7 @@ $('#compose-form').onsubmit = async event => {
   refreshing = true; $('#generate').disabled = true;
   try {
     persist(); const body = {mode:state.mode,prompt:$('#prompt').value,quality:state.quality,aspect:state.aspect,variations:state.variations,
-      preset:state.preset,snofs:state.snofs,seed:state.seed,output_size:state.outputSize,source_id:state.source?.id,parent_image_id:state.source?.parent_image_id};
+      snofs:state.snofs,seed:state.seed,output_size:state.outputSize,source_id:state.source?.id,parent_image_id:state.source?.parent_image_id};
     await send('/api/generate',body); await changeView('library');
     toast(state.variations > 1 ? `${state.variations} variations queued. They’ll appear as each finishes.` : 'Your image is on its way. It will save automatically.');
   } catch (error) { errorElement.textContent = error.message; errorElement.hidden = false; }
@@ -399,11 +381,6 @@ $('#upload').onchange = async event => {
   try { state.source = await api('/api/uploads',{method:'POST',body:form}); renderComposer(); toast('Photo uploaded. Your original stays unchanged.'); }
   catch (error) { toast(error.message); }
   finally { $('#upload-button').disabled = false; event.target.value = ''; }
-};
-$('#model-preset').onchange = event => {
-  persist(); state.preset = event.target.value;
-  if (state.mode === 'edit') state.editPreset = state.preset;
-  renderComposer();
 };
 for (const name of ['quality','aspect','variations','snofs']) $(`#${name}`).onchange = event => {
   persist(); state[name] = name === 'snofs' ? event.target.checked : name === 'variations' ? Number(event.target.value) : event.target.value;
@@ -446,6 +423,6 @@ const reserveComposerSpace = () => {
 };
 new ResizeObserver(reserveComposerSpace).observe($('.composer-wrap'));
 window.addEventListener('resize',reserveComposerSpace);
-setInterval(async () => { if (state.authenticated && !document.hidden) { try { const previous = JSON.stringify(state.options.presets); state.options = await api('/api/options'); renderEngine(); if (previous !== JSON.stringify(state.options.presets)) renderComposer(); } catch { /* Next refresh retries the connection. */ } } },15000);
+setInterval(async () => { if (state.authenticated && !document.hidden) { try { state.options = await api('/api/options'); renderEngine(); } catch { /* Next refresh retries the connection. */ } } },15000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && state.authenticated) refresh(); });
 (async () => { try { const auth = await api('/api/auth'); if (auth.authenticated) await enterStudio(); else showLogin(); } catch (error) { $('#login').hidden = false; $('#login-error').textContent = error.message; } })();

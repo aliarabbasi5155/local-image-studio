@@ -24,7 +24,7 @@ test-studio:
 check:
 	.venv/bin/python -m py_compile scripts/*.py studio/*.py studio/tests/*.py
 	node --check studio/static/app.js
-	bash -n scripts/env.sh scripts/setup.sh scripts/start.sh "Start Image Studio.command" "Start Web Studio.command" "Add Qwen Models.command"
+	bash -n scripts/env.sh scripts/setup.sh scripts/start.sh "Start Image Studio.command" "Start Web Studio.command"
 	UV_CACHE_DIR="$(CURDIR)/.cache/uv" uv pip check --python .venv/bin/python
 	git diff --check
 	git diff --cached --check

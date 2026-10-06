@@ -244,23 +244,3 @@ library images; a physical phone was not tested. See
 [the report](20261005-collapsible-panel.json),
 [desktop preview](../examples/studio-collapsed-panel.png) and
 [phone preview](../examples/studio-collapsed-panel-mobile.png).
-
-
-## Qwen Image Edit 2511 presets
-
-Validated on 6 October 2026 (Europe/Rome) with the same M5 / 24 GB Mac.
-SNOFS 1.3 and MCNL v1 each produced a 512 × 512 eight-step edit, with correct
-saved recipes and embedded workflows. Native engine times were 441.681 s and
-313.584 s, excluding queue waiting; cache conditions differed, so these are
-not a speed ranking. The earlier larger-reference SNOFS run took 850.71 s
-end to end.
-
-Q4_K_M + MCNL loaded and completed one denoising step on a 256-square probe,
-but the first step took 221.70 s. The forty-step probe was intentionally
-stopped. Full-quality SNOFS has graph/asset validation, rather than a complete
-render. Full 40-step outputs, Qwen High/2K/4K GPU paths and physical phones
-have not been tested. Both Flux/Qwen switch directions passed, and a Flux
-image completed after Qwen. All eight model assets passed SHA256 checks.
-The production image library was not used for these checks.
-
-Details: [verification report](20261005T230321Z-qwen-edit-presets.json).

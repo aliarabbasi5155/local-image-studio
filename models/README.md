@@ -3,13 +3,6 @@ Downloaded weights live here, outside Git. Exact source revisions are in
 and VAEs together in the MLX/MFLUX format. Future model families can share this
 directory without changing the ComfyUI installation.
 
-Qwen editing assets live in `models/qwen/<asset-key>/`. The two GGUF bases,
-shared vision/text encoder, VAE, Lightning and alternative editing adapters
-are pinned with sizes and SHA256 hashes in `config/qwen.json`. Double-click
-`Add Qwen Models.command` to install or resume them. Relative links register
-the assets under `Qwen/` in ComfyUI's model directories; the files remain
-outside Git and Docker. The eight assets occupy about 33.4 GB in total.
-
 Adapters live in `models/loras/<adapter-key>/`. Their pinned sources, file sizes
 and SHA256 checksums are in `config/loras.json`. Run
 `scripts/download_loras.py snofs-klein-9b-v1.4` with the project Python to install

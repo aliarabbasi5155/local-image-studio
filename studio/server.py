@@ -17,7 +17,6 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from .engine import Engine, QUALITIES, make_thumbnail
 from .storage import Store
 from .sizing import OUTPUT_SIZES, MAX_PIXELS, plan_size
-from .presets import PRESETS, recipe_model, reference_resolution
 
 ROOT = Path(__file__).resolve().parents[1]
 STATE = web.AppKey("studio", dict)
@@ -107,9 +106,7 @@ async def health(request):
 
 async def options(request):
     state = request.app[STATE]
-    availability = await state["engine"].preset_availability()
     return web.json_response({"qualities": QUALITIES, "output_sizes": OUTPUT_SIZES, "engine_ready": await state["engine"].available(),
-                              "presets": {key: dict(preset, available=availability[key]) for key, preset in PRESETS.items()},
                               "lan_url": os.environ.get("STUDIO_LAN_URL", f"{request.scheme}://{request.host}"),
                               "pin_required": bool(state["pin"]), "max_variations": 4})
 
@@ -172,16 +169,11 @@ async def generate(request):
         return failure("Describe your image in 1–5,000 characters.")
     mode = payload.get("mode", "create")
     quality = payload.get("quality", "balanced")
-    preset = payload.get("preset", "flux")
     aspect = payload.get("aspect", "square")
     count = payload.get("variations", 1)
     seed = payload.get("seed")
     if mode not in ("create", "edit") or quality not in QUALITIES or aspect not in QUALITIES[quality]["sizes"]:
         return failure("Choose a valid mode, quality and shape.")
-    if not isinstance(preset, str) or preset not in PRESETS:
-        return failure("Choose a valid model preset.")
-    if mode not in PRESETS[preset]["modes"]:
-        return failure("Qwen Image Edit needs a photo. Switch to Edit or choose Flux for Create.")
     if type(count) is not int or not 1 <= count <= 4:
         return failure("Choose between 1 and 4 variations.")
     if seed is not None and (type(seed) is not int or not 0 <= seed <= 0xFFFFFFFF):
@@ -192,8 +184,6 @@ async def generate(request):
     source = state["store"].one("SELECT * FROM uploads WHERE id=?", (source_id,)) if mode == "edit" else None
     if mode == "edit" and not source:
         return failure("Upload a photo or choose an image from your library first.")
-    if PRESETS[preset]["family"] == "qwen" and not (await state["engine"].preset_availability())[preset]:
-        return failure("Qwen is not ready. Run Add Qwen Models.command on your Mac, then refresh the studio. If installed already, start the image engine.", 503)
     parent_id = payload.get("parent_image_id")
     if parent_id and not state["store"].image(parent_id):
         # The saved editing source is independent of the parent image, so a
@@ -203,14 +193,14 @@ async def generate(request):
     if pending + count > 24:
         return failure("Your queue is full. Wait for some images to finish before adding more.", 409)
     sizing = plan_size(quality, aspect, mode, source, payload.get("output_size", "preset"), QUALITIES, state["upscaler"])
-    recipe = {"version": 3, "mode": mode, "prompt": prompt.strip(), "quality": quality, "aspect": aspect,
-              **sizing, **recipe_model(preset, QUALITIES[quality], payload.get("snofs", True), state["models"], state["adapter"]),
-              "runtime": state["runtime"],
+    model = QUALITIES[quality]["model"]
+    recipe = {"version": 2, "mode": mode, "prompt": prompt.strip(), "quality": quality, "aspect": aspect,
+              **sizing, "model": model, "model_source": state["models"][model],
+              "steps": 4, "guidance": 1.0, "snofs": payload.get("snofs", True),
+              "adapter": state["adapter"] if payload.get("snofs", True) else None, "runtime": state["runtime"],
               "source_id": source_id if mode == "edit" else None,
               "source": {k: source[k] for k in ("name", "width", "height", "sha256")} if source else None,
               "parent_image_id": parent_id if mode == "edit" else None}
-    if recipe["family"] == "qwen":
-        recipe["reference_resolution"] = reference_resolution(sizing)
     base_seed = seed if seed is not None else secrets.randbits(32)
     recipes = [dict(recipe, seed=(base_seed + i) % 2**32) for i in range(count)]
     result = state["store"].add_jobs(recipes)
