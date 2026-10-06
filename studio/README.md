@@ -79,6 +79,14 @@ JPEG or PNG before uploading.
 Choose **Output size** before creating or editing. The line below the controls
 shows the dimensions that will be saved.
 
+The **Resize** menu lets you choose how the output is made:
+
+- **Resize / AI upscale** keeps the existing behavior and fits the result to your selected output size.
+- **No resize · native size** saves the model's output directly at the quality preset's resolution. Edits use the photo's shape. The output-size selector is disabled because no enlargement happens.
+- **No resize · full size** generates directly at your selected size, without AI upscaling or a final resize. Larger images take longer and need more memory. Model dimensions use 16-pixel steps, so an odd-sized photo may save a few pixels larger or smaller.
+
+The choice is remembered in your browser, saved in each image's recipe and restored by **Reuse settings**. To compare both no-resize options, use the same photo, prompt and fixed seed.
+
 ![Output size controls with a saved 4K editing recipe](../examples/studio-output-sizes.png)
 
 | Choice | Saved image |
@@ -94,7 +102,7 @@ Shape then shows **Original photo**. In Create mode, 2K/4K use the chosen shape;
 a square 4K image is 4096 × 4096. Choose Preset when you want to change an edit
 to a preset square, portrait or landscape canvas.
 
-Large outputs are generated on a smaller canvas, enhanced with the local
+With **Resize / AI upscale**, large outputs are generated on a smaller canvas, enhanced with the local
 **Real-ESRGAN Compact** AI upscaler, then fitted to the exact saved dimensions
 without cropping. The generation canvas stays near one megapixel to fit this
 Mac's memory. A 4K output uses at least 1024 pixels on the generation canvas's

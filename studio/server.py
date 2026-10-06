@@ -16,7 +16,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .engine import Engine, QUALITIES, make_thumbnail
 from .storage import Store
-from .sizing import OUTPUT_SIZES, MAX_PIXELS, plan_size
+from .sizing import OUTPUT_SIZES, RESIZE_MODES, MAX_PIXELS, plan_size
 
 ROOT = Path(__file__).resolve().parents[1]
 STATE = web.AppKey("studio", dict)
@@ -106,7 +106,7 @@ async def health(request):
 
 async def options(request):
     state = request.app[STATE]
-    return web.json_response({"qualities": QUALITIES, "output_sizes": OUTPUT_SIZES, "engine_ready": await state["engine"].available(),
+    return web.json_response({"qualities": QUALITIES, "output_sizes": OUTPUT_SIZES, "resize_modes": RESIZE_MODES, "engine_ready": await state["engine"].available(),
                               "lan_url": os.environ.get("STUDIO_LAN_URL", f"{request.scheme}://{request.host}"),
                               "pin_required": bool(state["pin"]), "max_variations": 4})
 
@@ -192,7 +192,8 @@ async def generate(request):
     pending = state["store"].one("SELECT COUNT(*) AS count FROM jobs WHERE status IN ('queued','submitted','running')")["count"]
     if pending + count > 24:
         return failure("Your queue is full. Wait for some images to finish before adding more.", 409)
-    sizing = plan_size(quality, aspect, mode, source, payload.get("output_size", "preset"), QUALITIES, state["upscaler"])
+    sizing = plan_size(quality, aspect, mode, source, payload.get("output_size", "preset"), QUALITIES,
+                       state["upscaler"], payload.get("resize_mode", "auto"))
     model = QUALITIES[quality]["model"]
     recipe = {"version": 2, "mode": mode, "prompt": prompt.strip(), "quality": quality, "aspect": aspect,
               **sizing, "model": model, "model_source": state["models"][model],

@@ -25,7 +25,10 @@ and reuse the settings saved with every image. The library persists in
 The website runs in Docker; ComfyUI runs natively so MLX can use the Mac's GPU.
 Both reuse the models already installed in this checkout.
 The launcher also installs a verified 5 MB Real-ESRGAN upscaler. Large outputs
-use local AI upscaling after generation; 2K/4K refer to the longest saved edge.
+use local AI upscaling after generation by default; 2K/4K refer to the longest saved edge.
+The **Resize** menu also offers native output and direct full-size generation,
+both without resizing or AI upscaling. Direct generation uses 16-pixel size steps;
+large canvases need more time and memory. The chosen mode is saved in each recipe.
 Edits preserve the source aspect ratio. The original-size, 2K and 4K paths have
 all completed real GPU checks; see [the output-size report](benchmarks/20261005-output-sizes.json).
 

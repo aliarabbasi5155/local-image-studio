@@ -252,6 +252,34 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await (await self.client.get("/api/images")).json())["total"],1)
         self.assertIsNone(self.store.job(deleted_id))
 
+    async def test_no_resize_choices_keep_native_or_generate_at_requested_size(self):
+        await self.login()
+        for resize_mode, expected in (("native", (512,512)), ("direct", (4096,4096))):
+            response = await self.client.post("/api/generate", json={"prompt":"A fox", "quality":"fast", "output_size":"4k", "resize_mode":resize_mode})
+            self.assertEqual(response.status,202)
+            recipe = self.store.job((await response.json())["jobs"][0])["recipe"]
+            self.assertEqual((recipe["width"],recipe["height"]),expected)
+            self.assertEqual((recipe["generation_width"],recipe["generation_height"]),expected)
+            self.assertEqual(recipe["processing"], {"method":"none", "upscaler":None, "resize_method":None, "crop":"disabled"})
+            self.assertEqual(recipe["resize_mode"],resize_mode)
+            self.assertEqual((recipe["requested_width"],recipe["requested_height"]),(4096,4096))
+        form = aiohttp.FormData()
+        form.add_field("image",photo(751,497),filename="reference.png",content_type="image/png")
+        source = await (await self.client.post("/api/uploads",data=form)).json()
+        for resize_mode, size, expected in (("native","4k",(512,336)), ("direct","original",(752,496)), ("direct","2k",(2048,1360))):
+            response = await self.client.post("/api/generate",json={"mode":"edit","prompt":"Add flowers","source_id":source["id"],"quality":"fast","output_size":size,"resize_mode":resize_mode})
+            self.assertEqual(response.status,202)
+            recipe = self.store.job((await response.json())["jobs"][0])["recipe"]
+            self.assertEqual((recipe["width"],recipe["height"]),expected)
+            self.assertEqual(recipe["processing"]["method"],"none")
+        for value in ("unknown",False,None,[],{}):
+            response = await self.client.post("/api/generate",json={"prompt":"A fox","resize_mode":value})
+            self.assertEqual(response.status,400)
+        response = await self.client.post("/api/generate",json={"prompt":"A fox","quality":"fast","output_size":"2k"})
+        recipe = self.store.job((await response.json())["jobs"][0])["recipe"]
+        self.assertEqual(recipe["resize_mode"],"auto")
+        self.assertEqual(recipe["processing"]["method"],"ai_upscale")
+
     async def test_output_sizes_preserve_source_shape_and_exact_dimensions(self):
         await self.login()
         form = aiohttp.FormData()
@@ -401,6 +429,19 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(json.loads(image.info["studio"]),edited["recipe"])
             self.assertIn("workflow",image.info)
         self.assertEqual((await self.client.get(f"/media/thumb/{edited['id']}")).status,200)
+
+    async def test_worker_both_no_resize_modes_bypass_upscaler_and_save_model_pixels(self):
+        for count, (resize_mode, output_size, expected) in enumerate((("native","4k",(512,512)), ("direct","2k",(2048,2048))), 1):
+            response = await self.client.post("/api/generate",json={"prompt":"A cafe","quality":"fast","output_size":output_size,"resize_mode":resize_mode})
+            image_id = (await response.json())["jobs"][0]
+            images = await self.wait_images(count)
+            image = next(item for item in images if item["id"]==image_id)
+            graph = self.submitted[-1]["prompt"]
+            self.assertFalse({"ImageScale","ImageUpscaleWithModel","UpscaleModelLoader","SaveImage"} & {node["class_type"] for node in graph.values()})
+            with Image.open(Path(self.temp.name)/"images"/(image_id+".png")) as png:
+                self.assertEqual(png.size,expected)
+                self.assertEqual(json.loads(png.info["studio"]),image["recipe"])
+            self.assertEqual(image["recipe"]["resize_mode"],resize_mode)
 
     async def test_worker_saves_final_size_png_with_complete_upscale_workflow(self):
         form = aiohttp.FormData()

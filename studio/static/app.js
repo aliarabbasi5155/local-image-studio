@@ -8,6 +8,7 @@ try { saved = JSON.parse(localStorage.getItem('studio-composer') || '{}'); } cat
 const state = {view:'library', images:[], jobs:[], total:0, query:'', options:null, detail:null,
   mode:saved.mode || 'create', quality:saved.quality || 'balanced', aspect:saved.aspect || 'square',
   outputSize:saved.outputSize || (saved.mode === 'edit' ? 'original' : 'preset'),
+  resizeMode:saved.resizeMode || 'auto',
   variations:saved.variations || 1, snofs:saved.snofs !== false, source:saved.source || null,
   drafts:saved.drafts || {create:'',edit:''}, seed:saved.seed ?? null,
   composerCollapsed:saved.composerCollapsed === true, authenticated:false};
@@ -28,7 +29,7 @@ const send = (path, body, method='POST') => api(path, {method, body:JSON.stringi
 function persist() {
   state.drafts[state.mode] = $('#prompt').value;
   try { localStorage.setItem('studio-composer', JSON.stringify({mode:state.mode, quality:state.quality,
-    aspect:state.aspect,outputSize:state.outputSize,variations:state.variations,snofs:state.snofs,source:state.source,drafts:state.drafts,seed:state.seed,composerCollapsed:state.composerCollapsed})); } catch { /* Private browsing may disable storage. */ }
+    aspect:state.aspect,outputSize:state.outputSize,resizeMode:state.resizeMode,variations:state.variations,snofs:state.snofs,source:state.source,drafts:state.drafts,seed:state.seed,composerCollapsed:state.composerCollapsed})); } catch { /* Private browsing may disable storage. */ }
 }
 function renderComposerVisibility() {
   $('.composer-wrap').classList.toggle('is-collapsed',state.composerCollapsed);
@@ -70,21 +71,32 @@ function qualityHint() {
   const quality = state.options.qualities[state.quality];
   let [width,height] = quality.sizes[state.aspect];
   $('#quality-hint').textContent = quality.description;
-  if (state.mode === 'edit' && state.outputSize !== 'preset') {
+  if (state.mode === 'edit' && (state.outputSize !== 'preset' || state.resizeMode === 'native')) {
     if (!state.source) { $('#output-hint').textContent = 'Choose a photo to see its output size.'; return; }
     width = state.source.width; height = state.source.height;
   }
-  if (state.outputSize === '2k' || state.outputSize === '4k') {
+  if (state.resizeMode !== 'native' && (state.outputSize === '2k' || state.outputSize === '4k')) {
     const scale = (state.outputSize === '2k' ? 2048 : 4096) / Math.max(width,height);
     width = Math.max(1,Math.round(width*scale)); height = Math.max(1,Math.round(height*scale));
   }
-  const method = state.outputSize === 'preset' ? 'Preset size' : state.outputSize === 'original' ? 'Same size and shape as your photo' : 'AI upscale · keeps the image shape';
+  if (state.resizeMode === 'native' && state.mode === 'edit') {
+    const [pw,ph] = quality.sizes[state.aspect];
+    const scale = Math.min(1,Math.max(pw,ph)/Math.max(width,height),Math.sqrt(1048576/(width*height)),2048/Math.max(width,height));
+    width = Math.max(64,16*Math.floor(width*scale/16+0.5)); height = Math.max(64,16*Math.floor(height*scale/16+0.5));
+  } else if (state.resizeMode === 'direct') {
+    width = Math.max(64,16*Math.floor(width/16+0.5)); height = Math.max(64,16*Math.floor(height/16+0.5));
+  }
+  let method = state.outputSize === 'preset' ? 'Preset size' : state.outputSize === 'original' ? 'Same size and shape as your photo' : 'AI upscale · keeps the image shape';
+  if (state.resizeMode === 'native') method = 'Native output · no resizing or AI upscaling';
+  if (state.resizeMode === 'direct') method = 'Generated at full size · no resizing or AI upscaling · dimensions use 16-pixel steps';
+  if (state.resizeMode === 'direct' && width*height > 1048576) method += ' · Large images take longer and use more memory';
   $('#output-hint').textContent = `${width} × ${height} · ${method}`;
 }
 function renderComposer() {
   if (!state.options.qualities[state.quality]) state.quality = 'balanced';
   if (!state.options.qualities[state.quality].sizes[state.aspect]) state.aspect = 'square';
   if (!state.options.output_sizes?.[state.outputSize] || (state.mode === 'create' && state.outputSize === 'original')) state.outputSize = 'preset';
+  if (!state.options.resize_modes?.[state.resizeMode]) state.resizeMode = 'auto';
   document.querySelectorAll('[data-mode]').forEach(button => button.classList.toggle('selected',button.dataset.mode === state.mode));
   $('#prompt').value = state.drafts[state.mode] || '';
   $('#prompt').placeholder = state.mode === 'edit' ? 'What should change? Tell us what to keep, too…' : 'Describe an image you’d love to see…';
@@ -94,8 +106,10 @@ function renderComposer() {
   if (state.source) $('#source-preview').innerHTML = `<div class="source-chip"><img src="${escapeHTML(state.source.thumbnail)}" alt="Photo to edit"><span>${escapeHTML(state.source.name)}<small>${state.source.width} × ${state.source.height} · Original stays saved</small></span><button type="button" id="remove-source" aria-label="Remove reference photo">${icon('close')}</button></div>`;
   $('#quality').value = state.quality; $('#aspect').value = state.aspect; $('#variations').value = state.variations;
   $('#output-size').value = state.outputSize;
+  $('#output-size').disabled = state.resizeMode === 'native';
+  $('#resize-mode').value = state.resizeMode;
   $('#output-size option[value="original"]').disabled = state.mode !== 'edit';
-  const originalShape = state.mode === 'edit' && state.outputSize !== 'preset';
+  const originalShape = state.mode === 'edit' && (state.outputSize !== 'preset' || state.resizeMode === 'native');
   let originalShapeOption = $('#aspect option[value="original"]');
   if (!originalShapeOption) { originalShapeOption = document.createElement('option'); originalShapeOption.value = 'original'; originalShapeOption.textContent = 'Original photo'; $('#aspect').append(originalShapeOption); }
   originalShapeOption.hidden = !originalShape; originalShapeOption.disabled = true;
@@ -183,6 +197,7 @@ function setMode(mode) {
 function reuse(recipe) {
   state.mode = recipe.mode; state.quality = recipe.quality; state.aspect = recipe.aspect;
   state.outputSize = recipe.output_size || 'preset';
+  state.resizeMode = recipe.resize_mode || 'auto';
   state.snofs = recipe.snofs; state.seed = recipe.seed; state.variations = 1;
   state.drafts[recipe.mode] = recipe.prompt;
   if (recipe.source_id) state.source = {id:recipe.source_id,name:recipe.source.name,width:recipe.source.width,height:recipe.source.height,
@@ -257,9 +272,10 @@ function initComparison(image, position=50) {
 function detailHTML(image) {
   const r = image.recipe;
   const processing = r.processing?.method;
-  const outputLabel = {preset:'Preset',original:'Match original','2k':'2K','4k':'4K'}[r.output_size || 'preset'];
-  const sizeInfo = `<div><dt>Output size</dt><dd>${outputLabel}</dd></div><div><dt>Generated at</dt><dd>${r.generation_width || r.width} × ${r.generation_height || r.height}</dd></div>`;
-  const processingInfo = processing === 'ai_upscale' ? `<p class="processing-note">AI upscaled with ${escapeHTML(r.processing.upscaler.name)} and fitted to the saved size.</p>` : processing === 'resize' ? '<p class="processing-note">Fitted to your photo’s exact dimensions.</p>' : '';
+  const outputLabel = r.resize_mode === 'native' ? 'Native size' : {preset:'Preset',original:'Match original','2k':'2K','4k':'4K'}[r.output_size || 'preset'];
+  const resizeLabel = {auto:'Resize / AI upscale',native:'No resize · native size',direct:'No resize · full size'}[r.resize_mode || 'auto'];
+  const sizeInfo = `<div><dt>Output size</dt><dd>${outputLabel}</dd></div><div><dt>Resize</dt><dd>${resizeLabel}</dd></div><div><dt>Generated at</dt><dd>${r.generation_width || r.width} × ${r.generation_height || r.height}</dd></div>`;
+  const processingInfo = processing === 'ai_upscale' ? `<p class="processing-note">AI upscaled with ${escapeHTML(r.processing.upscaler.name)} and fitted to the saved size.</p>` : processing === 'resize' ? '<p class="processing-note">Fitted to your photo’s exact dimensions.</p>' : r.resize_mode === 'native' ? '<p class="processing-note">Saved at native resolution without resizing or AI upscaling.</p>' : r.resize_mode === 'direct' ? '<p class="processing-note">Generated directly at the saved size without resizing or AI upscaling. Dimensions use 16-pixel steps.</p>' : '';
   return `<div class="detail-layout"><button class="icon-button dialog-close" data-close="detail-dialog" aria-label="Close image">${icon('close')}</button><div class="detail-image">${detailImageHTML(image)}</div><div class="detail-info"><span class="eyebrow">${r.mode === 'edit' ? 'AN IMAGE, REIMAGINED' : 'FROM YOUR IMAGINATION'}</span><h2>${r.mode === 'edit' ? 'Your edited image' : 'Your creation'}</h2><div class="detail-prompt">${escapeHTML(r.prompt)}</div><dl class="recipe-grid"><div><dt>Quality</dt><dd>${escapeHTML(r.quality)}</dd></div><div><dt>Size</dt><dd>${r.width} × ${r.height}</dd></div>${sizeInfo}<div><dt>Seed</dt><dd>${r.seed}</dd></div><div><dt>Variation</dt><dd>${r.variation}</dd></div><div><dt>Created</dt><dd>${dateText(image.created)}</dd></div><div><dt>SNOFS</dt><dd>${r.snofs ? 'On' : 'Off'}</dd></div></dl>${processingInfo}${r.source_id ? `<a class="source-link" href="/media/upload/${r.source_id}?download=1"><img src="/media/thumb/${r.source_id}" alt="Source photo"><span>Original photo · download source</span></a>` : ''}<div class="detail-actions"><button class="primary" data-action="edit" data-id="${image.id}">${icon('edit')}Edit this image</button><div class="detail-downloads">${downloadLinks(image)}</div><button class="secondary" data-action="reuse" data-id="${image.id}">${icon('repeat')}Reuse settings</button><button class="secondary ${image.favorite ? 'favorited' : ''}" data-action="favorite" data-id="${image.id}">${icon('heart')}${image.favorite ? 'Favorited' : 'Favorite'}</button><button class="secondary" data-action="archive" data-id="${image.id}">${icon(image.archived ? 'restore' : 'archive')}${image.archived ? 'Restore' : 'Archive'}</button><a class="secondary" href="/api/images/${image.id}/recipe">${icon('download')}Save recipe</a><button class="secondary danger" data-action="delete" data-id="${image.id}">${icon('trash')}Delete image</button></div><details><summary>Full generation settings</summary><pre>${escapeHTML(JSON.stringify(r,null,2))}</pre></details></div></div>`;
 }
 async function showDetail(id) {
@@ -367,7 +383,7 @@ $('#compose-form').onsubmit = async event => {
   refreshing = true; $('#generate').disabled = true;
   try {
     persist(); const body = {mode:state.mode,prompt:$('#prompt').value,quality:state.quality,aspect:state.aspect,variations:state.variations,
-      snofs:state.snofs,seed:state.seed,output_size:state.outputSize,source_id:state.source?.id,parent_image_id:state.source?.parent_image_id};
+      snofs:state.snofs,seed:state.seed,output_size:state.outputSize,resize_mode:state.resizeMode,source_id:state.source?.id,parent_image_id:state.source?.parent_image_id};
     await send('/api/generate',body); await changeView('library');
     toast(state.variations > 1 ? `${state.variations} variations queued. They’ll appear as each finishes.` : 'Your image is on its way. It will save automatically.');
   } catch (error) { errorElement.textContent = error.message; errorElement.hidden = false; }
@@ -387,6 +403,7 @@ for (const name of ['quality','aspect','variations','snofs']) $(`#${name}`).onch
   renderComposer();
 };
 $('#output-size').onchange = event => { persist(); state.outputSize = event.target.value; renderComposer(); };
+$('#resize-mode').onchange = event => { persist(); state.resizeMode = event.target.value; renderComposer(); };
 $('#prompt').oninput = persist;
 $('#seed-toggle').onclick = () => { state.seed = state.seed === null ? 123 : null; renderComposer(); if (state.seed !== null) $('#seed').focus(); };
 $('#seed').oninput = event => { state.seed = event.target.value === '' ? null : Number(event.target.value); persist(); };

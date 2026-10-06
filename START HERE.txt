@@ -13,7 +13,10 @@ Edit image = upload a photo and describe what should change.
 Output size: Match original keeps the exact photo dimensions when editing.
 2K = 2048 pixels on the longest edge; 4K = 4096 pixels on the longest edge.
 Edits keep the photo's shape. Create uses your chosen Square/Portrait/Landscape.
-Large outputs use local AI upscaling. The final size is shown before you start.
+Resize: Resize / AI upscale keeps the usual behavior. No resize - native size
+saves the model output as-is. No resize - full size generates at the selected
+size directly, takes longer and uses more memory. Dimensions use 16-pixel steps.
+The final size is shown before you start. Reuse settings keeps your Resize choice.
 Preset uses the normal quality/shape size. Edit this image starts at Match original.
 Tap an image to edit it again, download it or reuse its saved settings.
 Open an edited image and drag the Before / after divider left or right.
