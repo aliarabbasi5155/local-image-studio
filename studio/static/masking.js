@@ -28,7 +28,7 @@ async function prepareMask(source,key) {
     saved=await api(`/api/uploads/${source.id}/mask`,{method:'POST',body:form});
     selection.uploaded.set(source.id,saved);selection.bounds=saved.bounds;
   }
-  return {mask_id:saved.id,mask_feather:selection.feather,mask_detail:selection.detail || 'balanced',mask_context:selection.context || 'balanced',mask_color_match:selection.colorMatch!==false,mask_align:selection.align!==false};
+  return {mask_id:saved.id,mask_feather:selection.feather,mask_detail:selection.detail || 'balanced',mask_context:selection.context || 'balanced',mask_blend_mode:selection.blendMode || 'adaptive',mask_color_match:selection.colorMatch!==false,mask_align:selection.align!==false};
 }
 
 async function reuseMask(recipe) {
@@ -41,7 +41,7 @@ async function reuseMask(recipe) {
   if (!response.ok) throw new Error('The saved selection is unavailable. Paint it again.');
   maskSelections.set(draftKey(),{blob:await response.blob(),bounds:saved.bounds,width:version.width,height:version.height,
     feather:recipe.masked_edit.feather,detail:recipe.mask_detail || 'balanced',context:recipe.mask_context || 'balanced',
-    colorMatch:recipe.masked_edit.color_match!==false,align:recipe.masked_edit.align!==false,enabled:true,uploaded:new Map([[saved.source_id,saved]])});
+    blendMode:recipe.masked_edit.blend_mode || 'manual',colorMatch:recipe.masked_edit.color_match!==false,align:recipe.masked_edit.align!==false,enabled:true,uploaded:new Map([[saved.source_id,saved]])});
 }
 
 async function openMaskEditor() {
@@ -55,10 +55,11 @@ async function openMaskEditor() {
       <header class="mask-header"><div><span class="eyebrow">EDIT ONLY WHAT YOU CHOOSE</span><h2 id="mask-title">Paint the area to change</h2><p>Pink areas can change. Everything else stays original.</p></div><button class="icon-button" data-close="mask-dialog" aria-label="Cancel mask changes">${icon('close')}</button></header>
       <div class="mask-tools"><div class="mask-tool-choice" role="group" aria-label="Mask tool"><button data-mask-tool="paint" type="button" aria-pressed="true">Brush</button><button data-mask-tool="erase" type="button" aria-pressed="false">Erase</button><button data-mask-tool="pan" type="button" aria-pressed="false">Move</button></div><label>Brush <input id="mask-brush" type="range" min="4" max="100" value="32"><output id="mask-brush-value">32</output></label><button id="mask-undo" type="button">Undo</button><button id="mask-clear" type="button">Clear</button><div class="mask-zoom"><button id="mask-zoom-out" type="button" aria-label="Zoom out mask photo">−</button><button id="mask-zoom-reset" type="button">100%</button><button id="mask-zoom-in" type="button" aria-label="Zoom in mask photo">＋</button></div></div>
       <div class="mask-surface"><div class="mask-frame" tabindex="0" role="group" aria-label="Paint selection. Use two fingers to zoom. Move tool pans the photo."><div class="mask-stage"><img id="mask-photo" alt="Photo being masked" draggable="false"><canvas id="mask-canvas" aria-hidden="true"></canvas></div></div></div>
-      <footer class="mask-footer"><label>Edge softness <input id="mask-feather" type="range" min="0" max="32" value="${existing?.feather ?? 8}"><output id="mask-feather-value">${existing?.feather ?? 8} px</output></label><details class="mask-options"><summary>Speed &amp; blending ${icon('chevron')}</summary><div><label>Working resolution<select id="mask-detail"><option value="quick">Quick · up to 512px</option><option value="balanced">Balanced · up to 768px</option><option value="maximum">Maximum · quality limit</option></select></label><label>Surrounding context<select id="mask-context"><option value="tight">Tight · faster</option><option value="balanced">Balanced</option><option value="wide">More context · complex shapes</option></select></label><label class="mask-option-check"><input id="mask-color-match" type="checkbox" ${existing?.colorMatch===false?'':'checked'}>Match surrounding colors</label><label class="mask-option-check"><input id="mask-align" type="checkbox" ${existing?.align===false?'':'checked'}>Align patch edges</label></div><p>A smaller canvas is faster, with less fine detail. Maximum uses your image quality setting. Color matching uses the unpainted surroundings; turn it off for a deliberate lighting change.</p></details><p id="mask-help">Paint the whole object and its shadows · smaller selections are faster</p><p id="mask-error" class="error" role="alert" hidden></p><div><button type="button" data-close="mask-dialog">Cancel</button><button class="primary" id="mask-apply" type="button">Use this area ${icon('arrow')}</button></div></footer>
+      <footer class="mask-footer"><label id="mask-manual-feather">Edge softness <input id="mask-feather" type="range" min="0" max="32" value="${existing?.feather ?? 8}"><output id="mask-feather-value">${existing?.feather ?? 8} px</output></label><details class="mask-options"><summary>Speed &amp; blending ${icon('chevron')}</summary><div><label class="mask-blend-choice">Edge blending<select id="mask-blend-mode"><option value="adaptive">Automatic · recommended</option><option value="manual">Manual · edge softness</option></select></label><label>Working resolution<select id="mask-detail"><option value="quick">Quick · up to 512px</option><option value="balanced">Balanced · up to 768px</option><option value="maximum">Maximum · quality limit</option></select></label><label>Surrounding context<select id="mask-context"><option value="tight">Tight · faster</option><option value="balanced">Balanced</option><option value="wide">More context · complex shapes</option></select></label><label class="mask-option-check"><input id="mask-color-match" type="checkbox" ${existing?.colorMatch===false?'':'checked'}>Match surrounding colors</label><label class="mask-option-check"><input id="mask-align" type="checkbox" ${existing?.align===false?'':'checked'}>Align patch edges</label></div><p>A smaller canvas is faster, with less fine detail. Maximum uses your image quality setting. Automatic blending also matches local colors near the outline. Turn color matching off for a deliberate lighting change.</p></details><p id="mask-help">Paint the whole object and its shadows · smaller selections are faster</p><p id="mask-error" class="error" role="alert" hidden></p><div><button type="button" data-close="mask-dialog">Cancel</button><button class="primary" id="mask-apply" type="button">Use this area ${icon('arrow')}</button></div></footer>
     </section>`;
     $('#mask-photo').src=version.url;
     $('#mask-detail').value=existing?.detail || 'balanced';$('#mask-context').value=existing?.context || 'balanced';
+    $('#mask-blend-mode').value=existing?.blendMode || 'adaptive';updateMaskBlendControls();
     const canvas=$('#mask-canvas'),scale=Math.min(1,2048/Math.max(image.naturalWidth,image.naturalHeight));
     canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
     const base=document.createElement('canvas');base.width=canvas.width;base.height=canvas.height;
@@ -120,11 +121,18 @@ function maskPoint(event) {
   const bounds=$('.mask-stage').getBoundingClientRect(),m=maskEditor;
   return {x:Math.max(0,Math.min(m.canvas.width,(event.clientX-bounds.left)*m.canvas.width/bounds.width)),y:Math.max(0,Math.min(m.canvas.height,(event.clientY-bounds.top)*m.canvas.height/bounds.height))};
 }
+function updateMaskBlendControls() {
+  const manual=$('#mask-blend-mode').value==='manual';
+  $('#mask-manual-feather').hidden=!manual;
+  $('#mask-help').textContent=manual?'Paint the whole object and its shadows · smaller selections are faster':'Automatic blending stays inside your outline · paint the whole object with a little background around it';
+}
+
 function bindMaskEditor() {
   const m=maskEditor,frame=$('.mask-frame');
   for(const button of document.querySelectorAll('[data-mask-tool]'))button.onclick=()=>{m.tool=button.dataset.maskTool;for(const other of document.querySelectorAll('[data-mask-tool]'))other.setAttribute('aria-pressed',String(other===button));frame.classList.toggle('moving',m.tool==='pan');};
   $('#mask-brush').oninput=event=>$('#mask-brush-value').value=event.target.value;
   $('#mask-feather').oninput=event=>$('#mask-feather-value').value=`${event.target.value} px`;
+  $('#mask-blend-mode').onchange=updateMaskBlendControls;
   $('#mask-undo').onclick=()=>{m.strokes.pop();redrawMask();};$('#mask-clear').onclick=()=>{m.strokes.push({tool:'clear'});redrawMask();};
   $('#mask-zoom-in').onclick=()=>{m.zoom=Math.min(6,m.zoom*1.25);renderMaskZoom();};
   $('#mask-zoom-out').onclick=()=>{m.zoom=Math.max(1,m.zoom/1.25);renderMaskZoom();};
@@ -159,7 +167,7 @@ function bindMaskEditor() {
     try {
       const output=document.createElement('canvas');output.width=m.canvas.width;output.height=m.canvas.height;
       const ctx=output.getContext('2d');ctx.drawImage(m.canvas,0,0);ctx.globalCompositeOperation='source-in';ctx.fillStyle='white';ctx.fillRect(0,0,output.width,output.height);ctx.globalCompositeOperation='destination-over';ctx.fillStyle='black';ctx.fillRect(0,0,output.width,output.height);
-      maskSelections.set(m.key,{blob:await canvasBlob(output),bounds,width:m.version.width,height:m.version.height,feather:Number($('#mask-feather').value),detail:$('#mask-detail').value,context:$('#mask-context').value,colorMatch:$('#mask-color-match').checked,align:$('#mask-align').checked,enabled:true,uploaded:new Map()});
+      maskSelections.set(m.key,{blob:await canvasBlob(output),bounds,width:m.version.width,height:m.version.height,feather:Number($('#mask-feather').value),detail:$('#mask-detail').value,context:$('#mask-context').value,blendMode:$('#mask-blend-mode').value,colorMatch:$('#mask-color-match').checked,align:$('#mask-align').checked,enabled:true,uploaded:new Map()});
       $('#mask-dialog').close();updateMaskControls();updateEditorSettings();scheduleViewerEstimate();
     }catch(error){$('#mask-error').textContent=error.message;$('#mask-error').hidden=false;$('#mask-apply').disabled=false;}
   };

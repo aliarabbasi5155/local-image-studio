@@ -266,3 +266,24 @@ All 44 tests pass on macOS and in the Docker image with its 768MB memory limit;
 `make check` passes. The painter options and saved-mask reuse were checked at
 portrait and landscape phone sizes, with no console errors or warnings. See
 [the report](20261006-masked-edit-refinement.json).
+
+## Local corner color matching and automatic blending
+
+On a synthetic textured image with a known uneven color cast, local matching
+reduced inside-corner RGB error by 72.9%, 78.5% and 73.2% across three different
+mask outlines, compared with the earlier whole-patch correction. The edited
+center stayed unchanged. This measures the specific synthetic fixture, not
+quality on the user's photo or every model output.
+
+Automatic blending chooses a transition width for the selection and model
+resolution, with narrower transitions for thin selections. It stays inside the
+painted area. Manual mode retains the earlier behavior, including saved recipes
+that have no blending-mode setting. Unreliable local context is skipped.
+
+A complete 4096 × 4096 synthetic patch blend and PNG save took 1.428 seconds
+in Docker with two CPUs and its existing 768MB memory limit; peak process memory
+was 572.3MB. The saved recipe and unpainted comparison strip stayed identical.
+No new model runs were used. All 48 tests pass on macOS and Docker; `make check`
+passes. Phone-sized controls, saved-mode reuse and color-match toggles were
+checked with an isolated synthetic library. See
+[the report](20261006-mask-corner-blending.json).

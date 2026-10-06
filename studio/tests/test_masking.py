@@ -8,7 +8,7 @@ import aiohttp
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, PngImagePlugin
 
-from studio.masking import engine_mask, engine_reference, masked_size, feather_mask, align_patch, match_colors, blend_selected, normalize_mask, protect_unselected
+from studio.masking import engine_mask, engine_reference, masked_size, feather_mask, align_patch, match_colors, match_local_colors, automatic_feather, blend_selected, normalize_mask, protect_unselected
 from studio.engine import QUALITIES
 from studio.server import STATE
 from studio.storage import Store
@@ -51,6 +51,8 @@ class MaskAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((recipe['width'],recipe['height']),(240,160))
             self.assertEqual(recipe['masked_edit']['crop'],[4,0,213,160])
             self.assertEqual(recipe['masked_edit']['version'],2)
+            self.assertEqual(recipe['masked_edit']['blend_mode'],'adaptive')
+            self.assertGreater(recipe['masked_edit']['blend_width'],0)
             self.assertEqual(recipe['processing']['method'],'masked_patch_v2')
             self.assertEqual(recipe['masked_edit']['mask_id'],mask['id'])
             self.assertEqual(recipe['parent_version_id'],root['id'])
@@ -75,7 +77,7 @@ class MaskAPITests(unittest.IsolatedAsyncioTestCase):
         for source_id,mode,feather in ((other['id'],'edit',8),(root['id'],'create',8),(root['id'],'edit',-1),(root['id'],'edit',33),(root['id'],'edit',False)):
             response = await self.client.post('/api/generate',json={'mode':mode,'source_id':source_id,'prompt':'Edit','mask_id':mask['id'],'mask_feather':feather})
             self.assertEqual(response.status,400)
-        for settings in ({'mask_detail':'unknown'},{'mask_context':'unknown'},{'mask_align':1},{'mask_color_match':'yes'}):
+        for settings in ({'mask_detail':'unknown'},{'mask_context':'unknown'},{'mask_align':1},{'mask_color_match':'yes'},{'mask_blend_mode':'unknown'}):
             response=await self.client.post('/api/generate',json={'mode':'edit','source_id':root['id'],'prompt':'Edit','mask_id':mask['id'],**settings})
             self.assertEqual(response.status,400)
         self.assertEqual(self.store.rows('SELECT * FROM jobs'),[])
@@ -99,6 +101,82 @@ class MaskAPITests(unittest.IsolatedAsyncioTestCase):
 
 
 class MaskPixelTests(unittest.TestCase):
+    @staticmethod
+    def uneven_color_fixture():
+        width,height=512,384;yy,xx=np.mgrid[:height,:width]
+        pixels=np.stack((105+25*np.sin(xx/31),118+20*np.cos(yy/27),130+10*np.sin((xx+yy)/25)),axis=2)
+        original=Image.fromarray(np.clip(pixels,0,255).astype(np.uint8))
+        ideal=original.copy();ImageDraw.Draw(ideal).ellipse((205,150,300,245),fill=(220,40,30))
+        cast=np.stack((25*(xx/width)**2-14*(yy/height),-12*(xx/width)+22*(yy/height)**2,17*np.cos(xx/width*np.pi)*np.sin(yy/height*np.pi/2)),axis=2)
+        patch=Image.fromarray(np.clip(np.asarray(ideal,dtype=float)+cast,0,255).astype(np.uint8))
+        return original,ideal,patch
+
+    def test_local_color_match_reduces_corner_casts_for_different_hand_painted_outlines(self):
+        original,ideal,patch=self.uneven_color_fixture()
+        for dx,dy in ((0,0),(14,-12),(-12,14)):
+            mask=Image.new('L',original.size,0)
+            ImageDraw.Draw(mask).rounded_rectangle((125+dx,75+dy,380+dx,315+dy),radius=18,fill=255)
+            global_patch,_=match_colors(original,patch,mask)
+            corrected,diagnostics=match_local_colors(original,global_patch,mask)
+            self.assertTrue(diagnostics['applied'])
+            # Independently known desired colors at all four inside corners.
+            regions=[(126+dx,76+dy,155+dx,105+dy),(350+dx,76+dy,379+dx,105+dy),
+                     (126+dx,285+dy,155+dx,314+dy),(350+dx,285+dy,379+dx,314+dy)]
+            def error(image,region):
+                return np.abs(np.asarray(image.crop(region),dtype=float)-np.asarray(ideal.crop(region),dtype=float)).mean()
+            before=sum(error(global_patch,region) for region in regions)
+            after=sum(error(corrected,region) for region in regions)
+            self.assertLess(after,before*.4)
+            self.assertEqual(corrected.getpixel((255,192)),global_patch.getpixel((255,192)))
+
+    def test_local_color_match_skips_unchanged_or_unreliable_context(self):
+        original,ideal,patch=self.uneven_color_fixture()
+        mask=Image.new('L',original.size,0);ImageDraw.Draw(mask).rectangle((125,75,380,315),fill=255)
+        for reference,candidate,selection in ((original,ideal,mask),(original,patch,Image.new('L',original.size,255)),
+                (Image.new('RGB',original.size,'black'),Image.new('RGB',original.size,'white'),mask)):
+            corrected,diagnostics=match_local_colors(reference,candidate,selection)
+            self.assertFalse(diagnostics['applied'])
+            self.assertEqual(corrected.tobytes(),candidate.tobytes())
+
+    def test_automatic_blend_preserves_unpainted_pixels_recolor_and_saved_manual_behavior(self):
+        original,ideal,patch=self.uneven_color_fixture()
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'masks').mkdir();(root/'uploads').mkdir()
+            original.save(root/'uploads/s.png')
+            mask=Image.new('L',original.size,0);ImageDraw.Draw(mask).rounded_rectangle((125,75,380,315),radius=18,fill=255);mask.save(root/'masks/m.png')
+            base={'source_id':'s','width':512,'height':384,'generation_width':512,'generation_height':384,
+                  'masked_edit':{'version':2,'mask_id':'m','crop':[0,0,512,384],'canvas_content':[0,0,512,384],
+                                 'feather':8,'align':False,'color_match':True}}
+            for mode in ('adaptive','manual',None):
+                recipe=json.loads(json.dumps(base))
+                if mode:recipe['masked_edit'].update(blend_mode=mode,blend_width=16)
+                metadata=PngImagePlugin.PngInfo();metadata.add_text('studio',json.dumps(recipe))
+                path=root/'result.png';patch.save(path,pnginfo=metadata)
+                diagnostics=blend_selected(path,root,recipe)
+                with Image.open(path) as result:
+                    unpainted=np.asarray(mask)==0
+                    self.assertTrue(np.array_equal(np.asarray(result)[unpainted],np.asarray(original)[unpainted]))
+                    self.assertEqual(json.loads(result.info['studio']),recipe)
+                    self.assertGreater(result.getpixel((255,192))[0],160)
+                    self.assertLess(result.getpixel((255,192))[1],100)
+                    if mode=='adaptive':
+                        self.assertTrue(diagnostics['local_color_match']['applied'])
+                        self.assertEqual(diagnostics['blending']['width'],16)
+                    else:
+                        self.assertNotIn('local_color_match',diagnostics)
+                        self.assertEqual(diagnostics['blending']['width'],8)
+
+    def test_automatic_transition_scales_for_large_photos_and_small_canvases(self):
+        small=automatic_feather([30,30,130,130],[0,0,160,160],[0,0,160,160])
+        large=automatic_feather([300,300,2300,2300],[0,0,2700,2700],[0,0,512,512])
+        self.assertEqual(small,8)
+        self.assertGreater(large,small)
+        self.assertLessEqual(large,64)
+        self.assertEqual(automatic_feather([0,0,8192,8192],[0,0,8192,8192],[0,0,512,512]),64)
+        narrow=automatic_feather([20,20,32,2020],[0,0,64,2048],[0,0,64,512])
+        mask=Image.new('L',(64,2048),0);ImageDraw.Draw(mask).rectangle((20,20,31,2019),fill=255)
+        self.assertEqual(feather_mask(mask,narrow).getpixel((26,1000)),255)
+
     def test_matched_reference_canvas_uses_padding_instead_of_aspect_distortion_or_center_crop(self):
         for dimensions in ((751,497),(1152,1728),(4096,2711)):
             source={'width':dimensions[0],'height':dimensions[1]}
@@ -227,7 +305,7 @@ class MaskEngineTests(unittest.IsolatedAsyncioTestCase):
         form=aiohttp.FormData();form.add_field('mask',selection(751,497,(300,200,340,240)),filename='mask.png',content_type='image/png')
         mask=await (await self.client.post('/api/uploads/'+source['id']+'/mask',data=form)).json()
         response=await self.client.post('/api/generate',json={'mode':'edit','prompt':'Add flowers','quality':'fast','source_id':source['id'],
-            'mask_id':mask['id'],'mask_feather':0,'mask_color_match':False,'mask_align':False,'variations':1})
+            'mask_id':mask['id'],'mask_feather':0,'mask_blend_mode':'manual','mask_color_match':False,'mask_align':False,'variations':1})
         self.assertEqual(response.status,202)
         image_id=(await response.json())['jobs'][0]
         image,=await self.wait_images(1)

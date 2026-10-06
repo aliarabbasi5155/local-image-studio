@@ -128,13 +128,22 @@ outside the painted mask. Edge softness fades inward from the boundary. The
 website uses unpainted context to correct small position/scale drift and color
 casts only when the comparisons support a reliable improvement. It does not use
 the edited object's original color as the color target, so requested recolors
-can stay changed. These options and the canvas geometry are saved in the recipe;
+can stay changed. Automatic blending adds a smooth local color correction near
+the selection, using matching unpainted surroundings. This handles uneven casts
+at different corners that one whole-patch adjustment cannot correct. Corrections
+fade where there is too little reliable context. These options and the canvas
+geometry are saved in the recipe;
 the PNG also records which corrections actually applied. The embedded ComfyUI
 workflow performs crop editing and basic blending; context correction is the
 website's final processing step.
 
 Open **Speed & blending** in the painter:
 
+- **Edge blending:** Automatic is the default for new masks. It chooses an
+  inward transition width for the selection size and working resolution, and
+  adds local color matching when **Match surrounding colors** is enabled.
+  Manual retains the earlier fixed **Edge softness** slider and whole-patch
+  color adjustment. Reusing older recipes keeps their manual blending.
 - **Working resolution:** Balanced defaults to a 768-pixel long-edge limit;
   Quick uses 512. Maximum uses the chosen quality's limit, up to about one
   megapixel. A smaller canvas runs faster but retains less fine detail. The
@@ -151,7 +160,12 @@ use the 8-bit model. Choose Fast plus Quick working resolution for the fastest
 local edits. Model loading and prompt encoding still take time. A selection
 covering most of a photo at Maximum resolution can take as long as a normal edit.
 Paint the complete object and its shadows; cutting a selection through an object
-can leave a shape seam that blending cannot remove. More context can help.
+can leave a shape seam that blending cannot remove. Leave a little background
+around the object rather than tracing its outline exactly. Automatic blending
+reduces sensitivity to that boundary, while keeping every unpainted pixel intact.
+More context can help when a shape crosses the selection. This chooses blending
+automatically; the brush still defines the allowed editing area. No extra model
+run is used for local color matching.
 
 Output-size and whole-image resize controls are disabled while the mask is active.
 Quality sets the model and upper resolution limit; Working resolution can lower

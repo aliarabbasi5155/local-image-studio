@@ -1,0 +1,130 @@
+{
+  "synthetic_image": true,
+  "new_model_runs": 0,
+  "source_size": [
+    512,
+    384
+  ],
+  "metric_definition": "Mean absolute RGB error against known ideal colors in four inside-corner regions. This verifies a spatial color-cast fixture, not quality on user photos.",
+  "runs": [
+    {
+      "outline_offset": [
+        0,
+        0
+      ],
+      "corner_RGB_error_before": [
+        1.698,
+        4.742,
+        8.307,
+        5.027
+      ],
+      "corner_RGB_error_after": [
+        0.975,
+        1.124,
+        1.765,
+        1.496
+      ],
+      "improvement_percent": 72.9,
+      "center_edit_unchanged": true
+    },
+    {
+      "outline_offset": [
+        14,
+        -12
+      ],
+      "corner_RGB_error_before": [
+        2.275,
+        7.616,
+        8.519,
+        5.588
+      ],
+      "corner_RGB_error_after": [
+        0.616,
+        1.56,
+        1.712,
+        1.276
+      ],
+      "improvement_percent": 78.5,
+      "center_edit_unchanged": true
+    },
+    {
+      "outline_offset": [
+        -12,
+        14
+      ],
+      "corner_RGB_error_before": [
+        3.06,
+        3.582,
+        10.013,
+        4.323
+      ],
+      "corner_RGB_error_after": [
+        1.07,
+        0.996,
+        2.306,
+        1.26
+      ],
+      "improvement_percent": 73.2,
+      "center_edit_unchanged": true
+    }
+  ],
+  "tests_passed_macOS": 48,
+  "tests_passed_Docker": 48,
+  "make_check_passed": true,
+  "browser_checks": [
+    "Automatic is selected for a new mask and manual softness is hidden",
+    "Manual mode and 19px softness survive applying and reopening the mask",
+    "Automatic mode and disabled color matching submit the correct payload",
+    "Saved automatic recipes restore automatic mode; older recipes without blend_mode restore manual mode",
+    "Portrait 390x844 and landscape 844x390 controls fit without horizontal overflow",
+    "Landscape expanded controls and Apply remain reachable by footer scrolling",
+    "Corrected synthetic result opens in the full-screen viewer",
+    "No browser console errors or warnings"
+  ],
+  "limitations": [
+    "Not tested on the specific user photo; individual model outputs can still have geometry or lighting mismatches.",
+    "The brush must still cover the complete object, shadows and a little surrounding background.",
+    "Unreliable local context is skipped; automatic blending keeps the allowed area inside the original mask.",
+    "A physical phone was not tested."
+  ],
+  "full_save_performance": {
+    "synthetic_image": true,
+    "source_size": [
+      4096,
+      4096
+    ],
+    "complete_patch_blend_and_PNG_save_seconds": 1.428,
+    "peak_process_memory_MB": 572.3,
+    "Docker_memory_limit_MB": 768,
+    "unpainted_strip_identical": true,
+    "recipe_preserved": true,
+    "local_color_match_applied": true
+  },
+  "deployment": {
+    "all_files_and_pin_unchanged": true,
+    "tables_unchanged": {
+      "images": true,
+      "jobs": true,
+      "masks": true,
+      "project_sources": true,
+      "projects": true,
+      "sessions": true,
+      "studio_migrations": true,
+      "uploads": true,
+      "versions": true
+    },
+    "saved_files": 263,
+    "backup": "runtime/backups/studio-before-corner-blending-20261006-200731.sqlite3",
+    "health": true,
+    "PIN_protected": true,
+    "login": true,
+    "engine_ready": true,
+    "assets_match": {
+      "masking.js": true,
+      "masking.css": true
+    },
+    "logout": true,
+    "container_healthy": true,
+    "backend_matches_final_code": true
+  }
+}

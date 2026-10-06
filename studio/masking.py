@@ -102,8 +102,10 @@ def feather_mask(mask, radius):
         inside = eroded
         if not inside.any():
             break
-    weights = .5-.5*np.cos(np.minimum(distance.astype(np.float32)/(radius+1),1)*np.pi)
-    return Image.fromarray(np.round(weights*255).astype(np.uint8))
+    # Distances are small integers; a lookup avoids several full-size float
+    # arrays while retaining exactly the same cosine transition at 4K.
+    weights = .5-.5*np.cos(np.minimum(np.arange(256,dtype=np.float32)/(radius+1),1)*np.pi)
+    return Image.fromarray(np.round(weights*255).astype(np.uint8)[distance])
 
 
 def _context_samples(original, patch, mask):
@@ -183,6 +185,65 @@ def match_colors(original, patch, mask):
     return patch.point(table),{"applied":True,"gain":gain.round(3).tolist(),"offset":offset.round(2).tolist()}
 
 
+def automatic_feather(bounds, crop, canvas_content, minimum=8):
+    """Scale the transition to the selection and model resolution, inside its boundary."""
+    extent = max(bounds[2]-bounds[0],bounds[3]-bounds[1])
+    source_per_model_pixel = max(crop[2]/canvas_content[2],crop[3]/canvas_content[3])
+    # Leave a fully edited core in narrow selections instead of fading it away.
+    short_side=min(bounds[2]-bounds[0],bounds[3]-bounds[1])
+    return min(64,max(0,(short_side-1)//4),max(minimum,round(extent*.02),round(source_per_model_pixel*5)))
+
+
+def _smooth_field(values, radius):
+    """Three separable box passes approximate a Gaussian on the small color grid."""
+    for _ in range(3):
+        for axis in (0,1):
+            padding=[(0,0)]*values.ndim;padding[axis]=(radius,radius)
+            padded=np.pad(values,padding,mode="edge")
+            cumulative=np.cumsum(padded,axis=axis,dtype=np.float32)
+            shape=list(cumulative.shape);shape[axis]=1
+            cumulative=np.concatenate((np.zeros(shape,dtype=np.float32),cumulative),axis=axis)
+            before=[slice(None)]*values.ndim;after=before.copy()
+            before[axis]=slice(None,-(2*radius+1));after[axis]=slice(2*radius+1,None)
+            values=(cumulative[tuple(after)]-cumulative[tuple(before)])/(2*radius+1)
+    return values
+
+
+def match_local_colors(original, patch, mask):
+    """Infer a smooth local color offset from unchanged context, including corners.
+
+    Normalized convolution carries reliable context into nearby painted pixels.
+    Corrections fade where context is absent, and never sample the edited object.
+    """
+    target,candidate,context=_context_samples(original,patch,mask)
+    if context.sum()<128 or context.mean()<.05:
+        return patch,{"applied":False,"reason":"insufficient context"}
+    difference=np.asarray(target,dtype=np.float32)-np.asarray(candidate,dtype=np.float32)
+    # Large mismatches are more likely replaced geometry than a local color cast.
+    reliable=context & (np.abs(difference).mean(axis=2)<=48) & (np.abs(difference).max(axis=2)<=72)
+    if reliable.sum()<128:
+        return patch,{"applied":False,"reason":"insufficient matching surroundings"}
+    weighted=np.concatenate((difference*reliable[:,:,None],reliable[:,:,None]),axis=2)
+    blurred=_smooth_field(weighted,max(2,round(max(target.size)*.025)))
+    support=np.maximum(blurred[:,:,3],0)
+    correction=np.clip(blurred[:,:,:3]/np.maximum(support[:,:,None],.001),-32,32)
+    correction *= np.minimum(1,support[:,:,None]/.15)
+    before=float(np.abs(difference[reliable]).mean())
+    after=float(np.abs((difference-correction)[reliable]).mean())
+    if before<1 or after>before*.8:
+        return patch,{"applied":False,"reason":"no reliable improvement"}
+    # One float channel at a time and bounded row blocks keep 4K memory modest.
+    pixels=np.array(patch)
+    for channel in range(3):
+        field=Image.fromarray(correction[:,:,channel]).resize(patch.size,Image.Resampling.BILINEAR)
+        for top in range(0,patch.height,128):
+            bottom=min(top+128,patch.height)
+            offset=np.asarray(field.crop((0,top,patch.width,bottom)))
+            pixels[top:bottom,:,channel]=np.clip(np.rint(pixels[top:bottom,:,channel].astype(np.float32)+offset),0,255).astype(np.uint8)
+    return Image.fromarray(pixels),{"applied":True,"context_error_before":round(before,2),"context_error_after":round(after,2),
+                                  "max_offset":round(float(np.abs(correction).max()),2)}
+
+
 def blend_selected(path, directory, recipe):
     """Compose the raw edited patch once, with corrected geometry, color and edges."""
     selection = recipe["masked_edit"]
@@ -200,7 +261,12 @@ def blend_selected(path, directory, recipe):
         diagnostics={}
         if selection.get("align",True):patch,diagnostics["alignment"]=align_patch(reference,patch,mask)
         if selection.get("color_match",True):patch,diagnostics["color_match"]=match_colors(reference,patch,mask)
-        original.paste(patch,(x,y),feather_mask(mask,selection["feather"]))
+        adaptive=selection.get("blend_mode")=="adaptive"
+        if adaptive and selection.get("color_match",True):
+            patch,diagnostics["local_color_match"]=match_local_colors(reference,patch,mask)
+        feather=selection.get("blend_width",selection["feather"]) if adaptive else selection["feather"]
+        diagnostics["blending"]={"mode":"adaptive" if adaptive else "manual","width":feather}
+        original.paste(patch,(x,y),feather_mask(mask,feather))
         metadata=PngImagePlugin.PngInfo()
         for key in ("prompt","workflow","studio"):
             if key in generated.info:metadata.add_text(key,generated.info[key])
@@ -217,7 +283,8 @@ def engine_mask(directory, recipe):
     if hashlib.sha256((directory / "masks" / (selection["mask_id"] + ".png")).read_bytes()).hexdigest() != selection["sha256"]:
         raise ValueError("The saved selection mask has changed. Paint it again.")
     if selection.get("version") == 2:
-        mask = feather_mask(mask,selection["feather"])
+        feather=selection.get("blend_width",selection["feather"]) if selection.get("blend_mode")=="adaptive" else selection["feather"]
+        mask = feather_mask(mask,feather)
     elif selection["feather"]:
         mask = ImageChops.multiply(mask, mask.filter(ImageFilter.GaussianBlur(selection["feather"])))
     x, y, width, height = selection["crop"]

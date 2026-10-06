@@ -18,7 +18,7 @@ from .engine import Engine, QUALITIES, make_thumbnail
 from .storage import Store
 from .metrics import Metrics
 from .downloads import Downloads
-from .masking import normalize_mask, masked_size
+from .masking import normalize_mask, masked_size, automatic_feather
 from .sizing import OUTPUT_SIZES, RESIZE_MODES, MAX_PIXELS, plan_size
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -253,6 +253,8 @@ async def generate(request):
                              quality, aspect, QUALITIES, state["upscaler"],payload.get("mask_detail","balanced"),payload.get("mask_context","balanced"))
         if any(type(payload.get(key,True)) is not bool for key in ("mask_color_match","mask_align")):
             return failure("Choose whether to match surrounding colors and align the patch.")
+        if payload.get("mask_blend_mode","adaptive") not in ("adaptive","manual"):
+            return failure("Choose automatic or manual edge blending.")
     else:
         sizing = plan_size(quality, aspect, mode, source, payload.get("output_size", "preset"), QUALITIES,
                            state["upscaler"], payload.get("resize_mode", "auto"))
@@ -265,11 +267,14 @@ async def generate(request):
               "source": {k: source[k] for k in ("name", "width", "height", "sha256")} if source else None,
               "parent_image_id": parent_id if mode == "edit" else None}
     if mask:
+        blend_mode=payload.get("mask_blend_mode","adaptive")
+        blend_width=automatic_feather(json.loads(mask["bounds"]),sizing["processing"]["crop"],sizing["processing"]["canvas_content"]) if blend_mode=="adaptive" else payload.get("mask_feather",8)
         recipe["masked_edit"] = {"version":2,"mask_id": mask_id, "sha256": mask["sha256"],
                                   "bounds": json.loads(mask["bounds"]), "crop": sizing["processing"]["crop"],
                                   "feather": payload.get("mask_feather", 8),
                                   "context_padding":sizing["processing"]["context_padding"],
                                   "canvas_content":sizing["processing"]["canvas_content"],
+                                  "blend_mode":blend_mode,"blend_width":blend_width,
                                   "color_match":payload.get("mask_color_match",True),"align":payload.get("mask_align",True),
                                   "feather_method":"inward_cosine","method": "matched_canvas_context_blend", "preserve_unselected": True}
     base_seed = seed if seed is not None else secrets.randbits(32)
