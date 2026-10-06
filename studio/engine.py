@@ -10,7 +10,7 @@ from pathlib import Path
 
 import aiohttp
 from PIL import Image, ImageOps
-from .masking import engine_mask, protect_unselected
+from .masking import engine_mask, engine_reference, blend_selected, protect_unselected
 
 QUALITIES = {
     "fast": {"label": "Fast", "description": "Quick previews", "model": "flux2-klein-9b-4bit",
@@ -22,7 +22,7 @@ QUALITIES = {
 }
 
 
-def build_graph(recipe, project_root, templates, upload_name=None, mask_name=None):
+def build_graph(recipe, project_root, templates, upload_name=None, mask_name=None, reference_name=None):
     editing = recipe["mode"] == "edit"
     generation_width = recipe.get("generation_width", recipe["width"])
     generation_height = recipe.get("generation_height", recipe["height"])
@@ -58,13 +58,13 @@ def build_graph(recipe, project_root, templates, upload_name=None, mask_name=Non
         inputs["image_strength"] = 0.3
         nodes[2]["widgets_values"] = [recipe["prompt"], *values, 0.3]
     if recipe.get("masked_edit"):
-        append_masked_processing(graph, workflow, recipe, prefix, mask_name)
+        append_masked_processing(graph, workflow, recipe, prefix, mask_name, reference_name)
     elif processed:
         append_processing(graph, workflow, recipe, prefix)
     return graph, workflow
 
 
-def append_masked_processing(graph, workflow, recipe, prefix, mask_name):
+def append_masked_processing(graph, workflow, recipe, prefix, mask_name, reference_name=None):
     """A runnable crop-edit-blend graph using installed ComfyUI core nodes."""
     if not mask_name:
         raise ValueError("The selected-area workflow needs its saved mask.")
@@ -75,6 +75,16 @@ def append_masked_processing(graph, workflow, recipe, prefix, mask_name):
     graph["12"] = {"class_type": "ImageScale", "inputs": {"image": ["2", 0], "upscale_method": "lanczos", "width": width, "height": height, "crop": "disabled"}}
     graph["13"] = {"class_type": "ImageCompositeMasked", "inputs": {"destination": ["5", 0], "source": ["12", 0], "mask": ["11", 1], "x": x, "y": y, "resize_source": False}}
     graph["9"] = {"class_type": "SaveImage", "inputs": {"images": ["13", 0], "filename_prefix": prefix + "/final"}}
+    improved = recipe["masked_edit"].get("version") == 2
+    if improved:
+        if not reference_name:
+            raise ValueError("The selected-area workflow needs its aligned reference canvas.")
+        left,top,cw,ch = recipe["masked_edit"]["canvas_content"]
+        graph["14"] = {"class_type":"LoadImage","inputs":{"image":reference_name}}
+        graph["15"] = {"class_type":"ImageCrop","inputs":{"image":["2",0],"x":left,"y":top,"width":cw,"height":ch}}
+        graph["2"]["inputs"]["image"] = ["14",0]
+        graph["12"]["inputs"]["image"] = ["15",0]
+        del graph["10"]
     nodes = {n["id"]: n for n in workflow["nodes"]}
     # Remove the original edit-image and preview links before inserting a crop.
     detached = {nodes[2]["inputs"][1]["link"], nodes[3]["inputs"][0]["link"]}
@@ -102,7 +112,14 @@ def append_masked_processing(graph, workflow, recipe, prefix, mask_name):
         nodes[target]["inputs"][target_slot]["link"] = next_link
         next_link += 1
 
-    node(10, "ImageCrop", [width, height, x, y], [("image", "IMAGE")], [380, 700])
+    if not improved:
+        node(10, "ImageCrop", [width, height, x, y], [("image", "IMAGE")], [380, 700])
+    else:
+        reference_node=copy.deepcopy(nodes[5]);reference_node.update(id=14,pos=[380,700],order=len(nodes),widgets_values=[reference_name,"image"])
+        reference_node["widgets_values_named"]={"image":reference_name,"upload":"image"}
+        for output in reference_node["outputs"]:output["links"]=[]
+        workflow["nodes"].append(reference_node);nodes[14]=reference_node
+        node(15,"ImageCrop",[cw,ch,left,top],[("image","IMAGE")],[1000,350])
     mask_node = copy.deepcopy(nodes[5]); mask_node.update(id=11, pos=[950, 740], order=len(nodes), widgets_values=[mask_name, "image"])
     mask_node["widgets_values_named"] = {"image": mask_name, "upload": "image"}
     for output in mask_node["outputs"]:
@@ -111,11 +128,14 @@ def append_masked_processing(graph, workflow, recipe, prefix, mask_name):
     node(12, "ImageScale", ["lanczos", width, height, "disabled"], [("image", "IMAGE")], [1300, 350])
     node(13, "ImageCompositeMasked", [x, y, False], [("destination", "IMAGE"), ("source", "IMAGE"), ("mask", "MASK")], [1660, 350])
     node(9, "SaveImage", [prefix + "/final"], [("images", "IMAGE")], [2020, 350])
-    connect(5, 0, 10, 0); connect(10, 0, 2, 1); connect(2, 0, 12, 0)
+    if improved:
+        connect(14,0,2,1);connect(2,0,15,0);connect(15,0,12,0)
+    else:
+        connect(5, 0, 10, 0); connect(10, 0, 2, 1); connect(2, 0, 12, 0)
     connect(5, 0, 13, 0); connect(12, 0, 13, 1); connect(11, 1, 13, 2, "MASK")
     connect(13, 0, 9, 0); connect(13, 0, 3, 0)
     nodes[3]["pos"] = [2380, 350]
-    workflow["last_node_id"] = 13; workflow["last_link_id"] = next_link - 1
+    workflow["last_node_id"] = max(nodes); workflow["last_link_id"] = next_link - 1
 
 
 def append_processing(graph, workflow, recipe, prefix):
@@ -234,7 +254,8 @@ class Engine:
             self.store.update_job(job["id"], status="cancelled" if job["cancel_requested"] else "failed",
                                   phase="Stopped", error=error[:1500], finished=time.time())
             return
-        output_node = "9" if recipe.get("processing", {}).get("method", "none") != "none" else "2"
+        improved_mask = recipe.get("masked_edit",{}).get("version") == 2
+        output_node = "2" if improved_mask else "9" if recipe.get("processing", {}).get("method", "none") != "none" else "2"
         outputs = history.get("outputs", {}).get(output_node, {}).get("images", [])
         output = next((x for x in outputs if x.get("type") == "output"), None)
         if not output:
@@ -249,11 +270,14 @@ class Engine:
         with Image.open(temporary) as image:
             image.verify()
         with Image.open(temporary) as image:
-            if image.size != (recipe["width"], recipe["height"]):
+            expected = (recipe["generation_width"],recipe["generation_height"]) if improved_mask else (recipe["width"], recipe["height"])
+            if image.size != expected:
                 raise RuntimeError("The image engine returned an unexpected image size.")
             if json.loads(image.info.get("studio", "{}")) != recipe:
                 raise RuntimeError("The image is missing its saved generation settings.")
-        if recipe.get("masked_edit"):
+        if improved_mask:
+            await asyncio.to_thread(blend_selected,temporary,self.store.directory,recipe)
+        elif recipe.get("masked_edit"):
             await asyncio.to_thread(protect_unselected, temporary, self.store.directory, recipe)
         temporary.replace(path)
         await asyncio.to_thread(make_thumbnail, path, self.store.directory / "thumbs" / (job["id"] + ".webp"))
@@ -292,7 +316,7 @@ class Engine:
                     upload_name = "/".join(filter(None, [uploaded.get("subfolder"), uploaded["name"]]))
                 else:
                     upload_name = None
-                mask_name = None
+                mask_name = reference_name = None
                 if job["recipe"].get("masked_edit"):
                     content = await asyncio.to_thread(engine_mask, self.store.directory, job["recipe"])
                     form = aiohttp.FormData()
@@ -301,7 +325,14 @@ class Engine:
                     form.add_field("overwrite", "true")
                     uploaded = await self.request("POST", "/upload/image", data=form)
                     mask_name = "/".join(filter(None, [uploaded.get("subfolder"), uploaded["name"]]))
-                graph, workflow = build_graph(job["recipe"], self.project_root, self.templates, upload_name, mask_name)
+                    if job["recipe"]["masked_edit"].get("version") == 2:
+                        content = await asyncio.to_thread(engine_reference,self.store.directory,job["recipe"])
+                        form = aiohttp.FormData()
+                        form.add_field("image",io.BytesIO(content),filename=job["id"]+"-reference.png",content_type="image/png")
+                        form.add_field("subfolder","web-studio");form.add_field("overwrite","true")
+                        uploaded = await self.request("POST","/upload/image",data=form)
+                        reference_name = "/".join(filter(None,[uploaded.get("subfolder"),uploaded["name"]]))
+                graph, workflow = build_graph(job["recipe"], self.project_root, self.templates, upload_name, mask_name,reference_name)
                 prompt_id = str(uuid.uuid4())
                 # Persist identity before submitting; never duplicate an uncertain request.
                 self.store.update_job(job["id"], prompt_id=prompt_id, status="submitted", started=time.time(), phase="Waiting for the image engine")

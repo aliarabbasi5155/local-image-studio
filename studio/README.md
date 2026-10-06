@@ -112,17 +112,50 @@ browser tab; reloading clears them. After submitting, the mask is saved on the
 server, and **Reuse settings** reloads it along with the prompt on the earlier
 parent (or on the saved result when its parent was deleted).
 
-The website edits a crop around the selection with 64 pixels of surrounding
-context, fits the edited crop back into place, then blends only the painted area.
+The website edits a crop around the selection with surrounding context, then
+blends only the painted area. Reference and output use the same aspect-preserving,
+16-pixel-aligned canvas. Border padding is removed before placing the patch back,
+avoiding the earlier mismatch between a center-trimmed reference and a stretched
+output. The reference is reduced to the working canvas before model conditioning,
+so a smaller working resolution also reduces the reference token workload.
 This uses the existing Flux instruction-editing model. The installed
 [Mac Flux node](https://github.com/tanis2000/comfyui-flux2klein-mlx#nodes) does not
 expose a native latent mask input, so this is crop-based masked editing rather
 than a dedicated inpainting model. No extra model download is needed.
 
 The saved PNG keeps the exact original dimensions and preserves every pixel
-outside the painted mask. Edge softness blends inside that boundary. Output-size
-and whole-image resize controls are disabled while the mask is active; quality
-controls the crop's working resolution. The crop may be resized to fit back into
+outside the painted mask. Edge softness fades inward from the boundary. The
+website uses unpainted context to correct small position/scale drift and color
+casts only when the comparisons support a reliable improvement. It does not use
+the edited object's original color as the color target, so requested recolors
+can stay changed. These options and the canvas geometry are saved in the recipe;
+the PNG also records which corrections actually applied. The embedded ComfyUI
+workflow performs crop editing and basic blending; context correction is the
+website's final processing step.
+
+Open **Speed & blending** in the painter:
+
+- **Working resolution:** Balanced defaults to a 768-pixel long-edge limit;
+  Quick uses 512. Maximum uses the chosen quality's limit, up to about one
+  megapixel. A smaller canvas runs faster but retains less fine detail. The
+  original image dimensions and untouched pixels are preserved in every mode.
+- **Surrounding context:** Tight is smaller; More context helps with complex
+  objects, perspective and shapes crossing the selection boundary. Context is
+  visible to the model but cannot be pasted outside the selection.
+- **Match surrounding colors** and **Align patch edges** default on. Color
+  matching can be paused for deliberate lighting changes. Alignment corrects
+  only small rigid drift, not arbitrary new shapes created by the model.
+
+Quality still selects the model: **Fast** uses the 4-bit model; Balanced/High
+use the 8-bit model. Choose Fast plus Quick working resolution for the fastest
+local edits. Model loading and prompt encoding still take time. A selection
+covering most of a photo at Maximum resolution can take as long as a normal edit.
+Paint the complete object and its shadows; cutting a selection through an object
+can leave a shape seam that blending cannot remove. More context can help.
+
+Output-size and whole-image resize controls are disabled while the mask is active.
+Quality sets the model and upper resolution limit; Working resolution can lower
+that limit. The crop may be resized to fit back into
 the original, while the rest of the photo is copied directly. JPG downloads are
 lossy sharing copies. For exact preserved pixels, download PNG.
 

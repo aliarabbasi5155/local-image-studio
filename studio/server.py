@@ -250,7 +250,9 @@ async def generate(request):
         if not mask:
             return failure("This selection belongs to a different photo. Paint it again.")
         sizing = masked_size(source, json.loads(mask["bounds"]), payload.get("mask_feather", 8),
-                             quality, aspect, QUALITIES, state["upscaler"])
+                             quality, aspect, QUALITIES, state["upscaler"],payload.get("mask_detail","balanced"),payload.get("mask_context","balanced"))
+        if any(type(payload.get(key,True)) is not bool for key in ("mask_color_match","mask_align")):
+            return failure("Choose whether to match surrounding colors and align the patch.")
     else:
         sizing = plan_size(quality, aspect, mode, source, payload.get("output_size", "preset"), QUALITIES,
                            state["upscaler"], payload.get("resize_mode", "auto"))
@@ -263,10 +265,13 @@ async def generate(request):
               "source": {k: source[k] for k in ("name", "width", "height", "sha256")} if source else None,
               "parent_image_id": parent_id if mode == "edit" else None}
     if mask:
-        recipe["masked_edit"] = {"mask_id": mask_id, "sha256": mask["sha256"],
+        recipe["masked_edit"] = {"version":2,"mask_id": mask_id, "sha256": mask["sha256"],
                                   "bounds": json.loads(mask["bounds"]), "crop": sizing["processing"]["crop"],
-                                  "feather": payload.get("mask_feather", 8), "context_padding": 64,
-                                  "method": "crop_edit_blend", "preserve_unselected": True}
+                                  "feather": payload.get("mask_feather", 8),
+                                  "context_padding":sizing["processing"]["context_padding"],
+                                  "canvas_content":sizing["processing"]["canvas_content"],
+                                  "color_match":payload.get("mask_color_match",True),"align":payload.get("mask_align",True),
+                                  "feather_method":"inward_cosine","method": "matched_canvas_context_blend", "preserve_unselected": True}
     base_seed = seed if seed is not None else secrets.randbits(32)
     recipes = [dict(recipe, seed=(base_seed + i) % 2**32) for i in range(count)]
     result = state["store"].add_jobs(recipes)
@@ -491,7 +496,7 @@ async def estimate(request):
     if payload.get("mask_bounds") is not None:
         if mode != "edit":
             return failure("Selected-area editing requires a photo.")
-        size = masked_size(source,payload["mask_bounds"],payload.get("mask_feather",8),quality,aspect,QUALITIES,state["upscaler"])
+        size = masked_size(source,payload["mask_bounds"],payload.get("mask_feather",8),quality,aspect,QUALITIES,state["upscaler"],payload.get("mask_detail","balanced"),payload.get("mask_context","balanced"))
     else:
         size = plan_size(quality,aspect,mode,source,payload.get("output_size","preset"),QUALITIES,state["upscaler"],payload.get("resize_mode","auto"))
     recipe = dict(size,mode=mode,model=QUALITIES[quality]["model"],snofs=payload.get("snofs",True))

@@ -244,3 +244,25 @@ library images; a physical phone was not tested. See
 [the report](20261005-collapsible-panel.json),
 [desktop preview](../examples/studio-collapsed-panel.png) and
 [phone preview](../examples/studio-collapsed-panel-mobile.png).
+
+## Masked edit refinement
+
+The same 1152 × 1728 synthetic cabin, prompt and seed took 130.51 seconds with
+the earlier High masked path and 110.12 seconds with the improved High path at
+Balanced working resolution. The new Fast + Quick option took 27.04 seconds
+of active work, plus 160.48 seconds waiting behind another engine job. This
+compares different working resolutions and, for Fast, a 4-bit rather than 8-bit
+model; speed comes with less fine detail. These single runs do not predict all
+images or selection sizes.
+
+Every unpainted pixel stayed identical in all three outputs. Mean RGB change
+inside a three-pixel selection boundary fell from 5.842 to 0.744 for High and
+0.920 for Fast. This measures a boundary seam on this fixture, not overall image
+quality. Color correction applied; alignment skipped because the unchanged
+context did not support a reliable improvement. Known translation drift and
+requested recoloring are covered separately by pixel regression tests.
+
+All 44 tests pass on macOS and in the Docker image with its 768MB memory limit;
+`make check` passes. The painter options and saved-mask reuse were checked at
+portrait and landscape phone sizes, with no console errors or warnings. See
+[the report](20261006-masked-edit-refinement.json).
