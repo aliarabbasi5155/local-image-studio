@@ -82,6 +82,16 @@ class Metrics:
                                    "engine_response_ms":round((time.monotonic()-started)*1000)}
                 except (OSError,RuntimeError,AttributeError,asyncio.TimeoutError,aiohttp.ClientError):
                     self.cached = {"engine_ready":False,"memory_total":None,"memory_free":None,"engine_response_ms":None}
+                self.cached["engine_state"] = "ready" if self.cached["engine_ready"] else "offline"
+                self.cached["auto_start"] = False
+                try:
+                    native = await self.engine.native.request()
+                    if native:
+                        self.cached.update(engine_state=native["state"], auto_start=True,
+                                           memory_total=native["memory_total"], memory_free=native["memory_free"],
+                                           idle_seconds=native["idle_seconds"])
+                except (OSError,RuntimeError,AttributeError,KeyError,asyncio.TimeoutError,aiohttp.ClientError):
+                    pass
                 self.checked = time.monotonic()
         jobs = self.store.rows("SELECT status FROM jobs WHERE status IN ('queued','submitted','running')")
         history = self.history()

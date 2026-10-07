@@ -61,11 +61,14 @@ async function enterStudio() {
   renderComposer(); renderEngine(); if (typeof refreshMetrics === 'function') refreshMetrics(); await refresh();
 }
 function renderEngine() {
-  $('#engine-dot').classList.toggle('offline', !state.options.engine_ready);
-  $('#engine-label').textContent = state.options.engine_ready ? 'Your Mac is ready' : 'Image engine is offline';
+  $('#engine-dot').classList.toggle('offline', !state.options.engine_ready && !state.options.auto_start);
+  $('#engine-label').textContent = engineLabel(state.options);
   $('#phone-url').textContent = state.options.lan_url || location.origin;
   $('#phone-url').href = state.options.lan_url || location.origin;
   $('#logout').hidden = !state.options.pin_required;
+}
+function engineLabel(status) {
+  return {ready:'Your Mac is ready',sleeping:'Sleeping · wakes automatically',starting:'Starting image engine'}[status.engine_state] || (status.engine_ready?'Your Mac is ready':'Image engine is offline');
 }
 function qualityHint() {
   const quality = state.options.qualities[state.quality];

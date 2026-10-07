@@ -14,7 +14,8 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from download_upscaler import install as install_upscaler
-from setup_sam3 import install as install_sam3, start as start_sam3
+from setup_sam3 import install as install_sam3
+from setup_native_service import install as install_native_service
 
 ROOT = Path(__file__).resolve().parents[1]
 URL = "http://127.0.0.1:7878"
@@ -50,20 +51,17 @@ def main():
     phone_url = f"http://{lan_address()}:7878"
     with (runtime / "web-launcher.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        engine = subprocess.run([sys.executable, str(ROOT / "scripts/launch.py"), "--no-browser"], capture_output=True, text=True)
-        if engine.returncode:
-            raise SystemExit(engine.stdout + engine.stderr)
         install_upscaler()
         try:
             install_sam3()
-            start_sam3()
         except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
             print(f"Automatic selection needs attention: {error}\nYou can still paint masks by hand.", flush=True)
-        print("Your Mac’s image engine is ready.", flush=True)
+        install_native_service()
+        print("Your Mac will start the image engine when needed and stop it after 10 idle minutes.", flush=True)
         if args.native:
             if not ready():
                 with (runtime / "web-studio.log").open("a") as log:
-                    environment = dict(os.environ, STUDIO_LAN_URL=phone_url)
+                    environment = dict(os.environ, STUDIO_LAN_URL=phone_url, ENGINE_CONTROL_URL="http://127.0.0.1:7877")
                     subprocess.Popen([sys.executable, "-m", "studio.server"], cwd=ROOT, env=environment,
                                      stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
         else:

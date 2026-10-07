@@ -20,6 +20,7 @@ from PIL import Image, UnidentifiedImageError
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from studio.automask import validate_selection  # noqa: E402
+from engine_supervisor import EngineSupervisor  # noqa: E402
 
 CONFIG = json.loads((ROOT / "config/sam3.json").read_text())
 TOKEN = (ROOT / "runtime/sam3-token.txt").read_text().strip()
@@ -27,6 +28,7 @@ BINARY = ROOT / "runtime/sam3-build/studio-sam3"
 MODEL = ROOT / "models/sam3" / CONFIG["filename"]
 LOCK = asyncio.Lock()
 CACHE = OrderedDict()
+ENGINE = EngineSupervisor(ROOT, idle_seconds=int(os.environ.get("ENGINE_IDLE_SECONDS", "600")))
 
 
 @web.middleware
@@ -41,7 +43,18 @@ async def authorize(request, handler):
 
 async def health(request):
     return web.json_response({"ready": BINARY.is_file() and MODEL.is_file(), "busy": LOCK.locked(),
-                              "model": "SAM 3 Q8 · Metal"})
+                              "model": "SAM 3 Q8 · Metal", "engine_control": True})
+
+
+async def engine_status(request):
+    return web.json_response(await ENGINE.status())
+
+
+async def engine_wake(request):
+    try:
+        return web.json_response(await ENGINE.wake())
+    except (OSError, RuntimeError) as error:
+        return web.json_response({"error": str(error)}, status=503)
 
 
 async def engine_busy():
@@ -53,6 +66,9 @@ async def engine_busy():
                     return True
                 queue = await response.json()
                 return bool(queue.get("queue_running") or queue.get("queue_pending"))
+    except aiohttp.ClientConnectorError:
+        # A sleeping engine has no work; SAM can run without waking it.
+        return False
     except (aiohttp.ClientError, asyncio.TimeoutError):
         return True
 
@@ -126,5 +142,7 @@ async def select(request):
 
 if __name__ == "__main__":
     app = web.Application(middlewares=[authorize], client_max_size=6 * 1024 * 1024)
-    app.add_routes([web.get("/health", health), web.post("/select", select)])
+    app.cleanup_ctx.append(ENGINE.context)
+    app.add_routes([web.get("/health", health), web.post("/select", select),
+                    web.get("/engine", engine_status), web.post("/engine/wake", engine_wake)])
     web.run_app(app, host="127.0.0.1", port=7877, access_log=None, print=None, handler_cancellation=True)

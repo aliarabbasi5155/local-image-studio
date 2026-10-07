@@ -110,7 +110,9 @@ async def health(request):
 
 async def options(request):
     state = request.app[STATE]
-    return web.json_response({"qualities": QUALITIES, "output_sizes": OUTPUT_SIZES, "resize_modes": RESIZE_MODES, "engine_ready": await state["engine"].available(),
+    status = await state["metrics"].status()
+    return web.json_response({"qualities": QUALITIES, "output_sizes": OUTPUT_SIZES, "resize_modes": RESIZE_MODES,
+                              "engine_ready": status["engine_ready"], "engine_state": status["engine_state"], "auto_start": status["auto_start"],
                               "lan_url": os.environ.get("STUDIO_LAN_URL", f"{request.scheme}://{request.host}"),
                               "pin_required": bool(state["pin"]), "max_variations": 4,
                               "automatic_masks": await state["automask"].status()})

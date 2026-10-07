@@ -22,6 +22,10 @@ results after confirmation,
 and reuse the settings saved with every image. The library persists in
 `studio-data/`. See [the website guide](studio/README.md).
 
+After the first setup, the Mac helper starts at login. Just open the website with
+Docker running: submitting an image wakes the engine, and 10 idle minutes shuts
+it down to free model memory. Browsing your library keeps the engine asleep.
+
 The library groups originals and their edits into projects, including upload-only
 photos. Its fullscreen editor supports parent/original comparison, pinch zoom,
 branching edit histories, and per-image deletion. Compare can be toggled, controls

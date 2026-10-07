@@ -6,6 +6,12 @@ THE PHONE-FRIENDLY WEBSITE
 3. Open the address it prints and enter your six-digit PIN.
 4. For your phone, use the "On your phone" address on the same Wi-Fi.
 
+The launcher sets up automatic startup once. After restarting your Mac, log in,
+let Docker Desktop start, and open the website. No extra command is needed.
+The image engine wakes when you submit an image and stops after 10 idle minutes
+to free its model memory. Browsing the library does not wake it. The first image
+after sleeping takes a little longer to prepare.
+
 Create = type a description, choose quality, size and variations, then Create image.
 Each generated image starts a project. Upload image saves a photo as a new project
 and opens its editor. You can close it without doing an edit; the original stays.

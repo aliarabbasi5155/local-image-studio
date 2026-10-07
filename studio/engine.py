@@ -10,6 +10,7 @@ from pathlib import Path
 
 import aiohttp
 from PIL import Image, ImageOps
+from .native import NativeEngine
 from .masking import engine_mask, engine_reference, engine_placement_guide, engine_shape_guide, blend_selected, protect_unselected
 
 QUALITIES = {
@@ -222,6 +223,7 @@ class Engine:
         self.client_id = "studio-" + uuid.uuid4().hex
         self.session = None
         self.resource_lock = asyncio.Lock()
+        self.native = NativeEngine()
 
     async def request(self, method, path, **kwargs):
         async with self.session.request(method, self.base + path, **kwargs) as response:
@@ -410,14 +412,18 @@ class Engine:
             if job["cancel_requested"] and not job["prompt_id"]:
                 self.store.update_job(job["id"], status="cancelled", phase="Stopped", finished=time.time())
                 continue
-            if not await self.available():
-                self.store.update_job(job["id"], phase="Waiting for your Mac’s image engine")
-                await asyncio.sleep(3)
-                continue
             try:
+                if self.native.base:
+                    status = await self.native.request(wake=True)
+                    if status.get("error"):
+                        raise RuntimeError(status["error"])
+                if not await self.available():
+                    self.store.update_job(job["id"], phase="Starting your Mac’s image engine" if self.native.base else "Waiting for your Mac’s image engine")
+                    await asyncio.sleep(3)
+                    continue
                 if self.resource_lock.locked():
                     self.store.update_job(job["id"], phase="Waiting for automatic selection")
-                async with self.resource_lock:
+                async with self.native.activity(), self.resource_lock:
                     job=self.store.job(job["id"])
                     if not job:
                         continue

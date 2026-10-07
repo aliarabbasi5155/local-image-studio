@@ -16,9 +16,13 @@ Images can also be permanently deleted after confirmation.
    **On your phone** address printed by the launcher while using the same Wi-Fi.
    The **Connect** button in the website also shows that address.
 
+The first launch installs a small Mac helper that starts automatically when you
+log in. After restarting, let Docker Desktop start and open the website: submitting
+an image wakes the engine automatically. It stops after 10 minutes without work,
+releasing its model memory. Browsing the library does not wake it. The first image
+after sleeping takes a little longer while the engine and model load.
 You can close the launcher Terminal window and browser. Keep the Mac awake and
-Docker Desktop running while making images. After restarting the Mac, launch
-the studio again. If the router changes the Mac's address, the next launch
+Docker Desktop running while making images. If the router changes the Mac's address, the next launch
 prints the new phone address. Your phone can add the page to its home screen
 from the browser's Share/menu controls.
 
@@ -387,7 +391,7 @@ or finishes a committed one. It does not put deleted results back in Archive.
 
 ## Docker and developer commands
 
-The launcher starts/reuses ComfyUI and the SAM 3 selector natively on the Mac, then builds and runs the
+The launcher installs/reuses the native Mac helper, then builds and runs the
 website in Docker. Docker Desktop's documented GPU support does not provide
 Apple Metal GPU access to Linux containers, so the MLX engine stays native.
 The container reaches it through `host.docker.internal`; the engine itself stays
@@ -397,9 +401,18 @@ Existing model files are reused and are not copied into the Docker image.
 The selector listens only on loopback port 7877 and requires a separate random
 token in `runtime/sam3-token.txt` (owner-readable). Docker mounts only that token
 as a read-only secret and reaches the helper through `host.docker.internal`.
-Images remain local. Stopping Docker leaves the native helpers running; SAM
-keeps no loaded model while idle. After restarting the Mac, use the launcher
-to start both native helpers before using the website.
+Images remain local. The authenticated helper on port 7877 starts ComfyUI on the
+first generation request and stops its own ComfyUI child after 600 idle seconds.
+It checks the native queue, including work submitted outside Studio, before stopping.
+Studio sends a heartbeat while preparing, running and saving a job. Dashboard reads
+never wake the engine. SAM runs inference in a separate process that exits after
+each selection, and it can select images while ComfyUI is sleeping.
+The helper is a user LaunchAgent at `~/Library/LaunchAgents/com.localimagestudio.native.plist`.
+It starts at login and restarts if it exits. It does not load image models at login.
+An engine started separately by the advanced ComfyUI launcher is left under manual
+control; the helper never terminates a process it did not start.
+To remove automatic startup after finishing images, run
+`.venv/bin/python scripts/setup_native_service.py --uninstall`.
 The web launcher automatically installs the roughly 5 MB upscaler from the
 [official Real-ESRGAN release](https://github.com/xinntao/Real-ESRGAN/releases/tag/v0.2.5.0),
 checks its pinned SHA256, and makes it available to native ComfyUI. Its source
@@ -410,7 +423,7 @@ runs in native ComfyUI alongside the MLX engine.
 From the project root:
 
 ```bash
-# Start engine + Docker website, without opening a browser
+# Set up automatic engine startup + Docker website, without opening a browser
 ./Start\ Web\ Studio.command --no-browser
 
 # Stop the website (keeps the library and native engine)
@@ -435,7 +448,7 @@ README, download the optional 4-bit model and SNOFS, then use the web launcher.
 
 The Docker environment is generated in `runtime/studio-docker.env`, including
 the absolute host model path and your UID/GID for the data mount. Compose can
-also be run manually with that file. `COMFY_URL`, `ENGINE_PROJECT_ROOT`,
+also be run manually with that file. `COMFY_URL`, `ENGINE_CONTROL_URL`, `ENGINE_PROJECT_ROOT`,
 `STUDIO_DATA` and `STUDIO_LAN_URL` configure the Python service.
 
 The worker saves each ComfyUI prompt ID before submitting and recovers existing
