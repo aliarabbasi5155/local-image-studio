@@ -1,0 +1,5 @@
+.setup-screen{padding:max(25px,env(safe-area-inset-top)) 18px max(25px,env(safe-area-inset-bottom))}.setup-card{max-width:440px}.setup-mark{width:51px;height:51px;display:block;margin-bottom:26px}.setup-card h1{font-size:34px;letter-spacing:-1.2px}
+.setup-status.waiting .status-dot{background:#e0a96d}.setup-status{display:flex;align-items:center;gap:9px;background:#232024;border:1px solid #3b3438;border-radius:10px;padding:12px 14px;color:var(--text)!important}
+.setup-steps{padding-left:20px;margin:26px 0 0;color:var(--muted);font-size:13px;line-height:1.7}.setup-steps li{margin-bottom:24px}.setup-steps li::marker{color:var(--accent);font-weight:650}.setup-steps strong{color:var(--text);font-weight:600}.setup-steps p{margin:6px 0}.setup-steps b{color:#dcd2c8;font-weight:600}
+.setup-steps .primary{margin:12px 0;text-decoration:none;width:auto}.setup-steps details{background:#1c1b1f;border:1px solid #302c31;border-radius:9px;padding:9px 12px;margin-top:8px}.setup-steps summary{cursor:pointer;color:var(--text);font-size:12px}
+.setup-link{display:inline-block;margin-top:4px;color:var(--accent);font-weight:600}

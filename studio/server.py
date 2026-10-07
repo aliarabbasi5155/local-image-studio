@@ -7,6 +7,8 @@ import io
 import json
 import os
 import secrets
+import signal
+import ssl
 import time
 import uuid
 from pathlib import Path
@@ -27,10 +29,19 @@ STATE = web.AppKey("studio", dict)
 STATIC = Path(__file__).parent / "static"
 MAX_UPLOAD = 20 * 1024 * 1024
 ACTIVE = ("queued", "submitted", "running")
+LOOPBACK = ("localhost", "127.0.0.1", "::1")
+STATIC_FILES = ("app.js", "projects.js", "masking.js", "automatic.js", "actions.js", "setup.js", "style.css", "projects.css",
+                "masking.css", "automatic.css", "mask-workspace.css", "polish.css", "setup.css", "icon.svg", "icon-192.png",
+                "icon-512.png", "icon-maskable.png", "apple-touch-icon.png", "manifest.json")
 
 
 def failure(message, status=400):
     return web.json_response({"error": message}, status=status)
+
+
+def needs_setup(request):
+    """Phones reach the studio over HTTPS once HTTPS is ready; plain HTTP stays for this Mac."""
+    return bool(request.app[STATE]["tls"]) and not request.secure and request.url.host not in LOOPBACK
 
 
 @web.middleware
@@ -40,6 +51,8 @@ async def access(request, handler):
         origin = request.headers.get("Origin")
         if origin and origin != f"{request.scheme}://{request.host}":
             return failure("Open the studio directly to make changes.", 403)
+    if needs_setup(request) and request.path.startswith(("/api/", "/media/")) and request.path != "/api/health":
+        return failure("Open the secure studio address to continue.", 403)
     if request.path.startswith(("/api/", "/media/")) and request.path not in ("/api/auth", "/api/login", "/api/health"):
         token = request.cookies.get("studio_session", "")
         digest = hashlib.sha256(token.encode()).hexdigest()
@@ -53,20 +66,41 @@ async def access(request, handler):
         response = failure("Check your request: " + str(error))
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
-    response.headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' blob:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'"
-    response.headers["Cache-Control"] = "no-store" if request.path.startswith("/api/") else "private, max-age=60"
+    response.headers.setdefault("Content-Security-Policy", "default-src 'self'; img-src 'self' blob:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'")
+    response.headers.setdefault("Cache-Control", "no-store" if request.path.startswith("/api/") else "private, max-age=60")
     return response
 
 
 async def index(request):
+    if needs_setup(request):
+        return web.Response(status=302, headers={"Location": "/setup", "Cache-Control": "no-store"})
     return web.FileResponse(STATIC / "index.html")
 
 
 async def static_file(request):
     name = request.match_info["name"]
-    if name not in ("app.js", "projects.js", "masking.js", "automatic.js", "actions.js", "style.css", "projects.css", "masking.css", "automatic.css", "mask-workspace.css", "polish.css", "icon.svg", "manifest.json"):
+    if name not in STATIC_FILES:
         raise web.HTTPNotFound()
     return web.FileResponse(STATIC / name)
+
+
+async def service_worker(request):
+    return web.FileResponse(STATIC / "sw.js", headers={"Cache-Control": "no-cache"})
+
+
+async def setup_page(request):
+    # The page checks whether this phone already trusts the HTTPS address, then opens it.
+    return web.FileResponse(STATIC / "setup.html", headers={"Cache-Control": "no-store",
+        "Content-Security-Policy": "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self' https:; frame-ancestors 'none'"})
+
+
+async def certificate_authority(request):
+    tls = request.app[STATE]["tls"]
+    if not tls:
+        raise web.HTTPNotFound()
+    # DER is the format both iOS profiles and Android's CA certificate installer accept.
+    content = ssl.PEM_cert_to_DER_cert((tls / "ca.crt").read_text())
+    return web.Response(body=content, content_type="application/x-x509-ca-cert", headers={"Cache-Control": "no-store"})
 
 
 async def auth(request):
@@ -92,7 +126,7 @@ async def login(request):
     token = secrets.token_urlsafe(32)
     state["store"].execute("INSERT INTO sessions VALUES (?,?)", (hashlib.sha256(token.encode()).hexdigest(), time.time() + 30 * 86400))
     response = web.json_response({"authenticated": True})
-    response.set_cookie("studio_session", token, httponly=True, samesite="Strict", max_age=30 * 86400)
+    response.set_cookie("studio_session", token, httponly=True, secure=request.secure, samesite="Strict", max_age=30 * 86400)
     return response
 
 
@@ -715,8 +749,9 @@ async def media(request):
     return web.FileResponse(path, headers=headers)
 
 
-def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, start_worker=True):
+def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, start_worker=True, tls_dir=None):
     directory = Path(data_dir or os.environ.get("STUDIO_DATA", ROOT / "studio-data"))
+    tls = Path(tls_dir or os.environ.get("STUDIO_TLS_DIR", ROOT / "runtime/tls"))
     store = Store(directory)
     pin_path = directory / "access-pin.txt"
     if pin is None:
@@ -730,7 +765,7 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
     engine = Engine(store, engine_url or os.environ.get("COMFY_URL", "http://127.0.0.1:8188"),
                     project_root or os.environ.get("ENGINE_PROJECT_ROOT", str(ROOT)), templates)
     app = web.Application(middlewares=[access], client_max_size=MAX_UPLOAD + 65536)
-    app[STATE] = {"store": store, "engine": engine, "pin": pin, "attempts": {},
+    app[STATE] = {"store": store, "engine": engine, "pin": pin, "attempts": {}, "tls": tls if (tls / "server.crt").exists() else None,
                   "models": json.loads((ROOT / "config/models.json").read_text()),
                   "adapter": json.loads((ROOT / "config/loras.json").read_text())["snofs-klein-9b-v1.4"],
                   "upscaler": json.loads((ROOT / "config/upscaler.json").read_text()),
@@ -745,7 +780,8 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
         store.close()
     app.on_cleanup.append(close_store)
     app.add_routes([
-        web.get("/", index), web.get("/static/{name}", static_file),
+        web.get("/", index), web.get("/static/{name}", static_file), web.get("/sw.js", service_worker),
+        web.get("/setup", setup_page), web.get("/setup/image-studio-home.crt", certificate_authority),
         web.get("/api/auth", auth), web.post("/api/login", login), web.post("/api/logout", logout),
         web.get("/api/health", health), web.get("/api/options", options),
         web.get("/api/favorites", favorites), web.post("/api/bulk", bulk_action),
@@ -768,14 +804,55 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
     return app
 
 
+def tls_context(directory):
+    """Serve HTTPS and switch to a renewed certificate on the next connection, without a restart."""
+    certificate, key = directory / "server.crt", directory / "server.key"
+    def load():
+        stamp = certificate.stat().st_mtime_ns
+        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        context.load_cert_chain(certificate, key)
+        return stamp, context
+    current = [load()]
+    def renew(connection, server_name, initial):
+        # Runs for every handshake, including phones that connect by IP address and send no name.
+        try:
+            if certificate.stat().st_mtime_ns != current[0][0]:
+                current[0] = load()
+        except (OSError, ssl.SSLError):
+            pass  # Keep the previous certificate if the new one is unreadable.
+        if current[0][1] is not initial:
+            connection.context = current[0][1]
+    current[0][1].sni_callback = renew
+    return current[0][1]
+
+
+async def serve(app, host, port, https_port):
+    runner = web.AppRunner(app)
+    await runner.setup()
+    try:
+        await web.TCPSite(runner, host, port).start()
+        addresses = f"http://{host}:{port}"
+        if app[STATE]["tls"]:
+            await web.TCPSite(runner, host, https_port, ssl_context=tls_context(app[STATE]["tls"])).start()
+            addresses += f" and https://{host}:{https_port}"
+        print(f"Serving {addresses}", flush=True)
+        stopped = asyncio.Event()
+        for number in (signal.SIGINT, signal.SIGTERM):
+            asyncio.get_running_loop().add_signal_handler(number, stopped.set)
+        await stopped.wait()
+    finally:
+        await runner.cleanup()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=int(os.environ.get("STUDIO_PORT", "7878")))
+    parser.add_argument("--https-port", type=int, default=7443)
     args = parser.parse_args()
     app = create_app()
     print(f"Studio PIN: {app[STATE]['pin']} (saved in {app[STATE]['store'].directory / 'access-pin.txt'})", flush=True)
-    web.run_app(app, host=args.host, port=args.port)
+    asyncio.run(serve(app, args.host, args.port, args.https_port))
 
 
 if __name__ == "__main__":

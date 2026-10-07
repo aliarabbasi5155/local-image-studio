@@ -22,6 +22,11 @@ results after confirmation,
 and reuse the settings saved with every image. The library persists in
 `studio-data/`. See [the website guide](studio/README.md).
 
+Phones can install the studio as a home-network-only app. Open the printed phone
+address once; it walks the phone through trusting this Mac's local HTTPS
+certificate, then opens `https://<mac-address>:7443` to add to the Home Screen.
+See [Install it on your phone](studio/README.md#install-it-on-your-phone).
+
 After the first setup, the Mac helper starts at login. Just open the website with
 Docker running: submitting an image wakes the engine, and 10 idle minutes shuts
 it down to free model memory. Browsing your library keeps the engine asleep.

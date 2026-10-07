@@ -23,8 +23,48 @@ releasing its model memory. Browsing the library does not wake it. The first ima
 after sleeping takes a little longer while the engine and model load.
 You can close the launcher Terminal window and browser. Keep the Mac awake and
 Docker Desktop running while making images. If the router changes the Mac's address, the next launch
-prints the new phone address. Your phone can add the page to its home screen
-from the browser's Share/menu controls.
+prints the new phone address.
+
+## Install it on your phone
+
+The studio is an installable app (PWA) that only works on your home network. It
+needs HTTPS, so the launcher creates a small certificate authority for this Mac
+the first time it runs. Each phone trusts it once:
+
+1. On the phone, open the **On your phone** address (`http://…:7878`). It shows
+   a one-time setup page.
+2. Tap **Download certificate**.
+   - **iPhone/iPad:** tap **Allow**, then **Settings → Profile Downloaded →
+     Install**. Then turn it on in **Settings → General → About → Certificate
+     Trust Settings → Image Studio Home**.
+   - **Android:** open **Settings**, search for **CA certificate**, choose
+     **Install anyway**, and pick `image-studio-home.crt`.
+3. Return to the setup page. It opens the secure studio at `https://…:7443`
+   as soon as the phone trusts your Mac.
+4. Sign in with your PIN, then **Share → Add to Home Screen** (iPhone) or
+   **⋮ → Install app** (Android).
+
+The installed app opens full screen, keeps its own sign-in, and shows its shell
+with a "Can't reach your Mac" message when you are away from home. It never
+caches your images or library. Once HTTPS is ready, phones can only reach the
+setup page over plain HTTP, so the PIN never crosses the Wi-Fi unencrypted.
+This Mac keeps using **http://localhost:7878**, which browsers already treat as
+secure; Chrome and Edge can install the app there too.
+
+The installed app remembers its address. Reserve the Mac's address in your
+router (DHCP reservation) so it stays the same. iPhones can instead use
+`https://<your-mac>.local:7443`, which survives address changes; the launcher
+includes the Mac's `.local` name in the certificate. After an address change,
+run the launcher again: it reissues the certificate, and the website uses it
+immediately without a restart. Phones keep trusting the same authority.
+
+The authority is limited (with X.509 name constraints) to `.local` names,
+`localhost` and private addresses (10.x, 172.16–31.x, 192.168.x, 127.x), so even
+its private key cannot vouch for a real website. The key stays in
+`runtime/home-ca/`; the website only sees the public certificate and its own
+server certificate in `runtime/tls/`. To start over, delete both folders, run
+the launcher, and trust the new certificate on each phone (remove the old one
+under **Settings → General → VPN & Device Management** on iPhone).
 
 ## Projects and editing
 
@@ -385,9 +425,10 @@ library, wait for generations to finish, stop the website with the command
 below, then copy the **whole studio-data folder**. Start it again with the
 launcher. Git ignores your images, PIN, sessions and model weights.
 
-The website PIN controls access to the library and generation API. This setup
-serves HTTP for your trusted local network; the PIN is not encrypted in transit.
-Keep access on your local network.
+The website PIN controls access to the library and generation API. Phones use
+HTTPS with your home certificate; plain HTTP serves the full studio only to this
+Mac (`localhost`) and the setup page to other devices. Keep the studio on your
+home network: do not forward ports 7878 or 7443 on your router.
 
 Delete removes the website's copy. Previously downloaded files, backups and
 ComfyUI's engine copies under `outputs/web-studio/` remain separate. Deletion
@@ -455,7 +496,10 @@ README, download the optional 4-bit model and SNOFS, then use the web launcher.
 The Docker environment is generated in `runtime/studio-docker.env`, including
 the absolute host model path and your UID/GID for the data mount. Compose can
 also be run manually with that file. `COMFY_URL`, `ENGINE_CONTROL_URL`, `ENGINE_PROJECT_ROOT`,
-`STUDIO_DATA` and `STUDIO_LAN_URL` configure the Python service.
+`STUDIO_DATA`, `STUDIO_LAN_URL` and `STUDIO_TLS_DIR` configure the Python service.
+HTTPS listens on port 7443 whenever `STUDIO_TLS_DIR` contains `server.crt`.
+`.venv/bin/python scripts/home_certificate.py <mac-address>` reissues the
+certificate by hand.
 
 The worker saves each ComfyUI prompt ID before submitting and recovers existing
 queued/running/completed jobs after a website restart. If the engine loses a

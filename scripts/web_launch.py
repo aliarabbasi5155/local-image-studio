@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from download_upscaler import install as install_upscaler
+from home_certificate import ensure as ensure_certificate, local_name
 from setup_sam3 import install as install_sam3
 from setup_native_service import install as install_native_service
 
@@ -48,7 +49,8 @@ def main():
     runtime = ROOT / "runtime"
     runtime.mkdir(exist_ok=True)
     (ROOT / "studio-data").mkdir(exist_ok=True)
-    phone_url = f"http://{lan_address()}:7878"
+    address = lan_address()
+    phone_url = f"http://{address}:7878"
     with (runtime / "web-launcher.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         install_upscaler()
@@ -57,11 +59,18 @@ def main():
         except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
             print(f"Automatic selection needs attention: {error}\nYou can still paint masks by hand.", flush=True)
         install_native_service()
+        try:
+            ensure_certificate(address, local_name())
+            app_url = f"https://{address}:7443"
+        except (OSError, subprocess.CalledProcessError) as error:
+            print(f"The installable phone app needs attention: {error}\nThe website still works in the phone's browser.", flush=True)
+            app_url = None
         print("Your Mac will start the image engine when needed and stop it after 10 idle minutes.", flush=True)
         if args.native:
             if not ready():
                 with (runtime / "web-studio.log").open("a") as log:
-                    environment = dict(os.environ, STUDIO_LAN_URL=phone_url, ENGINE_CONTROL_URL="http://127.0.0.1:7877")
+                    environment = dict(os.environ, STUDIO_LAN_URL=phone_url, ENGINE_CONTROL_URL="http://127.0.0.1:7877",
+                                       STUDIO_TLS_DIR=str(runtime / "tls"))
                     subprocess.Popen([sys.executable, "-m", "studio.server"], cwd=ROOT, env=environment,
                                      stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
         else:
@@ -80,7 +89,10 @@ def main():
                 raise SystemExit("The website didn’t start. Check docker compose logs or runtime/web-studio.log.")
             time.sleep(1)
     pin = (ROOT / "studio-data/access-pin.txt").read_text().strip()
-    print(f"\nImage Studio is ready\nOn this Mac: {URL}\nOn your phone (same Wi-Fi): {phone_url}\nYour PIN: {pin}\n", flush=True)
+    print(f"\nImage Studio is ready\nOn this Mac: {URL}\nOn your phone (same Wi-Fi): {phone_url}", flush=True)
+    if app_url:
+        print(f"  The first visit helps the phone trust this Mac, then opens the installable app at {app_url}", flush=True)
+    print(f"Your PIN: {pin}\n", flush=True)
     print("You can close this Terminal window. Keep your Mac awake while making images.", flush=True)
     if not args.no_browser:
         webbrowser.open(URL)

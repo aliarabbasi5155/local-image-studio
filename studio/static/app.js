@@ -16,8 +16,10 @@ let toastTimer, searchTimer, refreshing = false, gallerySignature = '', fetching
 let deletingImage = null, deletePending = false, libraryRevision = 0;
 
 async function api(path, options={}) {
-  const response = await fetch(path, {credentials:'same-origin', ...options,
-    headers:options.body && !(options.body instanceof FormData) ? {'Content-Type':'application/json',...options.headers} : options.headers});
+  let response;
+  try { response = await fetch(path, {credentials:'same-origin', ...options,
+    headers:options.body && !(options.body instanceof FormData) ? {'Content-Type':'application/json',...options.headers} : options.headers}); }
+  catch { const error=new Error('Can’t reach your Mac. Join your home Wi-Fi and keep the Mac awake, then try again.');error.unreachable=true;throw error; }
   const body = await response.json();
   if (!response.ok) {
     if (response.status === 401 && path !== '/api/login') showLogin();
@@ -296,5 +298,12 @@ const reserveComposerSpace = () => {
 new ResizeObserver(reserveComposerSpace).observe($('.composer-wrap'));
 window.addEventListener('resize',reserveComposerSpace);
 setInterval(async () => { if (state.authenticated && !document.hidden) { try { state.options = await api('/api/options'); renderEngine(); } catch { /* Next refresh retries the connection. */ } } },15000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden && state.authenticated) refresh(); });
-(async () => { try { const auth = await api('/api/auth'); if (auth.authenticated) await enterStudio(); else showLogin(); } catch (error) { $('#login').hidden = false; $('#login-error').textContent = error.message; } })();
+let unreachable = false;
+async function start() {
+  try { const auth = await api('/api/auth'); unreachable = false; $('#login-error').textContent = ''; if (auth.authenticated) await enterStudio(); else showLogin(); }
+  catch (error) { unreachable = Boolean(error.unreachable); $('#login').hidden = false; $('#login-error').textContent = error.message; }
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) return; if (state.authenticated) refresh(); else if (unreachable) start(); });
+window.addEventListener('online', () => { if (unreachable) start(); });
+start();
+if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js').catch(() => { /* The studio works without the offline app shell. */ });
