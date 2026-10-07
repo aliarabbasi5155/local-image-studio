@@ -64,7 +64,7 @@ async def index(request):
 
 async def static_file(request):
     name = request.match_info["name"]
-    if name not in ("app.js", "projects.js", "masking.js", "automatic.js", "actions.js", "style.css", "projects.css", "masking.css", "automatic.css", "polish.css", "icon.svg", "manifest.json"):
+    if name not in ("app.js", "projects.js", "masking.js", "automatic.js", "actions.js", "style.css", "projects.css", "masking.css", "automatic.css", "mask-workspace.css", "polish.css", "icon.svg", "manifest.json"):
         raise web.HTTPNotFound()
     return web.FileResponse(STATIC / name)
 

@@ -28,6 +28,12 @@ from the browser's Share/menu controls.
 
 ## Projects and editing
 
+The selection editor gives the photo most of the screen. On phones, **Auto select**
+or **Tools** opens a scrollable panel over the photo; **Back to photo** folds it
+away. Brush, Erase, Pan, Undo, zoom and **Use this area** stay within reach. Pinch
+to zoom, or use + / − and **Fit**. Zoomed photos can fill the entire canvas. On a
+larger screen, selection and blending controls sit beside the photo.
+
 The library shows one card per **project**, ordered by its most recent image/edit.
 Each generated image or uploaded photo
 starts a project. Existing images are grouped using their saved parent and source
