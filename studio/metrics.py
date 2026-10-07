@@ -7,6 +7,12 @@ import time
 import aiohttp
 
 
+def guided(recipe):
+    """A second reference image adds encoder tokens and noticeably changes timing."""
+    selection = recipe.get("masked_edit",{})
+    return bool(selection.get("placement_guidance") or selection.get("shape_guidance"))
+
+
 class Metrics:
     def __init__(self, store, engine):
         self.store, self.engine = store, engine
@@ -30,7 +36,7 @@ class Metrics:
             previous_pixels = pw * ph
             ratio = pixels / previous_pixels
             method_matches = previous.get("processing",{}).get("method") == recipe.get("processing",{}).get("method")
-            references_match = bool(previous.get("masked_edit",{}).get("placement_guidance")) == bool(recipe.get("masked_edit",{}).get("placement_guidance"))
+            references_match = guided(previous) == guided(recipe)
             output_ratio = recipe["width"]*recipe["height"] / (previous["width"]*previous["height"])
             # Do not extrapolate timings across canvas sizes or processing methods.
             if method_matches and references_match and .8 <= ratio <= 1.25 and .8 <= (width/height)/(pw/ph) <= 1.25 and .8 <= output_ratio <= 1.25:

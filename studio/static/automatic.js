@@ -8,6 +8,9 @@ function suggestedMaskTarget(prompt) {
   return '';
 }
 
+// Clothing edits should keep the body: protect visible skin and guide the original outline.
+const clothingTarget=target=>/\b(shirts?|t-shirts?|tops?|dress(es)?|jackets?|coats?|pants|trousers|jeans|skirts?|cloth(es|ing)?|outfits?|sweaters?|hoodies?|blouses?|suits?|uniforms?|garments?)\b/i.test(target);
+
 function suggestedMaskMode(prompt) {
   const text=prompt.trim().toLowerCase();
   if(/^(add|put|place|insert)\b/.test(text))return 'add';
@@ -38,7 +41,8 @@ function growSelection(canvas,radius) {
   }
   for(let x=0;x<w;x++){
     prefix[0]=0;for(let y=0;y<h;y++)prefix[y+1]=prefix[y]+middle[y*w+x];
-    for(let y=0;y<h;y++)input[(y*w+x)*4+3]=prefix[Math.min(h,y+radius+1)]>prefix[Math.max(0,y-radius)]?255:0;
+    // Grown pixels were transparent black; give them the selection color too.
+    for(let y=0;y<h;y++){const i=(y*w+x)*4,on=prefix[Math.min(h,y+radius+1)]>prefix[Math.max(0,y-radius)];if(on&&input[i+3]<128){input[i]=245;input[i+1]=130;input[i+2]=178;}input[i+3]=on?255:0;}
   }
   ctx.putImageData(pixels,0,0);return canvas;
 }
@@ -46,18 +50,21 @@ function growSelection(canvas,radius) {
 async function initializeAutoSelection(existing) {
   const m=maskEditor;
   m.selectionMetadata=existing?.automatic;
-  m.auto={pool:[],faces:[],result:null,index:0,mode:'change',placement:null};
-  $('.mask-tools').insertAdjacentHTML('beforebegin',`<details class="mask-auto" open><summary>${icon('settings')} Automatic selection <span id="auto-summary"></span></summary><div class="auto-fields"><label>What are you doing?<select id="auto-mode"><option value="change">Change something existing</option><option value="move">Move a part or object</option><option value="add">Add something new</option></select></label><label id="auto-target-label">Object to select<input id="auto-target" placeholder="shirt, hand, jacket…" maxlength="80" autocomplete="off"></label><button id="auto-find" type="button">Find area</button><label class="auto-check"><input id="auto-protect" type="checkbox" checked>Protect detected faces</label><label class="auto-margin">Extra room <input id="auto-margin" type="range" min="0" max="48" value="12"><output id="auto-margin-value">12 px</output></label><div id="auto-matches" hidden><label>Choose a match<select id="auto-match"></select></label><button id="auto-all" type="button">Select all</button></div><p id="auto-status" role="status">Use a short object name, then check the pink preview. Brush and erase can refine it.</p></div></details>`);
+  m.auto={pool:[],faces:[],skin:[],core:null,result:null,index:0,mode:'change',placement:null,bodyTouched:!!existing?.automatic};
+  $('.mask-tools').insertAdjacentHTML('beforebegin',`<details class="mask-auto" open><summary>${icon('settings')} Automatic selection <span id="auto-summary"></span></summary><div class="auto-fields"><label>What are you doing?<select id="auto-mode"><option value="change">Change something existing</option><option value="move">Move a part or object</option><option value="add">Add something new</option></select></label><label id="auto-target-label">Object to select<input id="auto-target" placeholder="shirt, hand, jacket…" maxlength="80" autocomplete="off"></label><button id="auto-find" type="button">Find area</button><div class="auto-checks"><label class="auto-check"><input id="auto-protect" type="checkbox" checked>Protect detected faces</label><label class="auto-check auto-body" title="Arms, legs, neck and other visible skin stay pixel-exact. Turn off when new clothing should cover more skin."><input id="auto-skin" type="checkbox">Keep visible skin</label><label class="auto-check auto-body" title="Shows Flux the original outline and asks it to keep the same proportions. Slightly slower."><input id="auto-shape" type="checkbox">Keep body shape</label></div><label class="auto-margin">Extra room <input id="auto-margin" type="range" min="0" max="48" value="12"><output id="auto-margin-value">12 px</output></label><div id="auto-matches" hidden><label>Choose a match<select id="auto-match"></select></label><button id="auto-all" type="button">Select all</button></div><p id="auto-status" role="status">Use a short object name, then check the pink preview. Brush and erase can refine it.</p></div></details>`);
   $('[data-mask-tool="pan"]').insertAdjacentHTML('beforebegin','<button data-mask-tool="place" type="button" aria-pressed="false" hidden>Draw destination</button>');
   $('.mask-stage').insertAdjacentHTML('beforeend','<canvas id="mask-protection" aria-hidden="true"></canvas>');
   const protectedCanvas=$('#mask-protection');protectedCanvas.width=m.canvas.width;protectedCanvas.height=m.canvas.height;
   $('#auto-target').value=existing?.automatic?.target || suggestedMaskTarget($('#viewer-edit-prompt')?.value || '');
   $('#auto-protect').checked=existing?.automatic?.protect_faces!==false;
+  $('#auto-skin').checked=existing?.automatic?existing.automatic.protect_skin===true:clothingTarget($('#auto-target').value);
+  $('#auto-shape').checked=existing?existing.preserveShape===true:clothingTarget($('#auto-target').value);
   $('#auto-mode').onchange=()=>{
     m.auto.mode=$('#auto-mode').value;m.auto.placement=null;
     $('#auto-target-label').hidden=m.auto.mode==='add';$('.auto-margin').hidden=m.auto.mode==='add';
     $('#auto-find').textContent=m.auto.mode==='add'?'Find faces':'Find area';
     $('[data-mask-tool="place"]').hidden=m.auto.mode==='change';
+    for(const label of document.querySelectorAll('.auto-body'))label.hidden=m.auto.mode!=='change';
     $('[data-mask-tool="place"]').textContent=m.auto.mode==='add'?'Draw placement':'Draw destination';
     $('#auto-status').textContent=m.auto.mode==='add'?'Draw a box for the new object, including its shadows. Find faces first if you want face protection.':m.auto.mode==='move'?'Find the existing part, then draw its destination. Hand moves need room for the wrist/arm; the exact pose may need retries.':'Find an existing object, then check the pink preview.';
     if(m.auto.result)refreshAutoSelection();
@@ -72,7 +79,10 @@ async function initializeAutoSelection(existing) {
   $('#auto-all').onclick=()=>{m.auto.index=-1;$('#auto-match').value='all';refreshAutoSelection();};
   $('#auto-margin').oninput=()=>{$('#auto-margin-value').textContent=`${$('#auto-margin').value} px`;if(m.auto.result)refreshAutoSelection(true);};
   $('#auto-protect').onchange=()=>{updateAutomaticProtection();renderFaceProtection();redrawMask();};
-  if(existing?.protectionBlob&&$('#auto-protect').checked)await restoreFaceProtection(existing.protectionBlob,m);
+  $('#auto-skin').onchange=()=>{m.auto.bodyTouched=true;updateAutomaticProtection();renderFaceProtection();redrawMask();};
+  $('#auto-shape').onchange=()=>{m.auto.bodyTouched=true;};
+  $('#auto-target').oninput=()=>{if(!m.auto.bodyTouched)$('#auto-skin').checked=$('#auto-shape').checked=clothingTarget($('#auto-target').value);updateMaskButtons();};
+  if(existing?.protectionBlob&&($('#auto-protect').checked||$('#auto-skin').checked))await restoreFaceProtection(existing.protectionBlob,m);
   $('#auto-mode').value=existing?.automatic?.mode || suggestedMaskMode($('#viewer-edit-prompt')?.value || '');
   $('#auto-mode').dispatchEvent(new Event('change'));
   if(existing?.automatic?.placement){const b=existing.automatic.placement;m.auto.placement={tool:'place',mode:m.auto.mode,points:[{x:b[0]*m.canvas.width/m.version.width,y:b[1]*m.canvas.height/m.version.height},{x:b[2]*m.canvas.width/m.version.width,y:b[3]*m.canvas.height/m.version.height}]};}
@@ -93,37 +103,63 @@ function renderFaceProtection() {
 async function findAutomaticArea() {
   const m=maskEditor,target=m.auto.mode==='add'?'':$('#auto-target').value.trim();
   if(m.auto.mode!=='add'&&!target)throw new Error('Enter the existing object’s name, for example shirt or hand.');
-  const protect=$('#auto-protect').checked;
+  const protect=$('#auto-protect').checked,skin=m.auto.mode==='change'&&$('#auto-skin').checked;
   if(!target&&!protect)throw new Error('Draw the placement box, or enable face protection first.');
   m.finding=true;updateMaskButtons();
-  for(const id of ['auto-find','auto-mode','auto-target','auto-protect','auto-match','auto-all'])$('#'+id).disabled=true;
+  for(const id of ['auto-find','auto-mode','auto-target','auto-protect','auto-skin','auto-shape','auto-match','auto-all'])$('#'+id).disabled=true;
   $('#auto-status').classList.remove('auto-warning');$('#auto-status').textContent='Finding the area on your Mac…';$('#auto-summary').textContent='Finding…';
   try{
     let source=viewer.sources.get(m.version.id);
     if(!source){source=await send(`/api/projects/${viewer.project.id}/versions/${m.version.id}/edit-source`,{});viewer.sources.set(m.version.id,source);}
-    const result=await send(`/api/uploads/${source.id}/auto-mask`,{target,protect_faces:protect});
+    const result=await send(`/api/uploads/${source.id}/auto-mask`,{target,protect_faces:protect,protect_skin:skin});
     if(maskEditor!==m)return;
     m.auto.pool=await Promise.all(result.candidates.map(loadAutomaticMask));
     m.auto.faces=await Promise.all(result.faces.map(loadAutomaticMask));
+    m.auto.skin=await Promise.all((result.skin || []).map(loadAutomaticMask));
     if(maskEditor!==m)return;
-    m.auto.result={...result,target,protect_requested:protect};m.auto.index=0;
+    m.auto.result={...result,target,protect_requested:protect,skin_requested:skin};m.auto.index=0;
     $('#auto-match').innerHTML=m.auto.pool.map((_,i)=>`<option value="${i}">Match ${i+1} of ${m.auto.pool.length}</option>`).join('')+'<option value="all">All matches</option>';
     $('#auto-matches').hidden=m.auto.mode==='add'||m.auto.pool.length<2;
     refreshAutoSelection();
-    const faces=protect?`${m.auto.faces.length} face${m.auto.faces.length===1?'':'s'} protected. `:'';
+    const faces=(protect?`${m.auto.faces.length} face${m.auto.faces.length===1?'':'s'} protected. `:'')+(skin?(m.auto.skin.length?'Visible skin kept; new clothing cannot cover it. ':'No visible skin found. '):'');
     $('#auto-status').textContent=(m.auto.mode==='add'?'Draw a placement box for the new object. ':m.auto.pool.length?`${m.auto.pool.length} match${m.auto.pool.length===1?'':'es'} found. Choose the correct pink area. `:'No match found. Try a simpler name or use the brush. ')+faces+(protect&&!m.auto.faces.length?'No faces detected; check the preview carefully. ':'')+(result.cached?'Reused selection.':`Found in ${Math.round(result.seconds)} seconds.`);
     $('#auto-summary').textContent=m.auto.mode==='add'?'Draw placement':`${m.auto.pool.length} found`;
-  }finally{if(maskEditor===m){m.finding=false;for(const id of ['auto-find','auto-mode','auto-target','auto-protect','auto-match','auto-all'])$('#'+id).disabled=false;updateMaskButtons();}}
+  }finally{if(maskEditor===m){m.finding=false;for(const id of ['auto-find','auto-mode','auto-target','auto-protect','auto-skin','auto-shape','auto-match','auto-all'])$('#'+id).disabled=false;updateMaskButtons();}}
+}
+
+function maskLayer(images,w,h) {
+  const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});for(const image of images)ctx.drawImage(image instanceof HTMLCanvasElement?image:binaryMaskCanvas(image,w,h),0,0);
+  return canvas;
+}
+function combineMasks(target,source,operation) {
+  const ctx=target.getContext('2d');ctx.globalCompositeOperation=operation;ctx.drawImage(source,0,0);ctx.globalCompositeOperation='source-over';return target;
+}
+// Two independent detections never meet exactly. The few pixels between the object and a protected
+// face or skin belong to the object, so none of its old color survives beside them.
+function automaticRegions() {
+  // SAM sees at most a 1024px preview, so its outlines are only that precise on larger photos.
+  const m=maskEditor,a=m.auto,w=m.canvas.width,h=m.canvas.height,detected=Math.max(1,Math.max(m.version.width,m.version.height)/1024);
+  const margin=Math.max(2,Math.max(6,3*detected)*w/m.version.width);
+  const faces=$('#auto-protect').checked,skin=a.mode==='change'&&$('#auto-skin').checked;
+  const masks=[...(faces?a.faces:[]),...(skin?a.skin:[])];
+  if(!masks.length)return {protection:null,core:a.core};
+  const protection=growSelection(maskLayer(masks,w,h),margin);
+  if(!a.core)return {protection,core:null};
+  const core=maskLayer([a.core],w,h);
+  combineMasks(core,combineMasks(growSelection(maskLayer([a.core],w,h),margin),protection,'destination-in'),'source-over');
+  combineMasks(protection,core,'destination-out');
+  // Faces keep their own pixels, apart from a tiny allowance where an object outline touches them.
+  if(faces&&a.faces.length)combineMasks(protection,combineMasks(maskLayer(a.faces,w,h),growSelection(maskLayer([a.core],w,h),Math.max(1,Math.max(2,detected)*w/m.version.width)),'destination-out'),'source-over');
+  return {protection,core};
 }
 
 function updateAutomaticProtection() {
-  const m=maskEditor,a=m.auto,w=m.canvas.width,h=m.canvas.height;
-  m.protection=null;if(!$('#auto-protect').checked)return;
+  const m=maskEditor,a=m.auto;
+  const faces=$('#auto-protect').checked,skin=a.mode==='change'&&$('#auto-skin').checked;
+  m.protection=null;a.opaque=a.core;if(!faces&&!skin)return;
   if(!a.result){m.protection=m.restoredProtection || null;return;}
-  if(a.faces.length){const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
-    const ctx=canvas.getContext('2d',{willReadFrequently:true});for(const image of a.faces)ctx.drawImage(binaryMaskCanvas(image,w,h),0,0);
-    m.protection=growSelection(canvas,Math.max(2,6*w/m.version.width));
-  }
+  const regions=automaticRegions();m.protection=regions.protection;a.opaque=regions.core;
 }
 
 function refreshAutoSelection(coalesce=false) {
@@ -131,11 +167,14 @@ function refreshAutoSelection(coalesce=false) {
   const selected=document.createElement('canvas');selected.width=w;selected.height=h;
   const ctx=selected.getContext('2d',{willReadFrequently:true});
   if(a.mode!=='add')for(const [i,image] of a.pool.entries())if(a.index===-1||a.index===i)ctx.drawImage(binaryMaskCanvas(image,w,h),0,0);
+  // The detected object is replaced completely; only the extra room around it blends.
+  a.core=null;
+  if(a.mode!=='add'&&a.pool.length){a.core=document.createElement('canvas');a.core.width=w;a.core.height=h;a.core.getContext('2d').drawImage(selected,0,0);}
   growSelection(selected,Number($('#auto-margin').value)*w/m.version.width);
   if(a.placement)automaticPlacement(a.placement,ctx,selected);
   updateAutomaticProtection();
   if(coalesce&&m.strokes.at(-1)?.tool==='automatic')m.strokes.pop();
-  m.strokes.push({tool:'automatic',image:selected,metadata:{model:a.result?.model,model_revision:a.result?.model_revision,target:a.mode==='add'?'':a.result?.target || '',mode:a.mode,extra_room:Number($('#auto-margin').value),protect_faces:$('#auto-protect').checked}});
+  m.strokes.push({tool:'automatic',image:selected,core:a.core,metadata:{model:a.result?.model,model_revision:a.result?.model_revision,target:a.mode==='add'?'':a.result?.target || '',mode:a.mode,extra_room:Number($('#auto-margin').value),protect_faces:$('#auto-protect').checked,protect_skin:a.mode==='change'&&$('#auto-skin').checked}});
   renderFaceProtection();redrawMask();
 }
 
@@ -154,9 +193,20 @@ function automaticPlacement(stroke,ctx=maskEditor.ctx,selection=null) {
   ctx.restore();
 }
 
-async function protectedSelectionBlob(m) {
-  if(!m.protection)return null;
-  const canvas=document.createElement('canvas');canvas.width=m.canvas.width;canvas.height=m.canvas.height;
-  const ctx=canvas.getContext('2d');ctx.drawImage(m.protection,0,0);ctx.globalCompositeOperation='source-in';ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.globalCompositeOperation='destination-over';ctx.fillStyle='black';ctx.fillRect(0,0,canvas.width,canvas.height);
+function binaryMaskBlob(source,width,height) {
+  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+  const ctx=canvas.getContext('2d');ctx.drawImage(source,0,0);ctx.globalCompositeOperation='source-in';ctx.fillStyle='white';ctx.fillRect(0,0,width,height);ctx.globalCompositeOperation='destination-over';ctx.fillStyle='black';ctx.fillRect(0,0,width,height);
   return canvasBlob(canvas);
+}
+
+async function protectedSelectionBlob(m) {
+  return m.protection?binaryMaskBlob(m.protection,m.canvas.width,m.canvas.height):null;
+}
+
+// The newest automatic selection supplies the object core unless the mask was cleared after it.
+async function objectCoreBlob(m,previous) {
+  const last=m.strokes.filter(s=>s.tool==='automatic'||s.tool==='clear').at(-1);
+  if(!last)return previous?.coreBlob || null;
+  if(!last.core)return null;
+  return binaryMaskBlob(last.core===m.auto.core&&m.auto.opaque?m.auto.opaque:last.core,m.canvas.width,m.canvas.height);
 }

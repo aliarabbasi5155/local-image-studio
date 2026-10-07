@@ -6,7 +6,7 @@
 #include <iostream>
 
 int main(int argc, char **argv) {
-    if (argc != 6) return 2;
+    if (argc != 7) return 2;
     const auto start = std::chrono::steady_clock::now();
     sam3_params params;
     params.model_path = argv[1];
@@ -19,10 +19,10 @@ int main(int argc, char **argv) {
         !sam3_encode_image(*state, *model, image)) return 4;
     std::ofstream manifest(std::string(argv[3]) + "/result.json");
     manifest << "{\"width\":" << image.width << ",\"height\":" << image.height;
-    for (int pass = 0; pass < 2; ++pass) {
-        manifest << (pass ? ",\"faces\":[" : ",\"candidates\":[");
-        const std::string text = pass ? "face" : argv[4];
-        if (!text.empty() && (!pass || std::string(argv[5]) == "1")) {
+    for (int pass = 0; pass < 3; ++pass) {
+        manifest << (pass == 0 ? ",\"candidates\":[" : pass == 1 ? ",\"faces\":[" : ",\"skin\":[");
+        const std::string text = pass == 0 ? argv[4] : pass == 1 ? "face" : "skin";
+        if (!text.empty() && (pass == 0 || std::string(argv[pass == 1 ? 5 : 6]) == "1")) {
             sam3_pcs_params pcs;
             pcs.text_prompt = text;
             pcs.score_threshold = pass ? 0.30f : 0.35f;
@@ -32,7 +32,7 @@ int main(int argc, char **argv) {
             size_t count = std::min(result.detections.size(), size_t(8));
             for (size_t i = 0; i < count; ++i) {
                 const auto &d = result.detections[i];
-                const auto name = std::string(pass ? "face-" : "candidate-") + std::to_string(i) + ".png";
+                const auto name = std::string(pass == 0 ? "candidate-" : pass == 1 ? "face-" : "skin-") + std::to_string(i) + ".png";
                 if (!sam3_save_mask(d.mask, std::string(argv[3]) + "/" + name)) return 5;
                 if (i) manifest << ",";
                 manifest << "{\"file\":\"" << name << "\",\"score\":" << d.score << "}";

@@ -34,7 +34,14 @@ async function prepareMask(source,key) {
     protection=await api(`/api/uploads/${source.id}/mask`,{method:'POST',body:form});
     selection.protectedUploaded.set(source.id,protection);
   }
-  return {mask_id:saved.id,mask_protection_id:protection?.id,mask_selection:selection.automatic,mask_feather:selection.feather,mask_detail:selection.detail || 'balanced',mask_context:selection.context || 'balanced',mask_blend_mode:selection.blendMode || 'adaptive',mask_color_match:selection.colorMatch!==false,mask_align:selection.align!==false};
+  let core=selection.coreUploaded?.get(source.id);
+  if(selection.coreBlob&&!core){
+    const form=new FormData();form.append('mask',selection.coreBlob,'object.png');
+    core=await api(`/api/uploads/${source.id}/mask`,{method:'POST',body:form});
+    (selection.coreUploaded ||= new Map()).set(source.id,core);
+  }
+  const shape=!!selection.preserveShape&&(selection.automatic?.mode || 'change')==='change';
+  return {mask_id:saved.id,mask_protection_id:protection?.id,mask_core_id:core?.id,mask_preserve_shape:shape,mask_selection:selection.automatic,mask_feather:selection.feather,mask_detail:selection.detail || 'balanced',mask_context:selection.context || 'balanced',mask_blend_mode:selection.blendMode || 'adaptive',mask_color_match:selection.colorMatch!==false,mask_align:selection.align!==false};
 }
 
 async function reuseMask(recipe) {
@@ -47,7 +54,9 @@ async function reuseMask(recipe) {
   if (!response.ok) throw new Error('The saved selection is unavailable. Paint it again.');
   let protectionBlob=null,protectedSaved=null;
   if(recipe.masked_edit.protection_mask_id){protectedSaved=await api(`/api/masks/${recipe.masked_edit.protection_mask_id}`);const r=await fetch(protectedSaved.url);if(r.ok)protectionBlob=await r.blob();}
-  maskSelections.set(draftKey(),{blob:await response.blob(),protectionBlob,automatic:recipe.masked_edit.selection,protectedUploaded:new Map(protectedSaved?[[protectedSaved.source_id,protectedSaved]]:[]),bounds:saved.bounds,width:version.width,height:version.height,
+  let coreBlob=null,coreSaved=null;
+  if(recipe.masked_edit.core_mask_id){coreSaved=await api(`/api/masks/${recipe.masked_edit.core_mask_id}`);const r=await fetch(coreSaved.url);if(r.ok)coreBlob=await r.blob();else coreSaved=null;}
+  maskSelections.set(draftKey(),{blob:await response.blob(),protectionBlob,coreBlob,preserveShape:!!recipe.masked_edit.shape_guidance,automatic:recipe.masked_edit.selection,protectedUploaded:new Map(protectedSaved?[[protectedSaved.source_id,protectedSaved]]:[]),coreUploaded:new Map(coreSaved?[[coreSaved.source_id,coreSaved]]:[]),bounds:saved.bounds,width:version.width,height:version.height,
     feather:recipe.masked_edit.feather,detail:recipe.mask_detail || 'balanced',context:recipe.mask_context || 'balanced',
     blendMode:recipe.masked_edit.blend_mode || 'manual',colorMatch:recipe.masked_edit.color_match!==false,align:recipe.masked_edit.align!==false,enabled:true,uploaded:new Map([[saved.source_id,saved]])});
 }
@@ -60,7 +69,7 @@ async function openMaskEditor() {
     if(key!==draftKey())return;
     if(document.fullscreenElement)await document.exitFullscreen();
     $('#mask-content').innerHTML=`<section class="mask-editor" aria-label="Selection painter">
-      <header class="mask-header"><div><span class="eyebrow">EDIT ONLY WHAT YOU CHOOSE</span><h2 id="mask-title">Select the area to change</h2><p>Pink can change · blue faces are protected · everything else stays original.</p></div><button class="icon-button" data-close="mask-dialog" aria-label="Cancel mask changes">${icon('close')}</button></header>
+      <header class="mask-header"><div><span class="eyebrow">EDIT ONLY WHAT YOU CHOOSE</span><h2 id="mask-title">Select the area to change</h2><p>Pink can change · blue faces and skin are protected · everything else stays original.</p></div><button class="icon-button" data-close="mask-dialog" aria-label="Cancel mask changes">${icon('close')}</button></header>
       <div class="mask-tools"><div class="mask-tool-choice" role="group" aria-label="Mask tool"><button data-mask-tool="paint" type="button" aria-pressed="true">Brush</button><button data-mask-tool="erase" type="button" aria-pressed="false">Erase</button><button data-mask-tool="pan" type="button" aria-pressed="false">Pan</button></div><label>Brush <input id="mask-brush" type="range" min="4" max="100" value="32"><output id="mask-brush-value">32</output></label><button id="mask-undo" type="button">Undo</button><button id="mask-clear" type="button">Clear</button><div class="mask-zoom"><button id="mask-zoom-out" type="button" aria-label="Zoom out mask photo">−</button><button id="mask-zoom-reset" type="button">100%</button><button id="mask-zoom-in" type="button" aria-label="Zoom in mask photo">＋</button></div></div>
       <div class="mask-surface"><div class="mask-frame" tabindex="0" role="group" aria-label="Paint selection. Use two fingers to zoom. Pan tool moves the zoomed photo."><div class="mask-stage"><img id="mask-photo" alt="Photo being masked" draggable="false"><canvas id="mask-canvas" aria-hidden="true"></canvas></div></div></div>
       <footer class="mask-footer"><label id="mask-manual-feather">Edge softness <input id="mask-feather" type="range" min="0" max="32" value="${existing?.feather ?? 8}"><output id="mask-feather-value">${existing?.feather ?? 8} px</output></label><details class="mask-options"><summary>Speed &amp; blending ${icon('chevron')}</summary><div><label class="mask-blend-choice">Edge blending<select id="mask-blend-mode"><option value="adaptive">Automatic · recommended</option><option value="manual">Manual · edge softness</option></select></label><label>Working resolution<select id="mask-detail"><option value="quick">Quick · up to 512px</option><option value="balanced">Balanced · up to 768px</option><option value="maximum">Maximum · quality limit</option></select></label><label>Surrounding context<select id="mask-context"><option value="tight">Tight · faster</option><option value="balanced">Balanced</option><option value="wide">More context · complex shapes</option></select></label><label class="mask-option-check"><input id="mask-color-match" type="checkbox" ${existing?.colorMatch===false?'':'checked'}>Match surrounding colors</label><label class="mask-option-check"><input id="mask-align" type="checkbox" ${existing?.align===false?'':'checked'}>Align patch edges</label></div><p>A smaller canvas is faster, with less fine detail. Maximum uses your image quality setting. Automatic blending also matches local colors near the outline. Turn color matching off for a deliberate lighting change.</p></details><p id="mask-help">Paint the whole object and its shadows · smaller selections are faster</p><p id="mask-error" class="error" role="alert" hidden></p><div><button type="button" data-close="mask-dialog">Cancel</button><button class="primary" id="mask-apply" type="button">Use this area ${icon('arrow')}</button></div></footer>
@@ -71,7 +80,7 @@ async function openMaskEditor() {
     const canvas=$('#mask-canvas'),scale=Math.min(1,2048/Math.max(image.naturalWidth,image.naturalHeight));
     canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
     const base=document.createElement('canvas');base.width=canvas.width;base.height=canvas.height;
-    maskEditor={key,version,canvas,base,ctx:canvas.getContext('2d',{willReadFrequently:true}),strokes:[],current:null,tool:'paint',zoom:1,x:0,y:0,pointers:new Map(),gesture:null,observer:null};
+    maskEditor={key,version,previous:existing,canvas,base,ctx:canvas.getContext('2d',{willReadFrequently:true}),strokes:[],current:null,tool:'paint',zoom:1,x:0,y:0,pointers:new Map(),gesture:null,observer:null};
     if(existing) {
       const url=URL.createObjectURL(existing.blob);
       try {
@@ -129,8 +138,10 @@ function maskBounds() {
 function updateMaskButtons() {
   if(!maskEditor)return;$('#mask-undo').disabled=!maskEditor.strokes.length;
   const m=maskEditor,needsFaces=$('#auto-protect')?.checked&&((m.strokes.some(s=>s.tool==='place')&&!m.auto?.result&&!m.protection)||(m.auto?.result&&!m.auto.result.protect_requested));
-  $('#mask-apply').disabled=!maskBounds()||needsFaces||m.finding;
+  const needsSkin=m.auto?.mode==='change'&&$('#auto-skin')?.checked&&m.auto?.result&&!m.auto.result.skin_requested;
+  $('#mask-apply').disabled=!maskBounds()||needsFaces||needsSkin||m.finding;
   if(needsFaces)$('#auto-status').textContent='Click Find faces / Find area to protect faces before applying, or turn off face protection.';
+  else if(needsSkin)$('#auto-status').textContent='Click Find area again to keep visible skin, or turn that option off.';
 }
 function maskPoint(event) {
   const bounds=$('.mask-stage').getBoundingClientRect(),m=maskEditor;
@@ -183,9 +194,9 @@ function bindMaskEditor() {
       const output=document.createElement('canvas');output.width=m.canvas.width;output.height=m.canvas.height;
       const ctx=output.getContext('2d');ctx.drawImage(m.canvas,0,0);ctx.globalCompositeOperation='source-in';ctx.fillStyle='white';ctx.fillRect(0,0,output.width,output.height);ctx.globalCompositeOperation='destination-over';ctx.fillStyle='black';ctx.fillRect(0,0,output.width,output.height);
       let automatic=m.strokes.filter(s=>s.tool==='automatic').at(-1)?.metadata || m.selectionMetadata;
-      if(automatic)automatic={...automatic,protect_faces:$('#auto-protect').checked};
+      if(automatic)automatic={...automatic,protect_faces:$('#auto-protect').checked,protect_skin:(automatic.mode || m.auto.mode)==='change'&&$('#auto-skin').checked};
       if(m.auto.placement){const [a,b]=m.auto.placement.points;automatic={...(automatic || {mode:m.auto.mode,target:$('#auto-target').value.trim(),extra_room:Number($('#auto-margin').value),protect_faces:$('#auto-protect').checked}),placement:[Math.floor(Math.min(a.x,b.x)*m.version.width/m.canvas.width),Math.floor(Math.min(a.y,b.y)*m.version.height/m.canvas.height),Math.ceil(Math.max(a.x,b.x)*m.version.width/m.canvas.width),Math.ceil(Math.max(a.y,b.y)*m.version.height/m.canvas.height)]};}
-      maskSelections.set(m.key,{blob:await canvasBlob(output),protectionBlob:await protectedSelectionBlob(m),protectedUploaded:new Map(),automatic,bounds,width:m.version.width,height:m.version.height,feather:Number($('#mask-feather').value),detail:$('#mask-detail').value,context:$('#mask-context').value,blendMode:$('#mask-blend-mode').value,colorMatch:$('#mask-color-match').checked,align:$('#mask-align').checked,enabled:true,uploaded:new Map()});
+      maskSelections.set(m.key,{blob:await canvasBlob(output),protectionBlob:await protectedSelectionBlob(m),protectedUploaded:new Map(),coreBlob:await objectCoreBlob(m,m.previous),coreUploaded:new Map(),preserveShape:m.auto.mode==='change'&&$('#auto-shape').checked,automatic,bounds,width:m.version.width,height:m.version.height,feather:Number($('#mask-feather').value),detail:$('#mask-detail').value,context:$('#mask-context').value,blendMode:$('#mask-blend-mode').value,colorMatch:$('#mask-color-match').checked,align:$('#mask-align').checked,enabled:true,uploaded:new Map()});
       $('#mask-dialog').close();updateMaskControls();updateEditorSettings();scheduleViewerEstimate();
     }catch(error){$('#mask-error').textContent=error.message;$('#mask-error').hidden=false;$('#mask-apply').disabled=false;}
   };

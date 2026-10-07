@@ -10,7 +10,7 @@ from pathlib import Path
 
 import aiohttp
 from PIL import Image, ImageOps
-from .masking import engine_mask, engine_reference, engine_placement_guide, blend_selected, protect_unselected
+from .masking import engine_mask, engine_reference, engine_placement_guide, engine_shape_guide, blend_selected, protect_unselected
 
 QUALITIES = {
     "fast": {"label": "Fast", "description": "Quick previews", "model": "flux2-klein-9b-4bit",
@@ -61,20 +61,32 @@ def build_graph(recipe, project_root, templates, upload_name=None, mask_name=Non
         append_masked_processing(graph, workflow, recipe, prefix, mask_name, reference_name)
         if guide_name:
             paths=json.dumps([str(Path(project_root)/"runtime/input"/guide_name)])
-            placement=recipe["masked_edit"]["selection"]["placement"]
-            crop=recipe["masked_edit"]["crop"]
-            width_percent=round(100*(placement[2]-placement[0])/crop[2])
-            height_percent=round(100*(placement[3]-placement[1])/crop[3])
-            hint=(" The FIRST reference is the original photo to edit. The second reference is only a placement guide, with a small red dot marking the desired object's CENTER. "
-                  "Place the new or moved object centered at that red dot and completely replace the dot with the object. "
-                  f"The object and its shadow must fit within about {width_percent}% of the image width and {height_percent}% of the image height around that center. "
-                  "Keep the original background, lighting and textures. Do not include any dot, guide mark, box or colored overlay in the final photo.")
+            hint=guide_hint(recipe["masked_edit"])
             graph["2"]["inputs"].update(image_paths=paths,prompt=recipe["prompt"]+hint)
             nodes[2]["widgets_values"][0]=recipe["prompt"]+hint
             nodes[2]["widgets_values"][1]=paths
     elif processed:
         append_processing(graph, workflow, recipe, prefix)
     return graph, workflow
+
+
+def guide_hint(selection):
+    """Instructions for the second reference image; the user's prompt is never altered."""
+    if selection.get("shape_guidance"):
+        return (" The FIRST reference is the original photo to edit. The second reference is only a shape guide: "
+                "the dark silhouette marks the exact outline of the area being changed in the original. "
+                "Keep the person's body shape, proportions, pose and outline exactly as in the original photo, "
+                "including the width of the shoulders, chest, waist and hips. The new result must fill that same silhouette, "
+                "neither slimmer nor larger. Keep the original lighting, skin tone and background. "
+                "Do not include any silhouette, outline, guide mark or gray overlay in the final photo.")
+    placement=selection["selection"]["placement"]
+    crop=selection["crop"]
+    width_percent=round(100*(placement[2]-placement[0])/crop[2])
+    height_percent=round(100*(placement[3]-placement[1])/crop[3])
+    return (" The FIRST reference is the original photo to edit. The second reference is only a placement guide, with a small red dot marking the desired object's CENTER. "
+            "Place the new or moved object centered at that red dot and completely replace the dot with the object. "
+            f"The object and its shadow must fit within about {width_percent}% of the image width and {height_percent}% of the image height around that center. "
+            "Keep the original background, lighting and textures. Do not include any dot, guide mark, box or colored overlay in the final photo.")
 
 
 def append_masked_processing(graph, workflow, recipe, prefix, mask_name, reference_name=None):
@@ -346,10 +358,12 @@ class Engine:
                         form.add_field("subfolder","web-studio");form.add_field("overwrite","true")
                         uploaded = await self.request("POST","/upload/image",data=form)
                         reference_name = "/".join(filter(None,[uploaded.get("subfolder"),uploaded["name"]]))
-                        if job["recipe"]["masked_edit"].get("placement_guidance") == "visual_reference_v1":
-                            content = await asyncio.to_thread(engine_placement_guide,self.store.directory,job["recipe"])
+                        guide = (engine_placement_guide,"placement") if job["recipe"]["masked_edit"].get("placement_guidance") == "visual_reference_v1" else \
+                                (engine_shape_guide,"shape") if job["recipe"]["masked_edit"].get("shape_guidance") == "outline_reference_v1" else None
+                        if guide:
+                            content = await asyncio.to_thread(guide[0],self.store.directory,job["recipe"])
                             form = aiohttp.FormData()
-                            form.add_field("image",io.BytesIO(content),filename=job["id"]+"-placement.png",content_type="image/png")
+                            form.add_field("image",io.BytesIO(content),filename=job["id"]+f"-{guide[1]}.png",content_type="image/png")
                             form.add_field("subfolder","web-studio");form.add_field("overwrite","true")
                             uploaded = await self.request("POST","/upload/image",data=form)
                             guide_name = "/".join(filter(None,[uploaded.get("subfolder"),uploaded["name"]]))

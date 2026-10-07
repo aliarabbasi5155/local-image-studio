@@ -124,6 +124,55 @@ def feather_mask(mask, radius):
     return Image.fromarray(np.round(weights*255).astype(np.uint8)[distance])
 
 
+def selection_alpha(directory, selection):
+    """Blend weights for the edited crop; a detected object core is always fully replaced.
+
+    Fading the object's own boundary lets the old garment show through wherever the
+    selection meets a protected face or skin. Only the extra room around it fades.
+    """
+    x,y,width,height = selection["crop"]
+    box = (x,y,x+width,y+height)
+    # The crop includes context beyond the selection, and feathering replicates its
+    # border, so cropping first gives the same weights for far less work on 4K photos.
+    with Image.open(directory / "masks" / (selection["mask_id"] + ".png")) as raw:
+        size = raw.size
+        mask = raw.convert("L").crop(box)
+    feather = selection.get("blend_width",selection["feather"]) if selection.get("blend_mode")=="adaptive" else selection["feather"]
+    alpha = feather_mask(mask,feather)
+    if not selection.get("core_mask_id"):
+        return alpha
+    path = directory / "masks" / (selection["core_mask_id"] + ".png")
+    if hashlib.sha256(path.read_bytes()).hexdigest() != selection["core_sha256"]:
+        raise ValueError("The saved object outline has changed. Select the area again.")
+    with Image.open(path) as raw:
+        if raw.size != size:
+            raise ValueError("The saved object outline does not match the original.")
+        core = raw.convert("L").crop(box)
+    # The core never extends into protected or unselected pixels. A few pixels of
+    # fade where it meets them avoid a hard seam inside skin.
+    core = ImageChops.multiply(core,feather_mask(mask,selection.get("opaque_edge",0)))
+    return ImageChops.lighter(alpha,core)
+
+
+def engine_shape_guide(directory, recipe):
+    """The original object's silhouette on the reference canvas, as a shape-only guide."""
+    selection = recipe["masked_edit"]
+    x,y,width,height = selection["crop"]
+    left,top,cw,ch = selection["canvas_content"]
+    name = selection.get("core_mask_id") or selection["mask_id"]
+    with Image.open(directory / "masks" / (name + ".png")) as raw:
+        shape = raw.convert("L").crop((x,y,x+width,y+height)).resize((cw,ch),Image.Resampling.BILINEAR)
+    canvas = Image.new("L",(recipe["generation_width"],recipe["generation_height"]),0)
+    canvas.paste(shape,(left,top))
+    outline = ImageChops.subtract(canvas.filter(ImageFilter.MaxFilter(5)),canvas.filter(ImageFilter.MinFilter(5)))
+    with Image.open(io.BytesIO(engine_reference(directory,recipe))) as reference:
+        guide = ImageOps.grayscale(reference).point(lambda value: 150+value*105//255).convert("RGB")
+    # Pale photo context with a solid dark silhouette and outline: geometry, not colors to copy.
+    guide.paste((70,70,70),mask=canvas.point(lambda value: 255 if value >= 128 else 0))
+    guide.paste((0,0,0),mask=outline.point(lambda value: 255 if value >= 128 else 0))
+    output = io.BytesIO(); guide.save(output,"PNG"); return output.getvalue()
+
+
 def _context_samples(original, patch, mask):
     """Compare only unpainted surroundings, never the object requested to change."""
     size = original.size
@@ -281,8 +330,9 @@ def blend_selected(path, directory, recipe):
         if adaptive and selection.get("color_match",True):
             patch,diagnostics["local_color_match"]=match_local_colors(reference,patch,mask)
         feather=selection.get("blend_width",selection["feather"]) if adaptive else selection["feather"]
-        diagnostics["blending"]={"mode":"adaptive" if adaptive else "manual","width":feather}
-        original.paste(patch,(x,y),feather_mask(mask,feather))
+        diagnostics["blending"]={"mode":"adaptive" if adaptive else "manual","width":feather,
+                                 "opaque_object":bool(selection.get("core_mask_id"))}
+        original.paste(patch,(x,y),selection_alpha(directory,selection))
         metadata=PngImagePlugin.PngInfo()
         for key in ("prompt","workflow","studio"):
             if key in generated.info:metadata.add_text(key,generated.info[key])
@@ -298,13 +348,13 @@ def engine_mask(directory, recipe):
         mask = raw.convert("L")
     if hashlib.sha256((directory / "masks" / (selection["mask_id"] + ".png")).read_bytes()).hexdigest() != selection["sha256"]:
         raise ValueError("The saved selection mask has changed. Paint it again.")
-    if selection.get("version") == 2:
-        feather=selection.get("blend_width",selection["feather"]) if selection.get("blend_mode")=="adaptive" else selection["feather"]
-        mask = feather_mask(mask,feather)
-    elif selection["feather"]:
-        mask = ImageChops.multiply(mask, mask.filter(ImageFilter.GaussianBlur(selection["feather"])))
     x, y, width, height = selection["crop"]
-    mask = mask.crop((x, y, x + width, y + height))
+    if selection.get("version") == 2:
+        mask = selection_alpha(directory,selection)
+    else:
+        if selection["feather"]:
+            mask = ImageChops.multiply(mask, mask.filter(ImageFilter.GaussianBlur(selection["feather"])))
+        mask = mask.crop((x, y, x + width, y + height))
     image = Image.new("RGBA", mask.size, "white")
     image.putalpha(ImageOps.invert(mask))
     stream = io.BytesIO()

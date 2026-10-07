@@ -69,7 +69,7 @@ async def select(request):
                 if len(chunks) > 5 * 1024 * 1024:
                     raise ValueError("Image too large")
             content = bytes(chunks)
-        elif part.name in ("target", "protect_faces"):
+        elif part.name in ("target", "protect_faces", "protect_skin"):
             value = bytearray()
             while chunk := await part.read_chunk():
                 value.extend(chunk)
@@ -78,13 +78,14 @@ async def select(request):
             fields[part.name] = value.decode("utf-8")
         else:
             raise ValueError("Unknown field")
-    target, protect = validate_selection({"target": fields.get("target", ""),
-                                          "protect_faces": fields.get("protect_faces") == "1"})
+    target, protect, protect_skin = validate_selection({"target": fields.get("target", ""),
+                                                        "protect_faces": fields.get("protect_faces") == "1",
+                                                        "protect_skin": fields.get("protect_skin") == "1"})
     with Image.open(io.BytesIO(content or b"")) as image:
         if image.format != "PNG" or max(image.size) > 1024 or min(image.size) < 1:
             raise ValueError("Invalid image")
         image.verify()
-    key = hashlib.sha256(content + target.encode() + bytes([protect])).hexdigest()
+    key = hashlib.sha256(content + target.encode() + bytes([protect,protect_skin])).hexdigest()
     cached = CACHE.get(key)
     if cached and time.monotonic() - cached[0] < 3600:
         CACHE.move_to_end(key)
@@ -100,13 +101,13 @@ async def select(request):
             path.write_bytes(content)
             with (folder / "inference.log").open("wb") as log:
                 process = await asyncio.create_subprocess_exec(str(BINARY), str(MODEL), str(path), str(folder), target,
-                                                               "1" if protect else "0", stdout=log, stderr=log)
+                                                               "1" if protect else "0", "1" if protect_skin else "0", stdout=log, stderr=log)
                 try:
                     code = await asyncio.wait_for(process.wait(), timeout=170)
                     if code:
                         return web.json_response({"error": "SAM 3 could not select this image. Use the brush, or try again."}, status=503)
                     payload = json.loads((folder / "result.json").read_text())
-                    for kind in ("candidates", "faces"):
+                    for kind in ("candidates", "faces", "skin"):
                         for row in payload[kind]:
                             # File names are produced only by our fixed native wrapper.
                             row["png"] = base64.b64encode((folder / row.pop("file")).read_bytes()).decode("ascii")

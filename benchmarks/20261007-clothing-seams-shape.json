@@ -1,0 +1,232 @@
+{
+ "date": "2026-10-07",
+ "machine": "Apple M5, 24 GB unified memory",
+ "subject": "Flux-generated neutral full-length test photo (832 x 1040, fitted long-sleeve red dress, visible neck, hands and legs); no private user photos were used",
+ "settings": {
+  "quality": "high (8-bit Klein 9B)",
+  "working_resolution": "balanced (768px limit)",
+  "extra_room_px": 24,
+  "snofs": false,
+  "selection_target": "dress"
+ },
+ "problem_diagnosis": {
+  "symptom": "old garment color visible beside the neck after a clothing change",
+  "causes": [
+   "the face protection's safety margin covered the collar edge, and protection always won",
+   "the inward edge fade kept partial original color at the selection boundary beside protected areas",
+   "with visible-skin protection, SAM's object and skin outlines leave a 1-2px strip that the skin margin kept original (red line at hem and cuffs)"
+  ],
+  "fix": "the detected object plus the contested band toward faces/skin is fully replaced; a 2px fade (scaled with photo size) sits inside skin; faces keep their pixels apart from a 2px allowance; only extra room fades"
+ },
+ "seam_offline_reblend_same_flux_patches": {
+  "note": "Same raw Flux patches re-composited with different masks; counts are original-red pixels left within 10px of both the dress and protected skin",
+  "blue_dress_seed_101": {
+   "before_band_fix": 763,
+   "band_hard_edge": 64,
+   "band_3px_fade": 75
+  },
+  "blue_dress_seed_202": {
+   "before_band_fix": 763,
+   "band_hard_edge": 68,
+   "band_3px_fade": 82
+  },
+  "remaining_pixels": "shadowed reddish skin inside the protected original (largest blob mean RGB 123,69,47), not dress color; no visible line at collar, cuffs or hem"
+ },
+ "runs": [
+  {
+   "variant": "previous: faces only, every edge fades",
+   "prompt": "Change her red dress to a blue dress",
+   "seed": 101,
+   "edit_seconds": 27.3,
+   "silhouette_iou_dress_rows": 0.9965,
+   "mean_abs_width_change_px": 0.5,
+   "mean_width_change_px": 0.2,
+   "old_red_pixels_beside_skin_as_run": 15,
+   "old_red_pixels_beside_skin_after_band_fix": null
+  },
+  {
+   "variant": "opaque object + visible skin",
+   "prompt": "Change her red dress to a blue dress",
+   "seed": 101,
+   "edit_seconds": 29.0,
+   "silhouette_iou_dress_rows": 0.9966,
+   "mean_abs_width_change_px": 0.4,
+   "mean_width_change_px": 0.3,
+   "old_red_pixels_beside_skin_as_run": 805,
+   "old_red_pixels_beside_skin_after_band_fix": 68
+  },
+  {
+   "variant": "opaque object + visible skin + shape guidance",
+   "prompt": "Change her red dress to a blue dress",
+   "seed": 101,
+   "edit_seconds": 39.9,
+   "silhouette_iou_dress_rows": 0.9965,
+   "mean_abs_width_change_px": 0.5,
+   "mean_width_change_px": 0.3,
+   "old_red_pixels_beside_skin_as_run": 805,
+   "old_red_pixels_beside_skin_after_band_fix": 95
+  },
+  {
+   "variant": "previous: faces only, every edge fades",
+   "prompt": "Change her red dress to a blue dress",
+   "seed": 202,
+   "edit_seconds": 66.2,
+   "silhouette_iou_dress_rows": 0.995,
+   "mean_abs_width_change_px": 0.8,
+   "mean_width_change_px": 0.7,
+   "old_red_pixels_beside_skin_as_run": 34,
+   "old_red_pixels_beside_skin_after_band_fix": null
+  },
+  {
+   "variant": "opaque object + visible skin",
+   "prompt": "Change her red dress to a blue dress",
+   "seed": 202,
+   "edit_seconds": 30.3,
+   "silhouette_iou_dress_rows": 0.9948,
+   "mean_abs_width_change_px": 0.8,
+   "mean_width_change_px": 0.8,
+   "old_red_pixels_beside_skin_as_run": 805,
+   "old_red_pixels_beside_skin_after_band_fix": 75
+  },
+  {
+   "variant": "opaque object + visible skin + shape guidance",
+   "prompt": "Change her red dress to a blue dress",
+   "seed": 202,
+   "edit_seconds": 135.0,
+   "silhouette_iou_dress_rows": 0.9943,
+   "mean_abs_width_change_px": 0.9,
+   "mean_width_change_px": 0.9,
+   "old_red_pixels_beside_skin_as_run": 803,
+   "old_red_pixels_beside_skin_after_band_fix": 94
+  },
+  {
+   "variant": "previous: faces only, every edge fades",
+   "prompt": "Change her outfit to a white blouse and navy trousers",
+   "seed": 101,
+   "edit_seconds": 69.0,
+   "silhouette_iou_dress_rows": 0.9703,
+   "mean_abs_width_change_px": 3.4,
+   "mean_width_change_px": 1.1,
+   "old_red_pixels_beside_skin_as_run": 71,
+   "old_red_pixels_beside_skin_after_band_fix": null
+  },
+  {
+   "variant": "opaque object + visible skin",
+   "prompt": "Change her outfit to a white blouse and navy trousers",
+   "seed": 101,
+   "edit_seconds": 68.6,
+   "silhouette_iou_dress_rows": 0.9718,
+   "mean_abs_width_change_px": 3.2,
+   "mean_width_change_px": 1.1,
+   "old_red_pixels_beside_skin_as_run": 811,
+   "old_red_pixels_beside_skin_after_band_fix": 113
+  },
+  {
+   "variant": "opaque object + visible skin + shape guidance",
+   "prompt": "Change her outfit to a white blouse and navy trousers",
+   "seed": 101,
+   "edit_seconds": 41.1,
+   "silhouette_iou_dress_rows": 0.9749,
+   "mean_abs_width_change_px": 2.7,
+   "mean_width_change_px": 0.4,
+   "old_red_pixels_beside_skin_as_run": 812,
+   "old_red_pixels_beside_skin_after_band_fix": 194
+  },
+  {
+   "variant": "previous: faces only, every edge fades",
+   "prompt": "Change her outfit to a white blouse and navy trousers",
+   "seed": 202,
+   "edit_seconds": 29.9,
+   "silhouette_iou_dress_rows": 0.9673,
+   "mean_abs_width_change_px": 2.7,
+   "mean_width_change_px": 0.5,
+   "old_red_pixels_beside_skin_as_run": 103,
+   "old_red_pixels_beside_skin_after_band_fix": null
+  },
+  {
+   "variant": "opaque object + visible skin",
+   "prompt": "Change her outfit to a white blouse and navy trousers",
+   "seed": 202,
+   "edit_seconds": 29.6,
+   "silhouette_iou_dress_rows": 0.9694,
+   "mean_abs_width_change_px": 2.5,
+   "mean_width_change_px": 0.7,
+   "old_red_pixels_beside_skin_as_run": 814,
+   "old_red_pixels_beside_skin_after_band_fix": 131
+  },
+  {
+   "variant": "opaque object + visible skin + shape guidance",
+   "prompt": "Change her outfit to a white blouse and navy trousers",
+   "seed": 202,
+   "edit_seconds": 50.0,
+   "silhouette_iou_dress_rows": 0.9733,
+   "mean_abs_width_change_px": 2.0,
+   "mean_width_change_px": 0.3,
+   "old_red_pixels_beside_skin_as_run": 813,
+   "old_red_pixels_beside_skin_after_band_fix": 208
+  }
+ ],
+ "summary": {
+  "color_change": "all variants kept the silhouette (IoU 0.994-0.997, <1px mean width change)",
+  "garment_type_change_mean_abs_width_change_px": {
+   "previous": [
+    3.4,
+    2.7
+   ],
+   "opaque_object_and_skin": [
+    3.2,
+    2.5
+   ],
+   "with_shape_guidance": [
+    2.7,
+    2.0
+   ]
+  },
+  "interpretation": "for the garment change, shape guidance reduced mean torso width drift by 16-20% versus the same masks without it (21-26% versus the previous behavior); a modest effect measured on two seeds of one subject, not a guarantee",
+  "shape_guidance_timing": "typical edits went from about 29-30s to 40-50s; one 135s run coincided with other work on the Mac and is treated as an outlier"
+ },
+ "browser_end_to_end": {
+  "job_seconds": 41.7,
+  "recipe": {
+   "object_blending": "opaque_core_v1",
+   "opaque_edge": 2,
+   "shape_guidance": "outline_reference_v1",
+   "protect_skin": true
+  },
+  "changed_pixels_outside_selection": 0,
+  "protected_pixels": 48302,
+  "changed_protected_pixels": 0,
+  "crop_first_reblend_identical": true
+ },
+ "sam3_skin_detection": {
+  "image": "examples/edit-source.png",
+  "target": "coat",
+  "seconds_with_coat_face_and_skin": 9.74,
+  "max_resident_bytes": 1939685376,
+  "skin_detections": 5,
+  "top_skin_score": 0.932,
+  "observation": "top skin detection covered face and both hands as one instance"
+ },
+ "docker_4096_blend": {
+  "limits": "768MB, 2 CPUs",
+  "blend_only_peak_rss_mib": {
+   "previous": 520.8,
+   "opaque_object": 520.6
+  },
+  "seconds": {
+   "previous": 1.84,
+   "opaque_object": 2.141
+  }
+ },
+ "verification": {
+  "macos_tests": 60,
+  "docker_tests": 60,
+  "check": "passed",
+  "viewports": [
+   "desktop",
+   "390x844 touch portrait"
+  ],
+  "private_user_images_used": false,
+  "test_library": "isolated temporary library"
+ }
+}

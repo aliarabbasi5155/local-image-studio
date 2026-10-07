@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import contextlib
 import io
 import json
@@ -8,10 +9,10 @@ from pathlib import Path
 
 import aiohttp
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from studio.automask import AutomaticSelectionError, selection_image, validate_selection
-from studio.masking import blend_selected, masked_size, engine_placement_guide
+from studio.masking import blend_selected, masked_size, engine_placement_guide, engine_shape_guide, engine_mask, selection_alpha
 from studio.engine import QUALITIES, build_graph
 from studio.server import STATE
 from studio.tests.test_masking import selection
@@ -54,18 +55,20 @@ class AutomaticSelectionTests(unittest.IsolatedAsyncioTestCase):
     async def test_selects_only_saved_source_and_does_not_create_an_edit(self):
         source = await self.upload()
         seen = []
-        async def select(path, target, protect):
+        async def select(path, target, protect, skin):
             self.assertTrue(self.app[STATE]['engine'].resource_lock.locked())
             with Image.open(path) as image:
                 self.assertEqual(image.size, (240,160))
-            seen.append((target,protect))
-            return {'candidates':[], 'faces':[], 'seconds':9, 'cached':False}
+            seen.append((target,protect,skin))
+            return {'candidates':[], 'faces':[], 'skin':[], 'seconds':9, 'cached':False}
         self.app[STATE]['automask'].select = select
         path = f"/api/uploads/{source['id']}/auto-mask"
         response = await self.client.post(path,json={'target':'  hand  ','protect_faces':True})
         self.assertEqual(response.status,200)
         self.assertEqual((await response.json())['seconds'],9)
-        self.assertEqual(seen,[('hand',True)])
+        response = await self.client.post(path,json={'target':'dress','protect_faces':True,'protect_skin':True})
+        self.assertEqual(response.status,200)
+        self.assertEqual(seen,[('hand',True,False),('dress',True,True)])
         self.assertFalse(self.app[STATE]['engine'].resource_lock.locked())
         self.assertEqual(self.store.rows('SELECT * FROM masks'),[])
         self.assertEqual(self.store.rows('SELECT * FROM jobs'),[])
@@ -77,7 +80,7 @@ class AutomaticSelectionTests(unittest.IsolatedAsyncioTestCase):
     async def test_input_errors_busy_engine_and_unavailable_selector_release_lock(self):
         source = await self.upload()
         path = f"/api/uploads/{source['id']}/auto-mask"
-        for payload in (None,[],{'target':7},{'target':'x'*81},{'target':'shirt\n'},{'target':'','protect_faces':False},{'target':'hand','protect_faces':'yes'}):
+        for payload in (None,[],{'target':7},{'target':'x'*81},{'target':'shirt\n'},{'target':'','protect_faces':False},{'target':'hand','protect_faces':'yes'},{'target':'hand','protect_skin':1}):
             self.assertEqual((await self.client.post(path,json=payload)).status,400)
         engine = self.app[STATE]['engine']
         async with engine.resource_lock:
@@ -151,6 +154,49 @@ class AutomaticSelectionTests(unittest.IsolatedAsyncioTestCase):
         ordinary=await (await self.client.post('/api/estimate',json=dict(estimate_payload,mask_placement_guidance=False))).json()
         self.assertEqual(ordinary['samples'],0)
 
+    async def test_object_core_skin_and_shape_guidance_are_validated_and_saved(self):
+        source,other = await self.upload(),await self.upload()
+        selected = await self.mask(source,(30,60,180,140))
+        core = await self.mask(source,(40,70,170,130))
+        foreign = await self.mask(other,(40,70,170,130))
+        metadata={'model':'SAM 3 Q8','model_revision':'pinned','target':'dress','mode':'change','extra_room':12,'protect_faces':True,'protect_skin':True}
+        payload={'mode':'edit','source_id':source['id'],'prompt':'Make the dress blue','quality':'fast','mask_id':selected['id'],
+                 'mask_core_id':core['id'],'mask_preserve_shape':True,'mask_selection':metadata}
+        for bad in (dict(payload,mask_core_id=foreign['id']),dict(payload,mask_core_id='missing'),dict(payload,mask_preserve_shape='yes'),
+                    dict(payload,mask_selection=dict(metadata,protect_skin='yes')),
+                    dict(payload,mask_selection=dict(metadata,mode='move',protect_skin=False))):
+            self.assertEqual((await self.client.post('/api/generate',json=bad)).status,400)
+        self.assertEqual(self.store.rows('SELECT * FROM jobs'),[])
+        response=await self.client.post('/api/generate',json=payload)
+        self.assertEqual(response.status,202)
+        recipe=self.store.job((await response.json())['jobs'][0])['recipe']
+        edit=recipe['masked_edit']
+        self.assertEqual((edit['core_mask_id'],edit['core_sha256']),(core['id'],core['sha256']))
+        self.assertEqual((edit['object_blending'],edit['opaque_edge']),('opaque_core_v1',2))
+        self.assertEqual(edit['shape_guidance'],'outline_reference_v1')
+        self.assertTrue(edit['selection']['protect_skin'])
+        self.assertNotIn('placement_guidance',edit)
+        graph,_=build_graph(recipe,self.app[STATE]['engine'].project_root,self.app[STATE]['engine'].templates,
+                            'source.png','mask.png','reference.png','web-studio/shape.png')
+        self.assertIn('shape.png',graph['2']['inputs']['image_paths'])
+        self.assertIn('shape guide',graph['2']['inputs']['prompt'])
+        self.assertNotIn('red dot',graph['2']['inputs']['prompt'])
+        self.assertTrue(graph['2']['inputs']['prompt'].startswith(payload['prompt']))
+        self.assertEqual(recipe['prompt'],payload['prompt'])
+        # A brush-only selection may still ask for shape guidance, without an object core.
+        response=await self.client.post('/api/generate',json={key:value for key,value in payload.items() if key not in ('mask_core_id','mask_selection')})
+        self.assertEqual(response.status,202)
+        plain=self.store.job((await response.json())['jobs'][0])['recipe']['masked_edit']
+        self.assertNotIn('core_mask_id',plain)
+        self.assertEqual(plain['shape_guidance'],'outline_reference_v1')
+        # Shape-guided timings are learned only from shape-guided runs.
+        self.complete(recipe['image_id'],seconds=55)
+        estimate_payload={'mode':'edit','source_id':source['id'],'quality':'fast','mask_bounds':selected['bounds'],'mask_shape_guidance':True}
+        estimate=await (await self.client.post('/api/estimate',json=estimate_payload)).json()
+        self.assertEqual((estimate['samples'],estimate['seconds']),(1,55))
+        self.assertEqual((await (await self.client.post('/api/estimate',json=dict(estimate_payload,mask_shape_guidance=False))).json())['samples'],0)
+        self.assertEqual((await self.client.post('/api/estimate',json=dict(estimate_payload,mask_shape_guidance=1))).status,400)
+
 
 class SelectionPixelsTests(unittest.TestCase):
     def test_preview_input_is_bounded_without_changing_the_saved_original(self):
@@ -185,8 +231,9 @@ class SelectionPixelsTests(unittest.TestCase):
             self.assertGreater(np.count_nonzero(np.any(pixels!=np.asarray(original),axis=2)),20000)
 
     def test_short_names_and_face_only_detection_are_valid(self):
-        self.assertEqual(validate_selection({'target':'hand','protect_faces':False}),('hand',False))
-        self.assertEqual(validate_selection({'target':''}),('',True))
+        self.assertEqual(validate_selection({'target':'hand','protect_faces':False}),('hand',False,False))
+        self.assertEqual(validate_selection({'target':''}),('',True,False))
+        self.assertEqual(validate_selection({'target':'','protect_faces':False,'protect_skin':True}),('',False,True))
 
     def test_placement_guide_uses_the_same_canvas_and_correct_destination(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -200,3 +247,92 @@ class SelectionPixelsTests(unittest.TestCase):
                 self.assertEqual(guide.getpixel((0,0)),(80,90,100))
                 self.assertEqual(guide.getpixel((100,90)),(80,90,100))
                 self.assertEqual(guide.getpixel((140,120)),(255,20,40))
+
+    def collar_case(self, root, core_id=None):
+        """A garment touching a protected face: the selection stops at the face, its core meets it."""
+        (root/'uploads').mkdir(exist_ok=True);(root/'masks').mkdir(exist_ok=True)
+        original=Image.new('RGB',(320,240),(200,30,40));ImageDraw.Draw(original).rectangle((0,0,319,99),fill=(210,170,140))
+        original.save(root/'uploads/s.png')
+        face=Image.new('L',original.size,0);ImageDraw.Draw(face).rectangle((120,40,200,99),fill=255)
+        garment=Image.new('L',original.size,0);ImageDraw.Draw(garment).rectangle((60,100,260,239),fill=255)
+        # As in the editor: the object takes a two-pixel allowance where it touches the face.
+        allowance=garment.filter(ImageFilter.MaxFilter(5))
+        protected=ImageChops.subtract(face,allowance)
+        selected=Image.new('L',original.size,0);ImageDraw.Draw(selected).rectangle((40,80,280,239),fill=255)
+        selected.paste(0,mask=protected);selected.save(root/'masks/m.png')
+        ImageChops.lighter(garment,ImageChops.multiply(allowance,face)).save(root/'masks/core.png')
+        plan=masked_size({'width':320,'height':240},[40,80,281,240],8,'fast','square',QUALITIES,{})
+        Image.new('RGB',(plan['generation_width'],plan['generation_height']),(40,60,220)).save(root/'patch.png')
+        edit={'version':2,'mask_id':'m','sha256':hashlib.sha256((root/'masks/m.png').read_bytes()).hexdigest(),
+              'crop':plan['processing']['crop'],'canvas_content':plan['processing']['canvas_content'],'feather':8,
+              'blend_mode':'adaptive','blend_width':12,'bounds':[40,80,281,240],'color_match':False,'align':False}
+        if core_id:
+            edit.update(core_mask_id=core_id,core_sha256=hashlib.sha256((root/'masks'/(core_id+'.png')).read_bytes()).hexdigest())
+        if core_id:
+            edit['opaque_edge']=2
+        return original,protected,garment,selected,dict(plan,prompt='Blue dress',source_id='s',masked_edit=edit)
+
+    def test_object_core_is_fully_replaced_beside_protected_skin_and_only_extra_room_fades(self):
+        for core_id in (None,'core'):
+            with tempfile.TemporaryDirectory() as folder:
+                root=Path(folder)
+                original,face,garment,selected,recipe=self.collar_case(root,core_id)
+                blend_selected(root/'patch.png',root,recipe)
+                with Image.open(root/'patch.png') as output:
+                    pixels=np.asarray(output.convert('RGB')).astype(int)
+                before=np.asarray(original).astype(int)
+                garment_pixels=np.asarray(garment)>0
+                red_left=np.count_nonzero(garment_pixels&(np.abs(pixels-before).sum(axis=2)<300)&(pixels[...,0]>pixels[...,2]))
+                unselected=np.asarray(selected)==0
+                self.assertTrue(np.array_equal(pixels[unselected],before[unselected]))
+                if core_id:
+                    # Every old garment pixel inside the selection is the new color; none fades back to red.
+                    inside=garment_pixels&~unselected
+                    self.assertTrue(np.all(pixels[inside]==(40,60,220)))
+                    self.assertEqual(red_left,0)
+                    # The extra room still fades into the original surroundings.
+                    self.assertLess(np.abs(pixels[120,40]-before[120,40]).max(),8)
+                    self.assertTrue(0<pixels[120,47,2]-before[120,47,2]<180-8)
+                    self.assertTrue(json.loads(Image.open(root/'patch.png').info['studio_mask_diagnostics'])['blending']['opaque_object'])
+                else:
+                    self.assertGreater(red_left,300)
+
+    def test_object_core_is_clipped_to_selection_and_checked_against_its_saved_hash(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            _,face,_,selected,recipe=self.collar_case(root,'core')
+            # The core covering a protected face is ignored there.
+            Image.new('L',(320,240),255).save(root/'masks/core.png')
+            recipe['masked_edit']['core_sha256']=hashlib.sha256((root/'masks/core.png').read_bytes()).hexdigest()
+            # Weights cover the edited crop; shrink it to check they match the whole-photo meaning.
+            recipe['masked_edit']['crop']=[20,30,280,210]
+            x,y,w,h=recipe['masked_edit']['crop']
+            alpha=np.asarray(selection_alpha(root,recipe['masked_edit']))
+            self.assertEqual(alpha.shape,(h,w))
+            self.assertTrue(np.all(alpha[np.asarray(selected)[y:y+h,x:x+w]==0]==0))
+            # Two pixels fade beside the protected face; the rest of the object is fully replaced.
+            self.assertEqual([int(alpha[row-y,160-x]) for row in range(96,102)],[0,0,64,191,255,255])
+            self.assertTrue(np.all(alpha[110-y:,42-x:279-x]==255))
+            with Image.open(io.BytesIO(engine_mask(root,recipe))) as workflow_mask:
+                inverse=np.asarray(workflow_mask.getchannel('A'))
+            self.assertTrue(np.array_equal(inverse,255-alpha))
+            recipe['masked_edit']['core_sha256']='0'*64
+            with self.assertRaises(ValueError):
+                blend_selected(root/'patch.png',root,recipe)
+
+    def test_shape_guide_marks_the_original_object_silhouette_on_the_same_canvas(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            _,_,garment,_,recipe=self.collar_case(root,'core')
+            recipe['masked_edit']['shape_guidance']='outline_reference_v1'
+            with Image.open(io.BytesIO(engine_shape_guide(root,recipe))) as guide:
+                self.assertEqual(guide.size,(recipe['generation_width'],recipe['generation_height']))
+                pixels=np.asarray(guide.convert('RGB')).astype(int)
+            x,y,w,h=recipe['masked_edit']['crop'];left,top,cw,ch=recipe['masked_edit']['canvas_content']
+            def canvas(px,py):return round(left+(px-x)*cw/w),round(top+(py-y)*ch/h)
+            inside,outside=canvas(160,180),canvas(20,60)
+            self.assertEqual(tuple(pixels[inside[1],inside[0]]),(70,70,70))
+            # Surroundings are a pale, colorless version of the photo.
+            self.assertTrue(np.all(pixels[outside[1],outside[0]]>=150))
+            self.assertEqual(len(set(pixels[outside[1],outside[0]])),1)
+            self.assertGreater(np.count_nonzero(np.all(pixels==0,axis=2)),100)

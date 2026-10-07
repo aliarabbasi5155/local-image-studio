@@ -209,9 +209,33 @@ The saved PNG copies protected faces and all unselected pixels exactly from
 the original. JPG downloads are lossy. To deliberately change a face or cover
 part of it with a new object, turn face protection off and review the selection.
 
-**Use this area** returns to your usual edit box. The final mask, protected face
-mask, selection settings and destination are saved with the edit. **Reuse settings**
-restores them. Cancelling the selection editor leaves the earlier mask unchanged.
+The object SAM finds is replaced completely; only the **Extra room** around it
+fades into the original. Earlier, every selection edge faded, and the face
+safety margin could cover the edge of a collar, so some of the old garment could
+show through beside the neck. SAM's object and face/skin outlines never meet
+exactly, so the few pixels between them now belong to the object. A two-pixel
+fade (wider on large photos) avoids a hard seam in the skin. Faces stay
+protected apart from that tiny allowance where an outline touches them. Painted
+additions blend as before. Older saved edits keep their original blending.
+
+For clothing changes, two more options appear in **Change something existing**.
+Both default on when the object name is clothing, such as `dress` or `shirt`:
+
+- **Keep visible skin:** SAM also finds visible skin, such as neck, arms, hands
+  and legs. It is protected in blue and copied exactly, keeping the body outline
+  wherever skin shows. New clothing cannot cover that skin. Turn it off for
+  longer sleeves, a higher neckline or a longer skirt, then click **Find area**
+  again.
+- **Keep body shape:** Flux receives a second reference showing the original
+  object's silhouette, with instructions to keep the same proportions and width
+  at the shoulders, chest, waist and hips. This is guidance, not a guarantee;
+  body shape under the selected clothing is still generated. In tests, a
+  30-second High edit took about 40–50 seconds; timing estimates learn these
+  runs separately.
+
+**Use this area** returns to your usual edit box. The final mask, protected
+face/skin mask, object outline, selection settings and destination are saved
+with the edit. **Reuse settings** restores them. Cancelling the selection editor leaves the earlier mask unchanged.
 Add/Move edits also give Flux a second reference with a small destination marker;
 the marker is guidance and is not added by the compositor. This helps placement,
 but Flux still determines the object's shape and pose. Tight outlines can cut off

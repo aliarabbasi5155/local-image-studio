@@ -314,3 +314,31 @@ samples and cancelling a generation while it waits for selection. Simultaneous
 selection requests return 409; the native helper rejects requests without its
 secret token. Desktop, phone portrait and phone landscape controls were checked.
 See [the report](20261006-automatic-masks.json).
+
+## Clothing seams, visible skin and body shape
+
+Clothing changes could leave a strip of the old garment beside the neck. The
+face safety margin covered the collar edge, and every selection edge faded back
+toward the original. Visible-skin protection exposed a related seam: SAM's dress
+and skin outlines leave a one- to two-pixel strip between them, which showed as a
+red line at the hem and cuffs. The detected object, plus that contested strip,
+is now replaced completely; only extra room fades.
+
+Re-compositing the same raw Flux patches reduced old-red pixels beside protected
+skin from 763 to 64–82. The remaining pixels are shadowed skin kept exactly from
+the original. No line remained at the collar, cuffs or hem. A browser-made edit
+preserved every unselected pixel and all 48,302 protected face, neck, hand and
+leg pixels.
+
+Twelve High edits used a neutral Flux-generated test photo, without private
+photos. For a color change, every variant kept the silhouette within one pixel
+of average width. For a dress-to-blouse-and-trousers change, average torso width
+changed by 3.4/2.7 pixels with the previous behavior and 3.2/2.5 pixels with skin
+protection. With shape guidance, the change was 2.7/2.0 pixels. This is a modest
+improvement from two seeds and one subject. Shape guidance raised typical edit
+times from about 30 seconds to 40–50 seconds. Body shape under clothing is still
+generated, not locked.
+
+In Docker with its 768MB limit, a 4096 × 4096 blend peaked at 520.6MB, matching
+the previous code, and took 2.1 seconds. All 60 tests pass on macOS and Docker;
+`make check` passes. See [the report](20261007-clothing-seams-shape.json).

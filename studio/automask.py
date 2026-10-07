@@ -19,14 +19,15 @@ def validate_selection(payload):
         raise ValueError("Choose an object and face protection setting.")
     target = payload.get("target", "")
     protect = payload.get("protect_faces", True)
+    skin = payload.get("protect_skin", False)
     if not isinstance(target, str) or len(target) > 80 or any(ord(c) < 32 for c in target):
         raise ValueError("Describe the object with a short name, such as shirt or hand.")
-    if type(protect) is not bool:
-        raise ValueError("Choose whether to protect detected faces.")
+    if type(protect) is not bool or type(skin) is not bool:
+        raise ValueError("Choose whether to protect detected faces and visible skin.")
     target = target.strip()
-    if not target and not protect:
+    if not target and not protect and not skin:
         raise ValueError("Enter an object to find or enable face protection.")
-    return target, protect
+    return target, protect, skin
 
 
 def selection_image(path):
@@ -57,13 +58,14 @@ class AutoMask:
             pass
         return {"ready": False, "busy": False}
 
-    async def select(self, path, target, protect):
+    async def select(self, path, target, protect, protect_skin=False):
         try:
             content = await asyncio.to_thread(selection_image, path)
             form = aiohttp.FormData()
             form.add_field("image", content, filename="photo.png", content_type="image/png")
             form.add_field("target", target)
             form.add_field("protect_faces", "1" if protect else "0")
+            form.add_field("protect_skin", "1" if protect_skin else "0")
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=180)) as session:
                 async with session.post(self.base + "/select", data=form, headers=self.headers()) as response:
                     payload = await response.json()

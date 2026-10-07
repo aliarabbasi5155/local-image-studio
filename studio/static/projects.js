@@ -281,7 +281,7 @@ function scheduleViewerEstimate() {
     const version=selectedVersion();if(!version?.ready || !$('#detail-dialog').open)return;
     try {
       const mask=currentMask();
-      const result=await send('/api/estimate',{mode:'edit',project_id:viewer.project.id,version_id:version.id,aspect:version.width>version.height?'landscape':version.width<version.height?'portrait':'square',...viewer.settings,...(mask?.enabled?{mask_bounds:mask.bounds,mask_feather:mask.feather,mask_detail:mask.detail || 'balanced',mask_context:mask.context || 'balanced',mask_placement_guidance:!!mask.automatic?.placement}:{})});
+      const result=await send('/api/estimate',{mode:'edit',project_id:viewer.project.id,version_id:version.id,aspect:version.width>version.height?'landscape':version.width<version.height?'portrait':'square',...viewer.settings,...(mask?.enabled?{mask_bounds:mask.bounds,mask_feather:mask.feather,mask_detail:mask.detail || 'balanced',mask_context:mask.context || 'balanced',mask_placement_guidance:!!mask.automatic?.placement,mask_shape_guidance:!mask.automatic?.placement&&!!mask.preserveShape&&(mask.automatic?.mode || 'change')==='change'}:{})});
       if(revision===viewerEstimateRevision && $('#viewer-estimate')) {$('#viewer-estimate').textContent=estimateText(result,viewer.settings.variations);$('#viewer-estimate').title=`${result.reason}. ${result.samples} matching recent runs.`;}
     } catch(error) {if(revision===viewerEstimateRevision && $('#viewer-estimate'))$('#viewer-estimate').textContent=error.message;}
   },250);

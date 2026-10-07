@@ -121,13 +121,13 @@ async def automatic_mask(request):
     source = state["store"].one("SELECT * FROM uploads WHERE id=?", (request.match_info["id"],))
     if not source:
         raise web.HTTPNotFound()
-    target, protect = validate_selection(await request.json())
+    target, protect, skin = validate_selection(await request.json())
     engine = state["engine"]
     if engine.resource_lock.locked() or state["store"].one("SELECT id FROM jobs WHERE status IN ('submitted','running')"):
         return failure("Your Mac is making an image. Try automatic selection when it finishes.", 409)
     async with engine.resource_lock:
         try:
-            result = await state["automask"].select(state["store"].directory / "uploads" / (source["id"] + ".png"), target, protect)
+            result = await state["automask"].select(state["store"].directory / "uploads" / (source["id"] + ".png"), target, protect, skin)
         except AutomaticSelectionError as error:
             return failure(str(error),error.status)
     return web.json_response(result)
@@ -263,12 +263,19 @@ async def generate(request):
     mask_id = payload.get("mask_id")
     mask = None
     protection = None
+    core = None
     if mask_id is not None:
         if mode != "edit" or not isinstance(mask_id, str):
             return failure("Select an editing photo and paint an area first.")
         mask = state["store"].one("SELECT * FROM masks WHERE id=? AND source_id=?", (mask_id, source_id))
         if not mask:
             return failure("This selection belongs to a different photo. Paint it again.")
+        if payload.get("mask_core_id") is not None:
+            core = state["store"].one("SELECT * FROM masks WHERE id=? AND source_id=?", (str(payload["mask_core_id"]), source_id))
+            if not core:
+                return failure("The object outline belongs to a different photo. Select the area again.")
+        if type(payload.get("mask_preserve_shape",False)) is not bool:
+            return failure("Choose whether to guide the edit with the original shape.")
         sizing = masked_size(source, json.loads(mask["bounds"]), payload.get("mask_feather", 8),
                              quality, aspect, QUALITIES, state["upscaler"],payload.get("mask_detail","balanced"),payload.get("mask_context","balanced"))
         if any(type(payload.get(key,True)) is not bool for key in ("mask_color_match","mask_align")):
@@ -286,13 +293,15 @@ async def generate(request):
         if selection is not None:
             if not isinstance(selection, dict) or selection.get("mode") not in ("change", "move", "add") or type(selection.get("extra_room")) is not int or not 0 <= selection["extra_room"] <= 48:
                 return failure("Choose valid automatic selection settings.")
-            validate_selection({"target":selection.get("target", ""), "protect_faces":True})
+            validate_selection({"target":selection.get("target", ""), "protect_faces":True, "protect_skin":selection.get("protect_skin",False)})
             if type(selection.get("protect_faces")) is not bool or any(selection.get(key) is not None and (not isinstance(selection[key],str) or len(selection[key])>200) for key in ("model","model_revision")):
                 return failure("Choose valid face protection and selection model settings.")
             if selection.get("placement") is not None:
                 box=selection["placement"]
                 if not isinstance(box,list) or len(box)!=4 or any(type(v) is not int for v in box) or not 0<=box[0]<box[2]<=source["width"] or not 0<=box[1]<box[3]<=source["height"] or selection["mode"] not in ("add","move"):
                     return failure("Draw a valid placement box within this photo.")
+        if payload.get("mask_preserve_shape") and (selection or {}).get("mode","change") != "change":
+            return failure("Original-shape guidance is for changing an existing object. Turn it off to move or add something.")
     else:
         sizing = plan_size(quality, aspect, mode, source, payload.get("output_size", "preset"), QUALITIES,
                            state["upscaler"], payload.get("resize_mode", "auto"))
@@ -318,8 +327,14 @@ async def generate(request):
         if protection:
             recipe["masked_edit"]["protection_mask_id"] = protection["id"]
             recipe["masked_edit"]["protection_sha256"] = protection["sha256"]
+        if core:
+            # A short fade where the object meets protected skin, scaled like SAM's 1024px preview outlines.
+            recipe["masked_edit"].update(core_mask_id=core["id"],core_sha256=core["sha256"],object_blending="opaque_core_v1",
+                                         opaque_edge=max(2,round(1.5*max(source["width"],source["height"])/1024)))
+        if payload.get("mask_preserve_shape"):
+            recipe["masked_edit"]["shape_guidance"] = "outline_reference_v1"
         if payload.get("mask_selection"):
-            recipe["masked_edit"]["selection"] = {key:payload["mask_selection"][key] for key in ("model","model_revision","target","mode","extra_room","protect_faces","placement") if key in payload["mask_selection"]}
+            recipe["masked_edit"]["selection"] = {key:payload["mask_selection"][key] for key in ("model","model_revision","target","mode","extra_room","protect_faces","protect_skin","placement") if key in payload["mask_selection"]}
             if recipe["masked_edit"]["selection"].get("placement"):
                 recipe["masked_edit"]["placement_guidance"] = "visual_reference_v1"
     base_seed = seed if seed is not None else secrets.randbits(32)
@@ -550,10 +565,13 @@ async def estimate(request):
     else:
         size = plan_size(quality,aspect,mode,source,payload.get("output_size","preset"),QUALITIES,state["upscaler"],payload.get("resize_mode","auto"))
     recipe = dict(size,mode=mode,model=QUALITIES[quality]["model"],snofs=payload.get("snofs",True))
-    if type(payload.get("mask_placement_guidance",False)) is not bool:
-        return failure("Choose valid placement guidance.")
-    if payload.get("mask_placement_guidance") and payload.get("mask_bounds") is not None:
-        recipe["masked_edit"]={"placement_guidance":"visual_reference_v1"}
+    if any(type(payload.get(key,False)) is not bool for key in ("mask_placement_guidance","mask_shape_guidance")):
+        return failure("Choose valid placement or shape guidance.")
+    if payload.get("mask_bounds") is not None:
+        if payload.get("mask_placement_guidance"):
+            recipe["masked_edit"]={"placement_guidance":"visual_reference_v1"}
+        elif payload.get("mask_shape_guidance"):
+            recipe["masked_edit"]={"shape_guidance":"outline_reference_v1"}
     prediction = state["metrics"].estimate(recipe)
     queue = state["metrics"].queue()
     last = list(queue.values())[-1] if queue else None
