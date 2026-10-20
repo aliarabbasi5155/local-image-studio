@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-08",
+  "tests": {
+    "unittest": 98,
+    "make_check": "passed"
+  },
+  "cases": [
+    {
+      "mode": "head",
+      "artifact": "outputs/identity-v2-qa/head.png",
+      "seed": 247,
+      "snofs": false,
+      "model": "flux2-klein-9b-8bit",
+      "seconds": 55.5,
+      "changed_pixels_outside_mask": 0,
+      "objects_detected_and_excluded": false,
+      "clothing_neutralization": false,
+      "head_detail_pass": false
+    },
+    {
+      "mode": "whole",
+      "artifact": "outputs/identity-v2-qa/whole.png",
+      "seed": 247,
+      "snofs": false,
+      "model": "flux2-klein-9b-8bit",
+      "seconds": 103.2,
+      "changed_pixels_outside_mask": 0,
+      "objects_detected_and_excluded": false,
+      "clothing_neutralization": false,
+      "head_detail_pass": true
+    },
+    {
+      "mode": "whole",
+      "artifact": "outputs/identity-v2-qa/whole-held-glass.png",
+      "seed": 247,
+      "snofs": false,
+      "model": "flux2-klein-9b-8bit",
+      "seconds": 98.6,
+      "changed_pixels_outside_mask": 0,
+      "objects_detected_and_excluded": true,
+      "clothing_neutralization": true,
+      "head_detail_pass": true
+    }
+  ],
+  "limits": [
+    "Generative likeness and pose guidance are not a verified identity or landmark match.",
+    "Object detection can miss transparent or occluded objects; inspect the preview.",
+    "The object stress-test input contains a pre-existing floating glass from an earlier failed sample; it is preserved, not newly generated."
+  ]
+}

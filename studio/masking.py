@@ -35,7 +35,7 @@ def normalize_mask(content, source, destination):
             "coverage": round(mask.histogram()[255] / (size[0] * size[1]), 4)}
 
 
-def masked_size(source, bounds, feather, quality, aspect, qualities, upscaler, detail="balanced", context="balanced"):
+def masked_size(source, bounds, feather, quality, aspect, qualities, upscaler, detail="balanced", context="balanced", working_side=None):
     if type(feather) is not int or not 0 <= feather <= 32:
         raise ValueError("Choose an edge softness between 0 and 32 pixels.")
     if not isinstance(bounds, list) or len(bounds) != 4 or any(type(v) is not int for v in bounds):
@@ -55,8 +55,13 @@ def masked_size(source, bounds, feather, quality, aspect, qualities, upscaler, d
     left, top = max(0, x0 - padding), max(0, y0 - padding)
     right, bottom = min(width, x1 + padding), min(height, y1 + padding)
     crop = [left, top, right - left, bottom - top]
-    limit = min(max(qualities[quality]["sizes"][aspect]), {"quick":512,"balanced":768,"maximum":2048}[detail])
-    scale = min(1,limit/max(crop[2:]),math.sqrt(1_048_576/(crop[2]*crop[3])))
+    if working_side:
+        # Enlarge small crops (a distant face) so the model can draw real detail; keep large ones near native size.
+        side = min(max(max(crop[2:]),working_side[0]),working_side[1])
+        scale = min(4,side/max(crop[2:]),math.sqrt(1_048_576/(crop[2]*crop[3])))
+    else:
+        limit = min(max(qualities[quality]["sizes"][aspect]), {"quick":512,"balanced":768,"maximum":2048}[detail])
+        scale = min(1,limit/max(crop[2:]),math.sqrt(1_048_576/(crop[2]*crop[3])))
     while True:
         content_width, content_height = (max(1,round(value*scale)) for value in crop[2:])
         canvas_width, canvas_height = (max(64,16*math.ceil(value/16)) for value in (content_width,content_height))
@@ -77,7 +82,11 @@ def engine_reference(directory, recipe):
     x,y,width,height = selection["crop"]
     left,top,cw,ch = selection["canvas_content"]
     with Image.open(directory / "uploads" / (recipe["source_id"] + ".png")) as original:
-        content = original.convert("RGB").crop((x,y,x+width,y+height)).resize((cw,ch),Image.Resampling.LANCZOS)
+        content = original.convert("RGB")
+        if recipe.get("identity_swap", {}).get("appearance_mask"):
+            from .identity import neutralize_clothing
+            content = neutralize_clothing(content, directory, recipe)
+        content = content.crop((x,y,x+width,y+height)).resize((cw,ch),Image.Resampling.LANCZOS)
     # Replicate border pixels, rather than introducing black framing to the model.
     pixels = np.pad(np.asarray(content), ((top,recipe["generation_height"]-ch-top),
                     (left,recipe["generation_width"]-cw-left),(0,0)), mode="edge")
@@ -309,7 +318,7 @@ def match_local_colors(original, patch, mask):
                                   "max_offset":round(float(np.abs(correction).max()),2)}
 
 
-def blend_selected(path, directory, recipe):
+def blend_selected(path, directory, recipe, base_path=None):
     """Compose the raw edited patch once, with corrected geometry, color and edges."""
     selection = recipe["masked_edit"]
     x,y,width,height = selection["crop"]
@@ -332,6 +341,13 @@ def blend_selected(path, directory, recipe):
         feather=selection.get("blend_width",selection["feather"]) if adaptive else selection["feather"]
         diagnostics["blending"]={"mode":"adaptive" if adaptive else "manual","width":feather,
                                  "opaque_object":bool(selection.get("core_mask_id"))}
+        # A whole-identity head pass uses the original for alignment and lighting,
+        # then puts only the approved head area over the completed body pass.
+        if base_path is not None:
+            with Image.open(base_path) as base:
+                if base.size != original.size:
+                    raise ValueError("The identity passes do not share the same photo size.")
+                original = base.convert("RGB")
         original.paste(patch,(x,y),selection_alpha(directory,selection))
         metadata=PngImagePlugin.PngInfo()
         for key in ("prompt","workflow","studio"):

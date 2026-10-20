@@ -12,6 +12,7 @@ import aiohttp
 from PIL import Image, ImageOps
 from .native import NativeEngine
 from .masking import engine_mask, engine_reference, engine_placement_guide, engine_shape_guide, blend_selected, protect_unselected
+from .identity import engine_donor, identity_hint, refinement_recipe, swap_hint
 
 QUALITIES = {
     "fast": {"label": "Fast", "description": "Quick previews", "model": "flux2-klein-9b-4bit",
@@ -23,7 +24,7 @@ QUALITIES = {
 }
 
 
-def build_graph(recipe, project_root, templates, upload_name=None, mask_name=None, reference_name=None, guide_name=None):
+def build_graph(recipe, project_root, templates, upload_name=None, mask_name=None, reference_name=None, guide_name=None, donor_names=(), head_names=None):
     editing = recipe["mode"] == "edit"
     generation_width = recipe.get("generation_width", recipe["width"])
     generation_height = recipe.get("generation_height", recipe["height"])
@@ -31,6 +32,8 @@ def build_graph(recipe, project_root, templates, upload_name=None, mask_name=Non
     processed = processing["method"] != "none"
     model = recipe["model_source"]
     prefix = "web-studio/" + recipe["image_id"]
+    if recipe.get("_identity_head_pass"):
+        prefix += "/head"
     loader = {
         "model_name": model["model_name"], "quantize": model["quantize"],
         "custom_model_path": str(Path(project_root) / "models" / recipe["model"]),
@@ -60,7 +63,18 @@ def build_graph(recipe, project_root, templates, upload_name=None, mask_name=Non
         nodes[2]["widgets_values"] = [recipe["prompt"], *values, 0.3]
     if recipe.get("masked_edit"):
         append_masked_processing(graph, workflow, recipe, prefix, mask_name, reference_name)
-        if guide_name:
+        if recipe.get("identity_swap"):
+            if len(donor_names) != len(recipe["identity_swap"]["donor_crops"]):
+                raise ValueError("The identity swap needs its reference photo.")
+            swap = recipe["identity_swap"]
+            # The full-body pass studies the outfit; the separate head pass gets its own close-up.
+            references = donor_names[:1] if swap.get("head_pass") else donor_names
+            paths = json.dumps([str(Path(project_root)/"runtime/input"/name) for name in references])
+            text = (swap_hint(swap["mode"]) if swap.get("mode") else identity_hint(swap["parts"])) + (" Additional notes: " + swap["notes"] if swap["notes"] else "")
+            graph["2"]["inputs"].update(image_paths=paths, prompt=text)
+            nodes[2]["widgets_values"][0] = text
+            nodes[2]["widgets_values"][1] = paths
+        elif guide_name:
             paths=json.dumps([str(Path(project_root)/"runtime/input"/guide_name)])
             hint=guide_hint(recipe["masked_edit"])
             graph["2"]["inputs"].update(image_paths=paths,prompt=recipe["prompt"]+hint)
@@ -68,7 +82,100 @@ def build_graph(recipe, project_root, templates, upload_name=None, mask_name=Non
             nodes[2]["widgets_values"][1]=paths
     elif processed:
         append_processing(graph, workflow, recipe, prefix)
+    if recipe.get("identity_swap", {}).get("head_pass"):
+        if not head_names:
+            raise ValueError("The whole identity swap needs its head detail selection.")
+        detail_graph, detail_workflow = build_graph(refinement_recipe(recipe), project_root, templates, upload_name,
+                                                   head_names["mask"], head_names["reference"], donor_names=donor_names[1:])
+        # Both passes share a model and original pose, in one recoverable ComfyUI job.
+        remap = {node_id: str(int(node_id) + 100) for node_id in detail_graph}
+        for node_id, node in detail_graph.items():
+            for key, value in node["inputs"].items():
+                if isinstance(value, list) and len(value) == 2 and value[0] in remap:
+                    node["inputs"][key] = [remap[value[0]], value[1]]
+            graph[remap[node_id]] = node
+        offset = max(link[0] for link in workflow["links"]) + 1
+        for node in detail_workflow["nodes"]:
+            node["id"] += 100
+            node["pos"][1] += 1200
+            for item in node.get("inputs", []):
+                if item.get("link") is not None:
+                    item["link"] += offset
+            for item in node.get("outputs", []):
+                if item.get("links"):
+                    item["links"] = [link + offset for link in item["links"]]
+            workflow["nodes"].append(node)
+        workflow["links"] += [[link[0] + offset, link[1] + 100, link[2], link[3] + 100, *link[4:]] for link in detail_workflow["links"]]
+        workflow["last_node_id"] = max(node["id"] for node in workflow["nodes"])
+        workflow["last_link_id"] = max(link[0] for link in workflow["links"])
+        append_identity_head_context(graph, workflow, recipe, head_names["pose"])
     return graph, workflow
+
+
+def head_pose_mask(directory, recipe):
+    detail = refinement_recipe(recipe)
+    selection = detail["masked_edit"]
+    # Restore only the old head, not the surrounding shirt/background in the edit area.
+    detail["masked_edit"] = dict(selection, mask_id=selection["core_mask_id"], sha256=selection["core_sha256"],
+                                core_mask_id=None, blend_mode="manual", feather=0)
+    return engine_mask(directory, detail)
+
+
+def append_identity_head_context(graph, workflow, recipe, pose_name):
+    """Restore the original head pose over the new body before the detail pass.
+
+    New clothing must be visible behind long hair; otherwise erasing an old braid
+    in pass two could paste the original shirt back over the replacement outfit.
+    """
+    selection = recipe["identity_swap"]["head_pass"]["masked_edit"]
+    x, y, width, height = selection["crop"]
+    left, top, cw, ch = selection["canvas_content"]
+    nodes = {node["id"]: node for node in workflow["nodes"]}
+    pose = copy.deepcopy(nodes[111])
+    pose.update(id=125, pos=[100, 2050], widgets_values=[pose_name, "image"], widgets_values_named={"image": pose_name, "upload": "image"})
+    for output in pose["outputs"]:
+        output["links"] = []
+    nodes[125] = pose; workflow["nodes"].append(pose)
+    graph["125"] = {"class_type": "LoadImage", "inputs": {"image": pose_name}}
+
+    def add(node_id, kind, values, specs, widgets):
+        graph[str(node_id)] = {"class_type": kind, "inputs": values}
+        node = {"id": node_id, "type": kind, "pos": [400 + (node_id - 120) * 340, 2050], "size": [320, 180],
+                "flags": {}, "order": len(nodes), "mode": 0, "properties": {"Node name for S&R": kind},
+                "widgets_values": widgets, "inputs": [{"name": name, "type": typ, "link": None} for name, typ in specs],
+                "outputs": [{"name": "IMAGE", "type": "IMAGE", "slot_index": 0, "links": []}]}
+        workflow["nodes"].append(node); nodes[node_id] = node
+        for slot, (name, typ) in enumerate(specs):
+            origin, origin_slot = values[name]
+            origin = int(origin)
+            workflow["last_link_id"] += 1
+            link_id = workflow["last_link_id"]
+            workflow["links"].append([link_id, origin, origin_slot, node_id, slot, typ])
+            nodes[origin]["outputs"][origin_slot].setdefault("links", []).append(link_id)
+            node["inputs"][slot]["link"] = link_id
+
+    add(120, "ImageCrop", {"image": ["5", 0], "x": x, "y": y, "width": width, "height": height},
+        [("image", "IMAGE")], [width, height, x, y])
+    add(121, "ImageCompositeMasked", {"destination": ["13", 0], "source": ["120", 0], "mask": ["125", 1], "x": x, "y": y, "resize_source": False},
+        [("destination", "IMAGE"), ("source", "IMAGE"), ("mask", "MASK")], [x, y, False])
+    add(122, "ImageCrop", {"image": ["121", 0], "x": x, "y": y, "width": width, "height": height},
+        [("image", "IMAGE")], [width, height, x, y])
+    add(123, "ImageScale", {"image": ["122", 0], "width": cw, "height": ch, "upscale_method": "lanczos", "crop": "disabled"},
+        [("image", "IMAGE")], ["lanczos", cw, ch, "disabled"])
+    add(124, "ImageCompositeMasked", {"destination": ["114", 0], "source": ["123", 0], "x": left, "y": top, "resize_source": False},
+        [("destination", "IMAGE"), ("source", "IMAGE")], [left, top, False])
+
+    def rewire(target, slot, origin, name):
+        link_id = nodes[target]["inputs"][slot]["link"]
+        link = next(link for link in workflow["links"] if link[0] == link_id)
+        nodes[link[1]]["outputs"][link[2]]["links"].remove(link_id)
+        link[1], link[2] = origin, 0
+        nodes[origin]["outputs"][0]["links"].append(link_id)
+        graph[str(target)]["inputs"][name] = [str(origin), 0]
+
+    rewire(102, 1, 124, "image")
+    rewire(113, 0, 13, "destination")
+    workflow["last_node_id"] = 125
 
 
 def guide_hint(selection):
@@ -255,8 +362,8 @@ class Engine:
                 node = str(data.get("node"))
                 if node == "1":
                     self.store.update_job(job_id, status="running", phase="Preparing your image")
-                elif node == "2":
-                    self.store.update_job(job_id, status="running", phase="Creating your image")
+                elif node in ("2", "102"):
+                    self.store.update_job(job_id, status="running", phase="Refining head identity" if node == "102" else "Creating your image", progress_detail=None)
                 elif node in ("6", "7"):
                     self.store.update_job(job_id, status="running", phase="Enhancing image detail", progress=0.65)
                 elif node == "8":
@@ -267,11 +374,12 @@ class Engine:
                     self.store.update_job(job_id, phase="Saving your image", progress=0.98)
             elif event["type"] == "progress":
                 enhancing = self.store.job(job_id)["phase"] == "Enhancing image detail"
+                refining = str(data.get("node")) == "102" or self.store.job(job_id)["phase"] == "Refining head identity"
                 fraction = data["value"] / max(1, data["max"])
                 processed = self.store.job(job_id)["recipe"].get("processing", {}).get("method", "none") != "none"
-                self.store.update_job(job_id, status="running", phase="Enhancing image detail" if enhancing else "Creating your image",
+                self.store.update_job(job_id, status="running", phase="Refining head identity" if refining else "Enhancing image detail" if enhancing else "Creating your image",
                                       progress=min(0.95, .65 + .3 * fraction if enhancing else fraction * (.6 if processed else .95)),
-                                      progress_detail=json.dumps({"stage":"enhancing" if enhancing else "sampling", "value":data["value"], "total":data["max"]}))
+                                      progress_detail=json.dumps({"stage":"head detail" if refining else "enhancing" if enhancing else "sampling", "value":data["value"], "total":data["max"]}))
 
     async def finish(self, job, history):
         recipe = job["recipe"]
@@ -305,6 +413,23 @@ class Engine:
                 raise RuntimeError("The image is missing its saved generation settings.")
         if improved_mask:
             await asyncio.to_thread(blend_selected,temporary,self.store.directory,recipe)
+            if recipe.get("identity_swap", {}).get("head_pass"):
+                head_output = next((item for item in history.get("outputs", {}).get("102", {}).get("images", []) if item.get("type") == "output"), None)
+                if not head_output:
+                    raise RuntimeError("The image engine returned no head detail image.")
+                async with self.session.get(self.base + "/view", params=head_output) as response:
+                    response.raise_for_status()
+                    head_content = await response.read()
+                head_path = path.with_suffix(".head.part")
+                try:
+                    head_path.write_bytes(head_content)
+                    with Image.open(head_path) as image:
+                        if json.loads(image.info.get("studio", "{}")) != recipe:
+                            raise RuntimeError("The head detail image is missing its saved generation settings.")
+                    await asyncio.to_thread(blend_selected, head_path, self.store.directory, refinement_recipe(recipe), temporary)
+                    head_path.replace(temporary)
+                finally:
+                    head_path.unlink(missing_ok=True)
         elif recipe.get("masked_edit"):
             await asyncio.to_thread(protect_unselected, temporary, self.store.directory, recipe)
         temporary.replace(path)
@@ -345,6 +470,8 @@ class Engine:
                 else:
                     upload_name = None
                 mask_name = reference_name = guide_name = None
+                donor_names = []
+                head_names = None
                 if job["recipe"].get("masked_edit"):
                     content = await asyncio.to_thread(engine_mask, self.store.directory, job["recipe"])
                     form = aiohttp.FormData()
@@ -369,7 +496,29 @@ class Engine:
                             form.add_field("subfolder","web-studio");form.add_field("overwrite","true")
                             uploaded = await self.request("POST","/upload/image",data=form)
                             guide_name = "/".join(filter(None,[uploaded.get("subfolder"),uploaded["name"]]))
-                graph, workflow = build_graph(job["recipe"], self.project_root, self.templates, upload_name, mask_name,reference_name,guide_name)
+                        if job["recipe"].get("identity_swap"):
+                            for index,content in enumerate(await asyncio.to_thread(engine_donor,self.store.directory,job["recipe"])):
+                                form = aiohttp.FormData()
+                                form.add_field("image",io.BytesIO(content),filename=job["id"]+f"-identity-{index+1}.png",content_type="image/png")
+                                form.add_field("subfolder","web-studio");form.add_field("overwrite","true")
+                                uploaded = await self.request("POST","/upload/image",data=form)
+                                donor_names.append("/".join(filter(None,[uploaded.get("subfolder"),uploaded["name"]])))
+                            if job["recipe"]["identity_swap"].get("head_pass"):
+                                head_names = {}
+                                for kind, prepare in (("mask", engine_mask), ("reference", engine_reference)):
+                                    content = await asyncio.to_thread(prepare, self.store.directory, refinement_recipe(job["recipe"]))
+                                    form = aiohttp.FormData()
+                                    form.add_field("image", io.BytesIO(content), filename=job["id"]+f"-head-{kind}.png", content_type="image/png")
+                                    form.add_field("subfolder", "web-studio"); form.add_field("overwrite", "true")
+                                    uploaded = await self.request("POST", "/upload/image", data=form)
+                                    head_names[kind] = "/".join(filter(None, [uploaded.get("subfolder"), uploaded["name"]]))
+                                content = await asyncio.to_thread(head_pose_mask, self.store.directory, job["recipe"])
+                                form = aiohttp.FormData()
+                                form.add_field("image", io.BytesIO(content), filename=job["id"]+"-head-pose.png", content_type="image/png")
+                                form.add_field("subfolder", "web-studio"); form.add_field("overwrite", "true")
+                                uploaded = await self.request("POST", "/upload/image", data=form)
+                                head_names["pose"] = "/".join(filter(None, [uploaded.get("subfolder"), uploaded["name"]]))
+                graph, workflow = build_graph(job["recipe"], self.project_root, self.templates, upload_name, mask_name,reference_name,guide_name,donor_names,head_names)
                 prompt_id = str(uuid.uuid4())
                 # Persist identity before submitting; never duplicate an uncertain request.
                 self.store.update_job(job["id"], prompt_id=prompt_id, status="submitted", started=time.time(), phase="Waiting for the image engine")

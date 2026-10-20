@@ -42,6 +42,10 @@ status panel show the Mac's work and available memory.
 For local changes, Paint an area adds an optional brush mask. The editor works on
 a crop and blends the selected area back into the original, preserving unpainted
 pixels and the original dimensions. Masks are saved with submitted image recipes.
+**Identity swap** replaces the head (face and hair) or the whole person using
+another photo. SAM 3 finds both people, a pink preview shows
+what may change, and every other pixel stays exact. See
+[Identity swap](studio/README.md#identity-swap).
 
 The website runs in Docker; ComfyUI runs natively so MLX can use the Mac's GPU.
 Both reuse the models already installed in this checkout.

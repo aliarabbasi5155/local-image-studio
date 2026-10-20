@@ -344,6 +344,11 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             stream = io.BytesIO(); Image.new("RGB",(inputs["width"],inputs["height"]),"navy").save(stream,"PNG",pnginfo=metadata)
             self.files[prompt_id] = stream.getvalue()
             self.history[prompt_id] = {"outputs": {"2": {"images": [{"filename": prompt_id + ".png", "subfolder": "", "type": "output"}]}}, "status": {"status_str": "success", "messages": []}}
+            if "102" in data["prompt"]:
+                head = data["prompt"]["102"]["inputs"]
+                stream = io.BytesIO(); Image.new("RGB", (head["width"], head["height"]), "gold").save(stream, "PNG", pnginfo=metadata)
+                self.files[prompt_id + "-head"] = stream.getvalue()
+                self.history[prompt_id]["outputs"]["102"] = {"images": [{"filename": prompt_id + "-head.png", "subfolder": "", "type": "output"}]}
             if "9" in data["prompt"]:
                 stream = io.BytesIO(); Image.new("RGB",(recipe["width"],recipe["height"]),"navy").save(stream,"PNG",pnginfo=metadata)
                 self.files[prompt_id + "-final"] = stream.getvalue()

@@ -9,8 +9,13 @@ import aiohttp
 
 def guided(recipe):
     """A second reference image adds encoder tokens and noticeably changes timing."""
+    if recipe.get("identity_swap") is not None:
+        swap = recipe["identity_swap"]
+        if swap.get("mode"):
+            return "identity-v2-" + swap["mode"]
+        return "identity"
     selection = recipe.get("masked_edit",{})
-    return bool(selection.get("placement_guidance") or selection.get("shape_guidance"))
+    return "guide" if selection.get("placement_guidance") or selection.get("shape_guidance") else ""
 
 
 class Metrics:

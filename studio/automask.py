@@ -58,7 +58,7 @@ class AutoMask:
             pass
         return {"ready": False, "busy": False}
 
-    async def select(self, path, target, protect, protect_skin=False):
+    async def select(self, path, target, protect, protect_skin=False, concepts=()):
         try:
             content = await asyncio.to_thread(selection_image, path)
             form = aiohttp.FormData()
@@ -66,6 +66,7 @@ class AutoMask:
             form.add_field("target", target)
             form.add_field("protect_faces", "1" if protect else "0")
             form.add_field("protect_skin", "1" if protect_skin else "0")
+            form.add_field("concepts", ",".join(concepts))
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=180)) as session:
                 async with session.post(self.base + "/select", data=form, headers=self.headers()) as response:
                     payload = await response.json()

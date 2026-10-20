@@ -67,10 +67,10 @@ function jobDisplay(job) {
   const detail=job.progress_detail;
   const measured=detail && detail.total>0 && detail.value>=0;
   const percent=measured?Math.min(100,Math.round(detail.value/detail.total*100)):null;
-  const stage=job.cancel_requested?'Stopping':job.status==='queued'?'Queued':detail?.stage==='sampling'?'Generating':detail?.stage==='enhancing'||/enhancing/i.test(job.phase)?'Upscaling':/saving/i.test(job.phase)?'Saving':/blend|patch/i.test(job.phase)?'Blending':/fitting/i.test(job.phase)?'Finishing':'Preparing';
+  const stage=job.cancel_requested?'Stopping':job.status==='queued'?'Queued':detail?.stage==='head detail'||/refining head/i.test(job.phase)?'Head detail':detail?.stage==='sampling'?'Generating':detail?.stage==='enhancing'||/enhancing/i.test(job.phase)?'Upscaling':/saving/i.test(job.phase)?'Saving':/blend|patch/i.test(job.phase)?'Blending':/fitting/i.test(job.phase)?'Finishing':'Preparing';
   const time=job.started?elapsedText(job):null;
   const remaining=job.estimate?.remaining_high!=null?duration((job.estimate.remaining_low+job.estimate.remaining_high)/2):null;
-  return {percent,stage,time,remaining,steps:measured?`${detail.value} / ${detail.total} ${detail.stage==='sampling'?'steps':'tiles'}`:null};
+  return {percent,stage,time,remaining,steps:measured?`${detail.value} / ${detail.total} ${detail.stage==='enhancing'?'tiles':'steps'}`:null};
 }
 function progressHTML(job) {
   const value=jobDisplay(job);

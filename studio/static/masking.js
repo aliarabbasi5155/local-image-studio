@@ -11,7 +11,7 @@ const canvasBlob = canvas => new Promise((resolve,reject) => canvas.toBlob(blob=
 function updateMaskControls() {
   if (!$('#viewer-paint-mask')) return;
   const mask=currentMask(),ready=!!selectedVersion()?.ready;
-  $('#viewer-paint-mask').disabled=!ready;
+  $('#viewer-paint-mask').disabled=!ready;$('#viewer-identity').disabled=!ready;
   $('#viewer-paint-mask').textContent=mask?'Adjust selection':'Select an area';
   $('#viewer-use-mask').checked=!!mask?.enabled;
   $('#viewer-use-mask').disabled=!mask || !ready;

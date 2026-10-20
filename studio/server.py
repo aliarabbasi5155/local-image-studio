@@ -22,6 +22,7 @@ from .metrics import Metrics
 from .downloads import Downloads
 from .masking import normalize_mask, masked_size, automatic_feather
 from .automask import AutoMask, AutomaticSelectionError, validate_selection
+from .identity import CONCEPTS, WORKING_SIDE, blend_width as identity_blend, body_guide, close_up, clothing_area, donor_body, donor_crops, mask_png, swap_areas, request_parts
 from .sizing import OUTPUT_SIZES, RESIZE_MODES, MAX_PIXELS, plan_size
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,7 +32,7 @@ MAX_UPLOAD = 20 * 1024 * 1024
 ACTIVE = ("queued", "submitted", "running")
 LOOPBACK = ("localhost", "127.0.0.1", "::1")
 STATIC_FILES = ("app.js", "projects.js", "masking.js", "automatic.js", "actions.js", "setup.js", "style.css", "projects.css",
-                "masking.css", "automatic.css", "mask-workspace.css", "polish.css", "setup.css", "icon.svg", "icon-192.png",
+                "masking.css", "automatic.css", "mask-workspace.css", "polish.css", "setup.css", "identity.css", "identity.js", "icon.svg", "icon-192.png",
                 "icon-512.png", "icon-maskable.png", "apple-touch-icon.png", "manifest.json")
 
 
@@ -169,6 +170,72 @@ async def automatic_mask(request):
     return web.json_response(result)
 
 
+async def save_mask(store, source, mask):
+    """Store a server-made selection exactly like a painted one."""
+    mask_id = str(uuid.uuid4())
+    path = store.directory / "masks" / (mask_id + ".png")
+    result = await asyncio.to_thread(lambda: normalize_mask(mask_png(mask, (source["width"], source["height"])), source, path))
+    store.execute("INSERT INTO masks VALUES (?,?,?,?,?,?,?,?)", (mask_id, source["id"], time.time(), result["width"], result["height"],
+                  json.dumps(result["bounds"]), result["sha256"], result["coverage"]))
+    return dict(result, id=mask_id, source_id=source["id"], url=f"/media/mask/{mask_id}")
+
+
+async def identity_areas(request):
+    """Find the swap area in this photo and the reference crop in the other one, before generating."""
+    state = request.app[STATE]
+    store = state["store"]
+    source = store.one("SELECT * FROM uploads WHERE id=?", (request.match_info["id"],))
+    if not source:
+        raise web.HTTPNotFound()
+    payload = await request.json()
+    parts = request_parts(payload)
+    swap_mode = payload.get("mode")
+    keep_object = payload.get("keep_object", "").strip() if isinstance(payload.get("keep_object", ""), str) else None
+    if keep_object is None:
+        return failure("Name the object to keep, such as glass or phone.")
+    validate_selection({"target": keep_object, "protect_faces": True})
+    donor = store.one("SELECT * FROM uploads WHERE id=?", (payload.get("donor_id"),)) if isinstance(payload.get("donor_id"), str) else None
+    if not donor:
+        return failure("Choose the photo to take the identity from.")
+    if donor["sha256"] == source["sha256"]:
+        return failure("Choose a different photo to take the identity from.")
+    engine = state["engine"]
+    if engine.resource_lock.locked() or store.one("SELECT id FROM jobs WHERE status IN ('submitted','running')"):
+        return failure("Your Mac is making an image. Find the swap areas when it finishes.", 409)
+    started = time.monotonic()
+    async with engine.resource_lock:
+        try:
+            target = await state["automask"].select(store.directory / "uploads" / (source["id"] + ".png"),
+                                                  (keep_object or "object held in hand") if swap_mode else "", True, swap_mode == "whole", CONCEPTS)
+            # A body guide also needs the reference's visible skin, for its skin tone.
+            reference = await state["automask"].select(store.directory / "uploads" / (donor["id"] + ".png"), "", True, body_guide(parts), CONCEPTS)
+        except AutomaticSelectionError as error:
+            return failure(str(error), error.status)
+    try:
+        areas = await asyncio.to_thread(swap_areas, target, parts, reference if swap_mode else None)
+        crops = await asyncio.to_thread(donor_crops, reference, parts, donor["width"], donor["height"])
+        head = await asyncio.to_thread(swap_areas, target, ["head"], reference) if swap_mode == "whole" else None
+        if head:
+            crops += await asyncio.to_thread(donor_crops, reference, ["head"], donor["width"], donor["height"])
+        silhouette = await asyncio.to_thread(donor_body, reference, store.directory / "uploads" / (donor["id"] + ".png")) if body_guide(parts) else None
+    except ValueError as error:
+        return failure(str(error))
+    guide = None
+    if silhouette:
+        saved = await save_mask(store, donor, silhouette[0])
+        guide = {"mask_id": saved["id"], "skin": silhouette[1]}
+    area = await save_mask(store, source, areas["area"])
+    core = await save_mask(store, source, areas["core"])
+    head_pass = {"mask": await save_mask(store, source, head["area"] & areas["area"]),
+                 "core": await save_mask(store, source, head["core"] & areas["area"])} if head else None
+    clothing = clothing_area(target, areas["area"]) if head else None
+    appearance = await save_mask(store, source, clothing) if clothing is not None and clothing.any() else None
+    return web.json_response({"version": 2, "mode": swap_mode, "parts": parts, "keep_object": keep_object,
+                              "head_pass": head_pass, "appearance_mask": appearance, "donor_id": donor["id"], "donor_crops": crops, "body_guide": guide, "mask": area, "core": core,
+                              "summary": areas["summary"], "seconds": round(time.monotonic() - started, 1),
+                              "cached": bool(target.get("cached") and reference.get("cached"))})
+
+
 def normalized_upload(content, path, thumb):
     with Image.open(io.BytesIO(content)) as image:
         if image.width * image.height > MAX_PIXELS or image.width < 64 or image.height < 64:
@@ -300,6 +367,53 @@ async def generate(request):
     mask = None
     protection = None
     core = None
+    identity = payload.get("identity_swap")
+    donor = None
+    if identity is not None:
+        if mode != "edit" or not isinstance(identity, dict) or mask_id is None or payload.get("mask_core_id") is None:
+            return failure("Find the swap areas before swapping an identity.")
+        if payload.get("mask_selection") is not None or payload.get("mask_preserve_shape") or payload.get("mask_protection_id") is not None:
+            return failure("Identity swaps choose their own areas. Remove other selection settings.")
+        parts = request_parts(identity)
+        swap_mode = identity.get("mode")
+        donor = state["store"].one("SELECT * FROM uploads WHERE id=?", (identity.get("donor_id"),)) if isinstance(identity.get("donor_id"), str) else None
+        if not donor or donor["sha256"] == source["sha256"]:
+            return failure("Choose a different photo to take the identity from.")
+        crops = identity.get("donor_crops")
+        if not isinstance(crops, list) or len(crops) != 1 + (swap_mode == "whole" or close_up(parts)) or any(
+                not isinstance(crop, list) or len(crop) != 4 or any(type(v) is not int for v in crop) or crop[0] < 0 or crop[1] < 0 or
+                crop[2] < 16 or crop[3] < 16 or crop[0] + crop[2] > donor["width"] or crop[1] + crop[3] > donor["height"] for crop in crops):
+            return failure("Find the swap areas again; the reference crops are not valid.")
+        guide = None
+        if body_guide(parts):
+            supplied = identity.get("body_guide")
+            guide = state["store"].one("SELECT * FROM masks WHERE id=? AND source_id=?", (supplied.get("mask_id"), donor["id"])) if isinstance(supplied, dict) and isinstance(supplied.get("mask_id"), str) else None
+            skin = supplied.get("skin") if guide else None
+            if not guide or not isinstance(skin, list) or len(skin) != 3 or any(type(v) is not int or not 0 <= v <= 255 for v in skin):
+                return failure("Find the swap areas again; the body guide is missing.")
+        notes = identity.get("notes", "")
+        if not isinstance(notes, str) or len(notes) > 2000:
+            return failure("Keep identity swap notes under 2,000 characters.")
+        keep_object = identity.get("keep_object", "")
+        validate_selection({"target": keep_object, "protect_faces": True})
+        head_masks = None
+        appearance_mask = None
+        if swap_mode == "whole":
+            supplied = identity.get("head_pass")
+            if not isinstance(supplied, dict):
+                return failure("Preview the whole identity again to prepare the head detail pass.")
+            supplied = supplied.get("masked_edit", supplied)  # saved recipes can be replayed, too
+            if not isinstance(supplied, dict):
+                return failure("Preview the whole identity again to prepare the head detail pass.")
+            head_masks = [state["store"].one("SELECT * FROM masks WHERE id=? AND source_id=?", (supplied.get(key), source_id))
+                          if isinstance(supplied.get(key), str) else None for key in ("mask_id", "core_mask_id")]
+            if not all(head_masks):
+                return failure("The head selection belongs to a different photo. Preview the areas again.")
+            supplied_appearance = identity.get("appearance_mask")
+            if supplied_appearance is not None:
+                appearance_mask = state["store"].one("SELECT * FROM masks WHERE id=? AND source_id=?", (supplied_appearance.get("mask_id"), source_id)) if isinstance(supplied_appearance, dict) and isinstance(supplied_appearance.get("mask_id"), str) else None
+                if not appearance_mask:
+                    return failure("The clothing guide belongs to a different photo. Preview the areas again.")
     if mask_id is not None:
         if mode != "edit" or not isinstance(mask_id, str):
             return failure("Select an editing photo and paint an area first.")
@@ -313,7 +427,8 @@ async def generate(request):
         if type(payload.get("mask_preserve_shape",False)) is not bool:
             return failure("Choose whether to guide the edit with the original shape.")
         sizing = masked_size(source, json.loads(mask["bounds"]), payload.get("mask_feather", 8),
-                             quality, aspect, QUALITIES, state["upscaler"],payload.get("mask_detail","balanced"),payload.get("mask_context","balanced"))
+                             quality, aspect, QUALITIES, state["upscaler"],payload.get("mask_detail","balanced"),payload.get("mask_context","balanced"),
+                             WORKING_SIDE[quality] if identity is not None else None)
         if any(type(payload.get(key,True)) is not bool for key in ("mask_color_match","mask_align")):
             return failure("Choose whether to match surrounding colors and align the patch.")
         if payload.get("mask_blend_mode","adaptive") not in ("adaptive","manual"):
@@ -342,16 +457,20 @@ async def generate(request):
         sizing = plan_size(quality, aspect, mode, source, payload.get("output_size", "preset"), QUALITIES,
                            state["upscaler"], payload.get("resize_mode", "auto"))
     model = QUALITIES[quality]["model"]
+    # Identity uses the base model: a creative LoRA can retain or invent appearance.
+    use_snofs = payload.get("snofs", True) and not (identity is not None and identity.get("mode"))
     recipe = {"version": 2, "mode": mode, "prompt": prompt.strip(), "quality": quality, "aspect": aspect,
               **sizing, "model": model, "model_source": state["models"][model],
-              "steps": 4, "guidance": 1.0, "snofs": payload.get("snofs", True),
-              "adapter": state["adapter"] if payload.get("snofs", True) else None, "runtime": state["runtime"],
+              "steps": 4, "guidance": 1.0, "snofs": bool(use_snofs),
+              "adapter": state["adapter"] if use_snofs else None, "runtime": state["runtime"],
               "source_id": source_id if mode == "edit" else None,
               "source": {k: source[k] for k in ("name", "width", "height", "sha256")} if source else None,
               "parent_image_id": parent_id if mode == "edit" else None}
     if mask:
         blend_mode=payload.get("mask_blend_mode","adaptive")
         blend_width=automatic_feather(json.loads(mask["bounds"]),sizing["processing"]["crop"],sizing["processing"]["canvas_content"]) if blend_mode=="adaptive" else payload.get("mask_feather",8)
+        if donor and blend_mode=="adaptive":
+            blend_width=identity_blend(parts,json.loads(mask["bounds"]),blend_width)
         recipe["masked_edit"] = {"version":2,"mask_id": mask_id, "sha256": mask["sha256"],
                                   "bounds": json.loads(mask["bounds"]), "crop": sizing["processing"]["crop"],
                                   "feather": payload.get("mask_feather", 8),
@@ -373,6 +492,31 @@ async def generate(request):
             recipe["masked_edit"]["selection"] = {key:payload["mask_selection"][key] for key in ("model","model_revision","target","mode","extra_room","protect_faces","protect_skin","placement") if key in payload["mask_selection"]}
             if recipe["masked_edit"]["selection"].get("placement"):
                 recipe["masked_edit"]["placement_guidance"] = "visual_reference_v1"
+    if donor:
+        recipe["identity_swap"] = {"version": 2 if swap_mode else 1, "method": "person_then_head_v2" if head_masks else "masked_reference_v2" if swap_mode else "masked_reference_v1",
+                                   "mode": swap_mode, "parts": parts, "notes": notes.strip(), "keep_object": keep_object.strip(),
+                                   "donor_id": donor["id"], "donor_crops": crops,
+                                   "donor": {k: donor[k] for k in ("name", "width", "height", "sha256")}}
+        if guide:
+            recipe["identity_swap"]["body_guide"] = {"mask_id": guide["id"], "sha256": guide["sha256"], "skin": skin}
+        if appearance_mask:
+            recipe["identity_swap"]["appearance_mask"] = {"mask_id": appearance_mask["id"], "sha256": appearance_mask["sha256"]}
+        if head_masks:
+            head_mask, head_core = head_masks
+            # A second head pass may never repaint pixels outside the approved whole-person area.
+            with Image.open(state["store"].directory / "masks" / (mask_id + ".png")) as outer, \
+                 Image.open(state["store"].directory / "masks" / (head_mask["id"] + ".png")) as inner, \
+                 Image.open(state["store"].directory / "masks" / (head_core["id"] + ".png")) as inner_core:
+                if ImageChops.subtract(inner, outer).getbbox() or ImageChops.subtract(inner_core, inner).getbbox():
+                    return failure("The head selection exceeds the preview. Preview the areas again.")
+            bounds = json.loads(head_mask["bounds"])
+            detail = masked_size(source, bounds, 8, quality, aspect, QUALITIES, state["upscaler"], working_side=WORKING_SIDE[quality])
+            selection = dict(recipe["masked_edit"], mask_id=head_mask["id"], sha256=head_mask["sha256"], bounds=bounds,
+                             core_mask_id=head_core["id"], core_sha256=head_core["sha256"],
+                             crop=detail["processing"]["crop"], canvas_content=detail["processing"]["canvas_content"],
+                             context_padding=detail["processing"]["context_padding"], color_match=False, align=False,
+                             blend_width=automatic_feather(bounds, detail["processing"]["crop"], detail["processing"]["canvas_content"]))
+            recipe["identity_swap"]["head_pass"] = {"sizing": detail, "masked_edit": selection}
     base_seed = seed if seed is not None else secrets.randbits(32)
     recipes = [dict(recipe, seed=(base_seed + i) % 2**32) for i in range(count)]
     result = state["store"].add_jobs(recipes)
@@ -597,14 +741,24 @@ async def estimate(request):
     if payload.get("mask_bounds") is not None:
         if mode != "edit":
             return failure("Selected-area editing requires a photo.")
-        size = masked_size(source,payload["mask_bounds"],payload.get("mask_feather",8),quality,aspect,QUALITIES,state["upscaler"],payload.get("mask_detail","balanced"),payload.get("mask_context","balanced"))
+        if type(payload.get("identity_swap",False)) is not bool:
+            return failure("Choose whether this is an identity swap.")
+        size = masked_size(source,payload["mask_bounds"],payload.get("mask_feather",8),quality,aspect,QUALITIES,state["upscaler"],payload.get("mask_detail","balanced"),payload.get("mask_context","balanced"),
+                           WORKING_SIDE[quality] if payload.get("identity_swap") else None)
     else:
         size = plan_size(quality,aspect,mode,source,payload.get("output_size","preset"),QUALITIES,state["upscaler"],payload.get("resize_mode","auto"))
     recipe = dict(size,mode=mode,model=QUALITIES[quality]["model"],snofs=payload.get("snofs",True))
     if any(type(payload.get(key,False)) is not bool for key in ("mask_placement_guidance","mask_shape_guidance")):
         return failure("Choose valid placement or shape guidance.")
     if payload.get("mask_bounds") is not None:
-        if payload.get("mask_placement_guidance"):
+        if payload.get("identity_swap"):
+            swap_mode = payload.get("identity_mode")
+            if swap_mode is not None:
+                request_parts({"mode": swap_mode})
+            recipe["identity_swap"]={"mode": swap_mode}
+            if swap_mode:
+                recipe["snofs"] = False
+        elif payload.get("mask_placement_guidance"):
             recipe["masked_edit"]={"placement_guidance":"visual_reference_v1"}
         elif payload.get("mask_shape_guidance"):
             recipe["masked_edit"]={"shape_guidance":"outline_reference_v1"}
@@ -793,7 +947,7 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
         web.delete("/api/projects/{id}/versions/{version_id}",delete_version),
         web.post("/api/estimate",estimate), web.get("/api/metrics",metrics),
         web.post("/api/uploads/{id}/mask",upload_mask), web.get("/api/masks/{id}",mask_detail),
-        web.post("/api/uploads/{id}/auto-mask",automatic_mask),
+        web.post("/api/uploads/{id}/auto-mask",automatic_mask), web.post("/api/uploads/{id}/identity-areas",identity_areas),
         web.post("/api/uploads", upload), web.post("/api/generate", generate),
         web.get("/api/jobs", jobs), web.post("/api/jobs/{id}/cancel", cancel),
         web.get("/api/images", library), web.get("/api/images/{id}", image_detail),

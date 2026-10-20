@@ -313,6 +313,58 @@ manual painting still works. To reinstall/start only the selector:
 .venv/bin/python scripts/setup_sam3.py --start
 ```
 
+## Identity swap
+
+Open a photo, then choose **Identity swap**. The left photo supplies the scene,
+pose, head angle and interactions. **Library** or **Upload** on the right chooses
+the replacement person.
+
+| Mode | What changes | What the original supplies |
+| --- | --- | --- |
+| **Head identity** | The head, face, ears and hair | Body, outfit, head angle, expression and scene |
+| **Whole identity** | The entire person, including body build and outfit | Position, pose, head angle, gestures and interaction with objects |
+
+Use a clear reference with one prominent person. Similar head angles help;
+whole identity also needs the reference's body and outfit visible. Optional
+notes describe additional preferences.
+
+Choose **Preview swap** first. Pink marks the pixels that may change; pixels
+outside it are copied exactly from the original. SAM looks for held objects and
+excludes detected objects and other people from both passes. If an object is
+missed, name it in **Object to keep** (for example, “wine glass”) and preview
+again. Check that the object is outside the pink area before choosing **Swap
+identity**. Detection is fallible, especially with transparent or partly hidden
+objects. The preview reports whether any object was detected.
+
+Head identity uses an enlarged crop of the original and a dedicated reference
+head crop. The mask includes room for the replacement hair, based on its size
+relative to the reference face. Whole identity uses two passes in one recoverable
+job: first the person and outfit, then head detail at a larger working scale.
+The first pass neutralizes the old clothing's color and construction details in
+its input guide, while retaining the head, visible skin and detected objects.
+This reduces the tendency to recolor the old jacket instead of replacing it.
+The second pass restores the original head as its pose guide while using the
+new outfit as context, so removing old hair can reveal the replacement clothing.
+It pastes only the head area over the body result. Background and protected
+object pixels stay original. The job shows **Head detail** during that pass;
+whole-identity timing history is separate from single-pass edits.
+
+The generated face and its orientation are still model predictions, not a
+verified face match. These changes reduce lost face detail and conflicting
+reference instructions but cannot guarantee likeness or perfect anatomy for
+every photo. Pose and grip are guided by the original; only pixels outside the
+preview mask have an exact preservation guarantee. The largest person is
+selected automatically, so crop crowded photos to the intended person first.
+
+The two identity modes use the base model without SNOFS. The creative adapter
+remains available for regular creation and editing; identity recipes record it
+as disabled. Whole identity explicitly replaces the original outer clothing as
+well as the garments underneath.
+
+**Reuse settings** restores the mode and reference, then asks for a fresh
+preview. Older face/body/clothes recipes remain supported by the API; the UI
+maps them to one of the two current modes and rebuilds the areas.
+
 ## Timing and server status
 
 The Create panel and editor show a compact timing chip based on actual completed
