@@ -54,13 +54,14 @@ function toast(message, action, callback) {
   toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 6000);
 }
 function showLogin() {
-  state.authenticated = false; $('#app').hidden = true; $('#login').hidden = false;
+  state.authenticated = false; $('#shared-dialog').close(); if (typeof updateSharedNotice === 'function') updateSharedNotice().catch(() => {}); $('#app').hidden = true; $('#login').hidden = false;
   $('#delete-dialog').close(); $('#detail-dialog').close(); $('#info-dialog').close(); $('#metrics-dialog').close(); $('#mask-dialog').close(); $('#pin').focus();
 }
 async function enterStudio() {
   state.options = await api('/api/options');
   state.authenticated = true; $('#login').hidden = true; $('#app').hidden = false;
   renderComposer(); renderEngine(); if (typeof refreshMetrics === 'function') refreshMetrics(); await refresh();
+  if (typeof resumeShares === 'function') await resumeShares();
 }
 function renderEngine() {
   $('#engine-dot').classList.toggle('offline', !state.options.engine_ready && !state.options.auto_start);

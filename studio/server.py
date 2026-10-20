@@ -33,7 +33,8 @@ ACTIVE = ("queued", "submitted", "running")
 LOOPBACK = ("localhost", "127.0.0.1", "::1")
 STATIC_FILES = ("app.js", "projects.js", "masking.js", "automatic.js", "actions.js", "setup.js", "style.css", "projects.css",
                 "masking.css", "automatic.css", "mask-workspace.css", "polish.css", "setup.css", "identity.css", "identity.js", "icon.svg", "icon-192.png",
-                "icon-512.png", "icon-maskable.png", "apple-touch-icon.png", "manifest.json")
+                "icon-512.png", "icon-maskable.png", "apple-touch-icon.png", "manifest.json",
+                "share-store.js", "sharing.js", "sharing.css", "share-help.html", "share-help.js")
 
 
 def failure(message, status=400):
@@ -54,7 +55,7 @@ async def access(request, handler):
             return failure("Open the studio directly to make changes.", 403)
     if needs_setup(request) and request.path.startswith(("/api/", "/media/")) and request.path != "/api/health":
         return failure("Open the secure studio address to continue.", 403)
-    if request.path.startswith(("/api/", "/media/")) and request.path not in ("/api/auth", "/api/login", "/api/health"):
+    if request.path.startswith(("/api/", "/media/")) and request.path not in ("/api/auth", "/api/login", "/api/health", "/api/share-upload"):
         token = request.cookies.get("studio_session", "")
         digest = hashlib.sha256(token.encode()).hexdigest()
         if state["pin"] and not state["store"].one("SELECT token FROM sessions WHERE token=? AND expires>?", (digest, time.time())):
@@ -112,18 +113,26 @@ async def auth(request):
     return web.json_response({"authenticated": valid, "pin_required": bool(state["pin"])})
 
 
-async def login(request):
+def check_pin(request, pin):
+    """Both browser login and the phone Shortcut share the same attempt limit."""
     state = request.app[STATE]
-    payload = await request.json()
     address = request.remote
     attempts = state["attempts"].setdefault(address, [])
     attempts[:] = [t for t in attempts if time.time() - t < 900]
     if len(attempts) >= 8:
         return failure("Too many attempts. Please wait 15 minutes.", 429)
-    if not hmac.compare_digest(str(payload.get("pin", "")), state["pin"]):
+    if not hmac.compare_digest(str(pin).encode(), state["pin"].encode()):
         attempts.append(time.time())
         return failure("That PIN doesn’t match. Try again.", 401)
     attempts.clear()
+
+
+async def login(request):
+    state = request.app[STATE]
+    payload = await request.json()
+    error = check_pin(request, payload.get("pin", ""))
+    if error is not None:
+        return error
     token = secrets.token_urlsafe(32)
     state["store"].execute("INSERT INTO sessions VALUES (?,?)", (hashlib.sha256(token.encode()).hexdigest(), time.time() + 30 * 86400))
     response = web.json_response({"authenticated": True})
@@ -277,6 +286,27 @@ async def upload(request):
         if len(chunks) > MAX_UPLOAD:
             return failure("Choose an image smaller than 20 MB.", 413)
     return web.json_response(await save_upload(request.app[STATE], bytes(chunks), part.filename or "Photo", create_project=True), status=201)
+
+
+async def share_upload(request):
+    """Shortcuts sends one converted image as a File body, with no browser cookies."""
+    if not request.secure and request.url.host not in LOOPBACK:
+        return failure("Use the secure studio address for sharing photos.", 403)
+    error = check_pin(request, request.headers.get("X-Studio-PIN", ""))
+    if error is not None:
+        return error
+    content = await request.read()
+    if len(content) > MAX_UPLOAD:
+        return failure("Choose an image smaller than 20 MB.", 413)
+    result = await save_upload(request.app[STATE], content, "Shared photo", create_project=True)
+    result["url"] = f"{request.scheme}://{request.host}/#project={result['project_id']}&image={result['id']}"
+    return web.json_response(result, status=201)
+
+
+async def share_target_fallback(request):
+    # A newly installed/outdated worker may not intercept the share yet. Never
+    # accept an unauthenticated upload here or silently drop it into the library.
+    return web.Response(status=303, headers={"Location": "/?share-error=setup", "Cache-Control": "no-store"})
 
 
 async def edit_source(request):
@@ -935,6 +965,7 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
     app.on_cleanup.append(close_store)
     app.add_routes([
         web.get("/", index), web.get("/static/{name}", static_file), web.get("/sw.js", service_worker),
+        web.post("/share-target", share_target_fallback), web.post("/api/share-upload", share_upload),
         web.get("/setup", setup_page), web.get("/setup/image-studio-home.crt", certificate_authority),
         web.get("/api/auth", auth), web.post("/api/login", login), web.post("/api/logout", logout),
         web.get("/api/health", health), web.get("/api/options", options),

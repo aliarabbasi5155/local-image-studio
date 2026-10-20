@@ -46,7 +46,8 @@ the first time it runs. Each phone trusts it once:
 
 The installed app opens full screen, keeps its own sign-in, and shows its shell
 with a "Can't reach your Mac" message when you are away from home. It never
-caches your images or library. Once HTTPS is ready, phones can only reach the
+caches the Mac's images or library; incoming Android shares are temporarily
+kept on the phone until imported, discarded, or expired after 24 hours. Once HTTPS is ready, phones can only reach the
 setup page over plain HTTP, so the PIN never crosses the Wi-Fi unencrypted.
 This Mac keeps using **http://localhost:7878**, which browsers already treat as
 secure; Chrome and Edge can install the app there too.
@@ -65,6 +66,42 @@ its private key cannot vouch for a real website. The key stays in
 server certificate in `runtime/tls/`. To start over, delete both folders, run
 the launcher, and trust the new certificate on each phone (remove the old one
 under **Settings → General → VPN & Device Management** on iPhone).
+
+## Send photos from the phone's Share menu
+
+Open **Use on your phone → Set up photo sharing** for the guide and the exact
+upload address for your phone.
+
+**Android (Chrome):** install the secure studio, then open it once to update
+the service worker. In Photos, Gallery or Files choose **Share → Image Studio**.
+Unlock the studio and choose **Import photos**. Each photo becomes a new project;
+the last imported photo opens ready to edit. Up to 10 PNG, JPEG or WebP files,
+20 MB each and 100 MB total, can wait in the phone's shared-photo inbox. A PIN
+prompt, reload, worker update or offline launch preserves pending photos for up
+to 24 hours. You can review or discard them from the notice above the studio.
+Import requires your home Wi-Fi and an awake Mac. If the share option does not
+appear after an update, reinstall the app from the same HTTPS address; the
+library stays on the Mac. Share an image file, not a URL to an image.
+
+**iPhone/iPad:** Safari does not support PWA share targets. The built-in guide
+walks through creating **Send to Image Studio** in Apple Shortcuts, enabled for
+Images in the share sheet. It takes the first selected photo, resizes it, converts
+HEIC to JPEG, and posts it as a **File** body to `https://<your-mac>:7443/api/share-upload`
+with the `X-Studio-PIN` header. It then opens the returned JSON `url`; on error,
+display the returned `error` instead. Shortcuts needs the home certificate trusted
+and local-network access. This route uses the same PIN attempt limit as browser
+login, checks image content and size, and refuses non-loopback plain HTTP even
+when HTTPS has not been configured. The PIN never goes in the URL or image recipe.
+
+The Shortcut saves immediately and opens the project in the browser; iOS does
+not guarantee opening the installed PWA. Safari can require a separate PIN login;
+the project link survives it. The installed app sees the photo in the same
+library. Keep the configured Shortcut private and update its PIN/address when
+they change. No native iOS app or Share Extension is included.
+
+References: [Chrome Web Share Target](https://developer.chrome.com/docs/capabilities/web-apis/web-share-target),
+[browser compatibility](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference/share_target#browser_compatibility),
+[Apple Shortcuts API requests](https://support.apple.com/guide/shortcuts/request-your-first-api-apd58d46713f/ios).
 
 ## Projects and editing
 

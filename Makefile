@@ -20,6 +20,7 @@ studio-native:
 
 test-studio:
 	.venv/bin/python -m unittest discover -s studio/tests -v
+	node --test studio/tests/*.test.cjs
 
 check:
 	.venv/bin/python -m py_compile scripts/*.py studio/*.py studio/tests/*.py
