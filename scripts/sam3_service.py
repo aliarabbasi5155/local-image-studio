@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from studio.automask import validate_selection  # noqa: E402
 from engine_supervisor import EngineSupervisor  # noqa: E402
+from video_native import NativeVideo  # noqa: E402
 
 CONFIG = json.loads((ROOT / "config/sam3.json").read_text())
 TOKEN = (ROOT / "runtime/sam3-token.txt").read_text().strip()
@@ -45,7 +46,7 @@ async def authorize(request, handler):
 
 async def health(request):
     return web.json_response({"ready": BINARY.is_file() and MODEL.is_file(), "busy": LOCK.locked(),
-                              "model": "SAM 3 Q8 · Metal", "engine_control": True})
+                              "model": "SAM 3 Q8 · Metal", "engine_control": True, "video_control": True})
 
 
 async def engine_status(request):
@@ -53,6 +54,8 @@ async def engine_status(request):
 
 
 async def engine_wake(request):
+    if VIDEO.busy:
+        return web.json_response({"state": "video", "error": None})
     try:
         return web.json_response(await ENGINE.wake())
     except (OSError, RuntimeError) as error:
@@ -145,9 +148,13 @@ async def select(request):
                         await process.wait()
 
 
+VIDEO = NativeVideo(ROOT, ENGINE, LOCK, engine_busy)
+
+
 if __name__ == "__main__":
-    app = web.Application(middlewares=[authorize], client_max_size=6 * 1024 * 1024)
+    app = web.Application(middlewares=[authorize], client_max_size=21 * 1024 * 1024)
     app.cleanup_ctx.append(ENGINE.context)
     app.add_routes([web.get("/health", health), web.post("/select", select),
-                    web.get("/engine", engine_status), web.post("/engine/wake", engine_wake)])
+                    web.get("/engine", engine_status), web.post("/engine/wake", engine_wake),
+                    web.get("/video/status", VIDEO.status), web.post("/video/generate", VIDEO.generate)])
     web.run_app(app, host="127.0.0.1", port=7877, access_log=None, print=None, handler_cancellation=True)

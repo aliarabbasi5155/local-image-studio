@@ -54,6 +54,7 @@ function toast(message, action, callback) {
   toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 6000);
 }
 function showLogin() {
+  if (typeof closeVideos === 'function') closeVideos();
   state.authenticated = false; $('#shared-dialog').close(); if (typeof updateSharedNotice === 'function') updateSharedNotice().catch(() => {}); $('#app').hidden = true; $('#login').hidden = false;
   $('#delete-dialog').close(); $('#detail-dialog').close(); $('#info-dialog').close(); $('#metrics-dialog').close(); $('#mask-dialog').close(); $('#pin').focus();
 }

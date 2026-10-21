@@ -49,6 +49,9 @@ what may change, and every other pixel stays exact. See
 
 The website runs in Docker; ComfyUI runs natively so MLX can use the Mac's GPU.
 Both reuse the models already installed in this checkout.
+An optional **Photo to video** workspace animates uploaded or generated images
+with LTX-2.3 Q4 on native MLX and saves playable MP4 clips. Install it with
+`make setup-video` after installing FFmpeg. See [video setup and usage](studio/README.md#photo-to-video).
 The launcher also installs a verified 5 MB Real-ESRGAN upscaler. Large outputs
 use local AI upscaling after generation by default; 2K/4K refer to the longest saved edge.
 The **Resize** menu also offers native output and direct full-size generation,

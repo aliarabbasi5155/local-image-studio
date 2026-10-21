@@ -6,6 +6,83 @@ variations, quality presets, exact original-size edits, 2K/4K output, Favorites,
 a reversible Archive, and saved recipes.
 Images can also be permanently deleted after confirmation.
 
+## Photo to video
+
+Choose **Photo to video · Your clips** above the library to upload a photo,
+or open any completed project image and choose **Animate photo**. Describe the
+motion, choose landscape (768 × 512), portrait (512 × 768), or square (512 × 512),
+then generate a clip of approximately 2 or 4 seconds at 24 fps. The model fits the
+photo to the selected shape, which can crop its edges. Start with a short clip.
+Use a fixed seed to reuse the same settings. Every clip has MP4 playback, download,
+and a separate settings JSON. The video library shows the latest 100 jobs.
+
+The optional backend is **LTX-2.3 distilled 1.1, Q4, MLX**, with block streaming
+for this 24 GB Mac. The runtime is a community Apple Silicon port; exact runtime,
+model and Gemma text-encoder revisions are recorded in `config/video.json`.
+Quality and speed depend on the source photo, motion and available memory.
+These conservative presets are not a promise of real-time generation.
+
+The first real API check on this M5/24 GB Mac produced a 512 × 512 clip with
+49 frames at 24 fps (2.04 seconds) in **223.52 seconds end to end**. It decoded
+successfully as H.264 video with AAC audio; sampled frames contained the lake
+scene and motion. The model introduced some camera movement despite a static-camera
+prompt, so exact framing/motion adherence is not guaranteed. This one short square
+clip does not establish timings or quality for the larger/longer presets.
+See [the recorded check](../benchmarks/video-check.json).
+
+One-time setup, **on the Mac, outside Docker**:
+
+```bash
+brew install ffmpeg
+make setup-video
+```
+
+Setup creates `runtime/ltx-2-mlx/.venv`, uses the upstream frozen dependency lock,
+and downloads only the needed distilled model files plus the text encoder into
+`models/`. It does not change the image engine's Python environment. Downloads
+need internet and substantial disk space; rerunning setup resumes partial files.
+`--runtime-only` installs dependencies without weights. The completion marker is
+written only after both model downloads finish. Inference uses local files with
+Hugging Face offline mode enabled. The model's downloaded license and the text
+encoder's model terms apply; runtime MIT licensing does not replace model terms.
+
+After updating an existing installation, finish image/selection work and restart
+the native helper, then rebuild/reopen the website using its usual launcher:
+
+```bash
+launchctl kickstart -k "gui/$(id -u)/com.localimagestudio.native"
+./Start\ Web\ Studio.command --no-browser
+```
+
+Videos share Studio's GPU lock with image generation and automatic selection.
+Before loading LTX, the helper stops its own idle ComfyUI process to free model
+memory. It refuses to interrupt a busy queue or a manually started ComfyUI engine.
+The next image wakes ComfyUI again. Avoid submitting directly to ComfyUI during
+video generation. The video inference process exits after every clip. Cancel
+disconnects the helper request and terminates inference; closing the dialog or
+browser lets the job continue. A Studio restart marks an interrupted job failed
+instead of silently generating it twice; queued jobs resume.
+
+Clips and independent source copies live in `studio-data/videos/`; their jobs
+and recipes live in the existing SQLite database. Back up the whole data folder.
+Video source copies are limited to a 1536-pixel long edge for bounded transfer
+and conditioning memory; the library's original photo keeps its dimensions.
+Deleting an image/project does not delete its independent videos. Video deletion
+is not currently exposed in the UI. Diagnostic output from the latest native
+generation is in `runtime/video-inference.log`. The existing PIN and HTTPS rules
+also protect videos, MP4 range requests and settings downloads.
+
+For a real end-to-end check after setup, run `.venv/bin/python scripts/check_video.py`.
+It submits the bundled lakeside example through the authenticated API, downloads the
+result, checks frame count/dimensions/duration and decodes the MP4 with FFmpeg.
+It writes `benchmarks/video-check.json` and an MP4 under `outputs/`; it also creates
+a photo project and clip in the selected Studio instance. Use `--url` and
+`--pin-file` to target a separate test library.
+
+References: [MLX runtime](https://github.com/dgrauet/ltx-2-mlx),
+[Q4 model pack](https://huggingface.co/dgrauet/ltx-2.3-mlx-q4),
+[LTX-2](https://github.com/Lightricks/LTX-2).
+
 ## Open it again
 
 1. Open **Docker Desktop** and wait until it is running.

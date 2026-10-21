@@ -1,4 +1,7 @@
-.PHONY: setup start generate benchmark check studio studio-native test-studio
+.PHONY: setup start generate benchmark check studio studio-native test-studio setup-video
+
+setup-video:
+	.venv/bin/python scripts/setup_video.py
 
 setup:
 	./scripts/setup.sh

@@ -20,6 +20,7 @@ from .engine import Engine, QUALITIES, make_thumbnail
 from .storage import Store
 from .metrics import Metrics
 from .downloads import Downloads
+from .video import Videos
 from .masking import normalize_mask, masked_size, automatic_feather
 from .automask import AutoMask, AutomaticSelectionError, validate_selection
 from .identity import CONCEPTS, WORKING_SIDE, blend_width as identity_blend, body_guide, close_up, clothing_area, donor_body, donor_crops, mask_png, swap_areas, request_parts
@@ -34,7 +35,7 @@ LOOPBACK = ("localhost", "127.0.0.1", "::1")
 STATIC_FILES = ("app.js", "projects.js", "masking.js", "automatic.js", "actions.js", "setup.js", "style.css", "projects.css",
                 "masking.css", "automatic.css", "mask-workspace.css", "polish.css", "setup.css", "identity.css", "identity.js", "icon.svg", "icon-192.png",
                 "icon-512.png", "icon-maskable.png", "apple-touch-icon.png", "manifest.json",
-                "share-store.js", "sharing.js", "sharing.css", "share-help.html", "share-help.js")
+                "share-store.js", "sharing.js", "sharing.css", "share-help.html", "share-help.js", "video.js", "video.css")
 
 
 def failure(message, status=400):
@@ -957,9 +958,12 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
     app[STATE]["metrics"] = Metrics(store,engine)
     app[STATE]["automask"] = AutoMask()
     app[STATE]["downloads"] = Downloads()
+    videos = Videos(store, engine)
+    app[STATE]["videos"] = videos
     app.cleanup_ctx.append(app[STATE]["downloads"].context)
     if start_worker:
         app.cleanup_ctx.append(engine.context)
+        app.cleanup_ctx.append(videos.context)
     async def close_store(app):
         store.close()
     app.on_cleanup.append(close_store)
@@ -969,6 +973,9 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
         web.get("/setup", setup_page), web.get("/setup/image-studio-home.crt", certificate_authority),
         web.get("/api/auth", auth), web.post("/api/login", login), web.post("/api/logout", logout),
         web.get("/api/health", health), web.get("/api/options", options),
+        web.get("/api/videos/options", videos.options), web.get("/api/videos", videos.library),
+        web.post("/api/videos", videos.submit), web.post("/api/videos/{id}/cancel", videos.cancel),
+        web.get("/api/videos/{id}/recipe", videos.recipe), web.get("/media/video/{id}", videos.media),
         web.get("/api/favorites", favorites), web.post("/api/bulk", bulk_action),
         web.post("/api/bulk-download", bulk_download), web.get("/api/downloads/{token}", download_archive),
         web.get("/api/projects",project_library), web.get("/api/projects/{id}",project_detail),

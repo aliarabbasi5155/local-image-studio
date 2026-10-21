@@ -1,0 +1,17 @@
+#open-videos { margin: 0 0 18px; }
+.video-dialog { width: min(850px, 96vw); max-height: 92dvh; overflow-y: auto; padding: 28px; }
+.video-dialog h2 { margin-right: 40px; }
+.video-dialog form { display: grid; gap: 14px; margin: 22px 0; }
+.video-dialog label { display: grid; gap: 6px; }
+.video-dialog textarea, .video-dialog select, .video-dialog input[type="number"] { border: 1px solid var(--line, #555); border-radius: 10px; padding: 12px; font: inherit; color: inherit; background: var(--panel, #252527); min-width: 0; }
+.video-dialog input[type="file"] { max-width: 100%; font: inherit; }
+.video-dialog textarea { min-height: 90px; resize: vertical; width: 100%; }
+.video-settings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.video-source { display: flex; gap: 16px; align-items: center; }
+.video-source img { width: 100px; height: 90px; object-fit: contain; border-radius: 10px; }
+.video-list { display: grid; gap: 18px; }
+.video-card { padding: 16px; border: 1px solid var(--line, #ddd); border-radius: 14px; }
+.video-card p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.video-card video { width: 100%; max-height: 420px; border-radius: 10px; background: #111; }
+.video-links { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 10px; }
+@media (max-width: 600px) { .video-dialog { padding: 18px; } .video-settings { grid-template-columns: 1fr; } }

@@ -562,24 +562,29 @@ class Engine:
                 self.store.update_job(job["id"], status="cancelled", phase="Stopped", finished=time.time())
                 continue
             try:
-                if self.native.base:
-                    status = await self.native.request(wake=True)
-                    if status.get("error"):
-                        raise RuntimeError(status["error"])
-                if not await self.available():
-                    self.store.update_job(job["id"], phase="Starting your Mac’s image engine" if self.native.base else "Waiting for your Mac’s image engine")
-                    await asyncio.sleep(3)
-                    continue
                 if self.resource_lock.locked():
-                    self.store.update_job(job["id"], phase="Waiting for automatic selection")
-                async with self.native.activity(), self.resource_lock:
+                    self.store.update_job(job["id"], phase="Waiting for the current video or selection")
+                async with self.resource_lock:
                     job=self.store.job(job["id"])
                     if not job:
                         continue
                     if job["cancel_requested"] and not job["prompt_id"]:
                         self.store.update_job(job["id"],status="cancelled",phase="Stopped",finished=time.time())
                         continue
-                    await self.run_job(job)
+                    if self.native.base:
+                        status = await self.native.request(wake=True)
+                        if status.get("error"):
+                            raise RuntimeError(status["error"])
+                        if status.get("state") == "video":
+                            self.store.update_job(job["id"], phase="Waiting for the current video")
+                            await asyncio.sleep(3)
+                            continue
+                    if not await self.available():
+                        self.store.update_job(job["id"], phase="Starting your Mac’s image engine" if self.native.base else "Waiting for your Mac’s image engine")
+                        await asyncio.sleep(3)
+                        continue
+                    async with self.native.activity():
+                        await self.run_job(job)
             except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError, OSError, ValueError) as error:
                 self.store.update_job(job["id"], status="failed", error=str(error)[:1500], phase="Needs attention", finished=time.time())
 

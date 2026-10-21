@@ -2,11 +2,11 @@
 // Keeps the app shell available when the phone is away from home Wi-Fi. Library data, images and
 // generation requests always go to the Mac. Incoming shares have their own temporary inbox.
 importScripts('/static/share-store.js');
-const CACHE = 'studio-shell-v4';
+const CACHE = 'studio-shell-v5';
 const SHELL = ['/', '/static/style.css', '/static/projects.css', '/static/masking.css', '/static/automatic.css',
   '/static/polish.css', '/static/mask-workspace.css', '/static/identity.css', '/static/app.js', '/static/projects.js', '/static/automatic.js',
   '/static/masking.js', '/static/identity.js', '/static/actions.js', '/static/share-store.js', '/static/sharing.js', '/static/sharing.css',
-  '/static/manifest.json', '/static/icon.svg', '/static/icon-192.png'];
+  '/static/manifest.json', '/static/icon.svg', '/static/icon-192.png', '/static/video.js', '/static/video.css'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL.map(path => new Request(path, {cache:'reload'})))).then(() => self.skipWaiting()));
