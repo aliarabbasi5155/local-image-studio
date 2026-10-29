@@ -22,8 +22,8 @@ async function savedMedia(request, url) {
   const saved = await (await caches.open(OfflineCopy.media)).match(url.pathname);
   if (!saved) return fetch(request);
   const headers = new Headers(saved.headers), [, kind, id] = MEDIA.exec(url.pathname);
-  if (url.searchParams.get('download') === '1')
-    headers.set('Content-Disposition', `attachment; filename="${kind === 'video' ? `${id}.mp4` : `studio-${id}${kind === 'thumb' ? '.webp' : '.png'}`}"`);
+  const extension = {'image/jpeg':'.jpg', 'image/webp':'.webp', 'video/mp4':'.mp4'}[headers.get('Content-Type')] || '.png';
+  if (url.searchParams.get('download') === '1') headers.set('Content-Disposition', `attachment; filename="${kind === 'video' ? '' : 'studio-'}${id}${extension}"`);
   // Video players ask for byte ranges, and Safari plays nothing without them.
   const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('Range') || '');
   if (!range || (!range[1] && !range[2])) return new Response(saved.body, {headers});

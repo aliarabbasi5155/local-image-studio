@@ -4,6 +4,7 @@ import sqlite3
 import time
 import uuid
 from pathlib import Path
+from .media import media_file
 from .projects import Projects
 
 
@@ -68,8 +69,7 @@ class Store:
                 # An uploaded original can remain an independent comparison source.
                 if member and member['kind']=='upload':
                     continue
-                for folder, suffix in (("images", ".png"), ("thumbs", ".webp")):
-                    original = self.directory / folder / (image_id + suffix)
+                for original in (media_file(self.directory, "images", image_id), self.directory / "thumbs" / (image_id + ".webp")):
                     if original.exists():
                         temporary = original.with_name(original.name + ".deleting")
                         original.rename(temporary)

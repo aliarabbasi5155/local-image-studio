@@ -13,6 +13,8 @@ import numpy as np
 from aiohttp import web
 from PIL import Image, ImageOps
 
+from .media import media_file
+
 CONFIG = json.loads((Path(__file__).resolve().parents[1] / "config/video.json").read_text())
 SIZES = {"landscape": (768, 512), "portrait": (512, 768), "square": (512, 512)}
 
@@ -144,7 +146,7 @@ class Videos:
             video_id = str(uuid.uuid4())
             recipe.update(source_id=source_id, id=video_id)
             # Independent source survives later image/project deletion.
-            source_path = self.store.directory / "uploads" / (source_id + ".png")
+            source_path = media_file(self.store.directory, "uploads", source_id)
             try:
                 save_video_source(source_path, self.directory / (video_id + ".png"), recipe)
                 self.store.execute("INSERT INTO videos (id,created,status,recipe) VALUES (?,?,?,?)",

@@ -3,6 +3,8 @@ import json
 import time
 import uuid
 
+from .media import media_file
+
 
 ACTIVE = ("queued", "submitted", "running")
 
@@ -217,15 +219,15 @@ class Projects:
             used_elsewhere = self.store.one(f"SELECT v.id FROM versions v WHERE v.project_id NOT IN ({marks}) AND v.source_id=?", (*project_ids, source["id"]))
             if not used_elsewhere:
                 removable_sources.append(source["id"])
-        files = [("images",v["id"],".png") for v in members if v["kind"] == "image"]
+        directory = self.store.directory
         masks = [mask for source_id in removable_sources for mask in self.store.rows("SELECT id FROM masks WHERE source_id=?", (source_id,))]
-        files += [("masks",mask["id"],".png") for mask in masks]
-        files += [("uploads",source_id,".png") for source_id in removable_sources]
-        files += [("thumbs",image_id,".webp") for image_id in {v["id"] for v in members if v["kind"]=='image'} | set(removable_sources)]
+        files = [media_file(directory, "images", v["id"]) for v in members if v["kind"] == "image"]
+        files += [directory / "masks" / (mask["id"] + ".png") for mask in masks]
+        files += [media_file(directory, "uploads", source_id) for source_id in removable_sources]
+        files += [directory / "thumbs" / (image_id + ".webp") for image_id in {v["id"] for v in members if v["kind"]=='image'} | set(removable_sources)]
         staged = []
         try:
-            for folder, image_id, suffix in files:
-                path = self.store.directory / folder / (image_id+suffix)
+            for path in files:
                 if path.exists():
                     temporary = path.with_name(path.name+".deleting")
                     path.rename(temporary)

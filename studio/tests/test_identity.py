@@ -5,7 +5,7 @@ import unittest
 
 import aiohttp
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 from studio.identity import DONOR_SIDE, blend_width, grow, body_guide_image, donor_body, donor_crops, engine_donor, identity_hint, swap_areas, validate_parts, request_parts, swap_hint
 from studio.metrics import guided
@@ -312,6 +312,15 @@ class IdentityEngineTests(unittest.IsolatedAsyncioTestCase):
     wait_images = engine_fixtures.EngineTests.wait_images
     photo = IdentityAPITests.photo
 
+    def assertJpegEqual(self, actual, color, tolerance=2):
+        self.assertLessEqual(int(np.abs(np.asarray(actual, int) - np.asarray(color, int)).max()), tolerance)
+
+    def assertKept(self, pixels, area, color):
+        # Results are saved as JPEG: exact beyond the 8px blocks that straddle the area's edge, where it rings slightly.
+        grown = np.asarray(Image.fromarray(~area * np.uint8(255)).filter(ImageFilter.MaxFilter(17))) > 0
+        self.assertJpegEqual(pixels[area & ~grown], color)
+        self.assertJpegEqual(pixels[area], color, tolerance=24)
+
     async def test_whole_worker_composes_head_body_and_protected_glass(self):
         target, donor = await self.photo((400, 600), "coral"), await self.photo((400, 600), "seagreen")
         async def select(path, query, *args):
@@ -350,13 +359,13 @@ class IdentityEngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("-identity-2.png", graph["2"]["inputs"]["image_paths"])
         content = await (await self.client.get(f"/media/image/{image['id']}")).read()
         with Image.open(io.BytesIO(content)) as output:
-            self.assertEqual(output.getpixel((200, 130)), (255, 215, 0))  # detailed head
-            self.assertEqual(output.getpixel((200, 400)), (0, 0, 128))  # replaced body
-            self.assertEqual(output.getpixel((240, 230)), (255, 127, 80))  # original glass
+            self.assertJpegEqual(output.getpixel((200, 130)), (255, 215, 0))  # detailed head
+            self.assertJpegEqual(output.getpixel((200, 400)), (0, 0, 128))  # replaced body
+            self.assertJpegEqual(output.getpixel((240, 230)), (255, 127, 80))  # original glass
             pixels = np.asarray(output)
-            workflow = json.loads(output.info["workflow"])
+            workflow = self.submitted[-1]["extra_data"]["extra_pnginfo"]["workflow"]
         with Image.open(self.app[STATE]["store"].directory / "masks" / (areas["mask"]["id"] + ".png")) as mask:
-            self.assertTrue((pixels[np.asarray(mask) == 0] == (255, 127, 80)).all())
+            self.assertKept(pixels, np.asarray(mask) == 0, (255, 127, 80))
         nodes = {node["id"]: node for node in workflow["nodes"]}
         self.assertEqual(len(nodes), len(workflow["nodes"]))
         for link_id, origin, slot, target, target_slot, _ in workflow["links"]:
@@ -389,8 +398,8 @@ class IdentityEngineTests(unittest.IsolatedAsyncioTestCase):
         with Image.open(io.BytesIO(content)) as result, Image.open(self.app[STATE]["store"].directory / "masks" / (areas["mask"]["id"] + ".png")) as mask:
             changed = np.asarray(mask.convert("L")) > 0
             pixels = np.asarray(result.convert("RGB"))
-            self.assertTrue((pixels[~changed] == (255, 127, 80)).all())
-            self.assertTrue((pixels[changed] == (0, 0, 128)).all())
+            self.assertKept(pixels, ~changed, (255, 127, 80))
+            self.assertKept(pixels, changed, (0, 0, 128))
 
     async def test_reference_crop_is_limited_per_quality(self):
         store = self.app[STATE]["store"]

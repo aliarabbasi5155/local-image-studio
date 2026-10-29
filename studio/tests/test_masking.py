@@ -10,6 +10,7 @@ from PIL import Image, ImageChops, ImageDraw, PngImagePlugin
 
 from studio.masking import engine_mask, engine_reference, masked_size, feather_mask, align_patch, match_colors, match_local_colors, automatic_feather, blend_selected, normalize_mask, protect_unselected
 from studio.engine import QUALITIES
+from studio.media import save_jpeg
 from studio.server import STATE
 from studio.storage import Store
 from studio.tests import test_projects as project_fixtures
@@ -320,12 +321,14 @@ class MaskEngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.upload_names[1].endswith('-mask.png'))
         self.assertEqual(recipe['parent_version_id'],source['id'])
         content=await (await self.client.get('/media/image/'+image_id)).read()
-        with Image.open(io.BytesIO(content)) as png:
+        with Image.open(io.BytesIO(content)) as saved:
             expected=Image.new('RGB',(751,497),'coral');expected.paste(Image.new('RGB',(41,41),'navy'),(300,200))
-            self.assertEqual(png.size,expected.size)
-            self.assertEqual(png.tobytes(),expected.tobytes())
-            self.assertEqual(json.loads(png.info['studio']),recipe)
-            workflow=json.loads(png.info['workflow']);nodes={n['id']:n for n in workflow['nodes']}
+            # JPEG encoding is deterministic: the saved photo is exactly the encoded pixel-exact blend.
+            encoded=io.BytesIO();save_jpeg(expected,encoded)
+            self.assertEqual(saved.size,expected.size)
+            self.assertEqual(saved.tobytes(),Image.open(encoded).tobytes())
+            self.assertEqual(json.loads(saved.info['comment']),recipe)
+            workflow=self.submitted[0]['extra_data']['extra_pnginfo']['workflow'];nodes={n['id']:n for n in workflow['nodes']}
             for link in workflow['links']:
                 identity,origin,slot,target,target_slot,kind=link
                 self.assertIn(identity,nodes[origin]['outputs'][slot]['links'])

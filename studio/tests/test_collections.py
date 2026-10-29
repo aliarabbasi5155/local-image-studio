@@ -11,6 +11,7 @@ import aiohttp
 from PIL import Image
 
 import test_projects as fixtures
+from studio.media import media_file
 from studio.server import STATE
 from studio.storage import Store
 
@@ -65,7 +66,7 @@ class CollectionTests(unittest.IsolatedAsyncioTestCase):
             response = await self.client.post('/api/bulk',json={'scope':'images','ids':ids,'action':'delete','confirm':True})
             self.assertEqual(response.status,400)
 
-    async def test_zip_contains_only_selected_full_images_and_png_metadata_or_jpg(self):
+    async def test_zip_contains_only_selected_full_images_as_saved_or_as_jpg(self):
         root,other = await self.upload(),await self.upload()
         child, = await self.edit(root['project_id'],root['id'])
         for scope,ids,expected in [('projects',[root['project_id']],{root['id'],child}),('images',[child],{child})]:
@@ -82,7 +83,10 @@ class CollectionTests(unittest.IsolatedAsyncioTestCase):
                     image_id = name.rsplit('/',1)[1][7:].rsplit('.',1)[0]
                     with Image.open(io.BytesIO(archive.read(name))) as image:
                         self.assertEqual(image.size,(240,160))
-                        self.assertEqual(image.format,'PNG' if image_format=='png' else 'JPEG')
+                        # Uploads are saved as JPEG, the helper's results as PNG; the PNG ZIP keeps each as saved.
+                        saved='JPEG' if image_id==root['id'] else 'PNG'
+                        self.assertEqual(image.format,saved if image_format=='png' else 'JPEG')
+                        self.assertEqual(name.rsplit('.',1)[1],{'PNG':'png','JPEG':'jpg'}[image.format])
                         if image_format=='png' and image_id==child:
                             self.assertEqual(json.loads(image.info['studio']),self.store.image(child)['recipe'])
                 token = download['url'].rsplit('/',1)[1]
@@ -107,7 +111,7 @@ class CollectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.post('/api/bulk',json=payload)).status,200)
         self.assertEqual(self.store.projects.library()['total'],1)
         self.assertEqual((await self.client.get(kept['url'])).status,200)
-        self.assertFalse((self.store.directory/'uploads'/(root['id']+'.png')).exists())
+        self.assertFalse(media_file(self.store.directory,'uploads',root['id']).exists())
 
     async def test_bulk_delete_original_and_parent_keeps_descendant_comparisons_then_cleans_empty_project(self):
         response = await self.client.post('/api/generate',json={'prompt':'Original','quality':'fast'})
@@ -126,13 +130,13 @@ class CollectionTests(unittest.IsolatedAsyncioTestCase):
         payload['ids'] = [grandchild]
         self.assertEqual((await self.client.post('/api/bulk',json=payload)).status,200)
         self.assertIsNone(self.store.projects.detail(root))
-        self.assertEqual(len(list((self.store.directory/'uploads').glob('*.png'))),0)
+        self.assertEqual([p for p in (self.store.directory/'uploads').iterdir() if p.suffix in ('.png','.jpg')],[])
 
     async def test_original_without_children_is_fully_deleted_and_unready_download_is_rejected(self):
         root = await self.upload()
         self.assertEqual((await self.client.delete(f'/api/projects/{root["project_id"]}/versions/{root["id"]}',json={'confirm':True})).status,200)
         self.assertIsNone(self.store.projects.detail(root['project_id']))
-        self.assertFalse((self.store.directory/'uploads'/(root['id']+'.png')).exists())
+        self.assertFalse(media_file(self.store.directory,'uploads',root['id']).exists())
         response = await self.client.post('/api/generate',json={'prompt':'Pending','quality':'fast'})
         job_id = (await response.json())['jobs'][0]
         self.assertEqual((await self.client.post('/api/bulk-download',json={'scope':'images','ids':[job_id]})).status,409)

@@ -18,6 +18,7 @@ from PIL import Image, ImageChops, ImageOps, UnidentifiedImageError
 
 from .engine import Engine, QUALITIES, make_thumbnail
 from .storage import Store
+from .media import media_file, save_jpeg
 from .metrics import Metrics
 from .downloads import Downloads
 from .video import Videos
@@ -175,7 +176,7 @@ async def automatic_mask(request):
         return failure("Your Mac is making an image. Try automatic selection when it finishes.", 409)
     async with engine.resource_lock:
         try:
-            result = await state["automask"].select(state["store"].directory / "uploads" / (source["id"] + ".png"), target, protect, skin)
+            result = await state["automask"].select(media_file(state["store"].directory, "uploads", source["id"]), target, protect, skin)
         except AutomaticSelectionError as error:
             return failure(str(error),error.status)
     return web.json_response(result)
@@ -216,10 +217,10 @@ async def identity_areas(request):
     started = time.monotonic()
     async with engine.resource_lock:
         try:
-            target = await state["automask"].select(store.directory / "uploads" / (source["id"] + ".png"),
+            target = await state["automask"].select(media_file(store.directory, "uploads", source["id"]),
                                                   (keep_object or "object held in hand") if swap_mode else "", True, swap_mode == "whole", CONCEPTS)
             # A body guide also needs the reference's visible skin, for its skin tone.
-            reference = await state["automask"].select(store.directory / "uploads" / (donor["id"] + ".png"), "", True, body_guide(parts), CONCEPTS)
+            reference = await state["automask"].select(media_file(store.directory, "uploads", donor["id"]), "", True, body_guide(parts), CONCEPTS)
         except AutomaticSelectionError as error:
             return failure(str(error), error.status)
     try:
@@ -228,7 +229,7 @@ async def identity_areas(request):
         head = await asyncio.to_thread(swap_areas, target, ["head"], reference) if swap_mode == "whole" else None
         if head:
             crops += await asyncio.to_thread(donor_crops, reference, ["head"], donor["width"], donor["height"])
-        silhouette = await asyncio.to_thread(donor_body, reference, store.directory / "uploads" / (donor["id"] + ".png")) if body_guide(parts) else None
+        silhouette = await asyncio.to_thread(donor_body, reference, media_file(store.directory, "uploads", donor["id"])) if body_guide(parts) else None
     except ValueError as error:
         return failure(str(error))
     guide = None
@@ -253,9 +254,13 @@ def normalized_upload(content, path, thumb):
             raise ValueError("Choose an image between 64 pixels and 16 megapixels.")
         if image.format not in ("PNG", "JPEG", "WEBP"):
             raise ValueError("Choose a PNG, JPEG or WebP image.")
-        image = ImageOps.exif_transpose(image).convert("RGB")
-        width, height = image.size
-        image.save(path, "PNG")
+        width, height = ImageOps.exif_transpose(image).size
+        if image.format == "JPEG" and image.mode == "RGB" and not image.getexif():
+            # The studio's own JPEGs carry no EXIF and need no rotation; keep them exactly. Phone
+            # photos are re-encoded, which also drops their location data.
+            path.write_bytes(content)
+        else:
+            save_jpeg(ImageOps.exif_transpose(image), path)
     make_thumbnail(path, thumb)
     return width, height, hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -263,7 +268,7 @@ def normalized_upload(content, path, thumb):
 async def save_upload(state, content, name, create_project=False):
     upload_id = str(uuid.uuid4())
     directory = state["store"].directory
-    path = directory / "uploads" / (upload_id + ".png")
+    path = directory / "uploads" / (upload_id + ".jpg")
     try:
         width, height, digest = await asyncio.to_thread(normalized_upload, content, path, directory / "thumbs" / (upload_id + ".webp"))
     except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError):
@@ -622,7 +627,7 @@ async def project_edit_source(request):
     if not version or version["project_id"] != request.match_info["id"] or not version["ready"]:
         raise web.HTTPNotFound()
     if version["kind"] == "image":
-        content = (state["store"].directory / "images" / (version["id"]+".png")).read_bytes()
+        content = media_file(state["store"].directory, "images", version["id"]).read_bytes()
         result = await save_upload(state,content,"Studio image")
         state["store"].projects.bind_source(result["id"],version["project_id"],version["id"])
         result["parent_image_id"] = version["id"]
@@ -684,7 +689,7 @@ async def delete_versions(state, versions):
         if version["id"] == project["root_id"] and version["ready"]:
             if version["kind"] == "image" and not store.one(
                     "SELECT id FROM project_sources WHERE project_id=? AND parent_id=?", (project["id"], version["id"])):
-                source = await save_upload(state, (store.directory / "images" / (version["id"] + ".png")).read_bytes(), "Studio image")
+                source = await save_upload(state, media_file(store.directory, "images", version["id"]).read_bytes(), "Studio image")
                 store.projects.bind_source(source["id"], project["id"], version["id"])
             elif version["kind"] == "upload":
                 store.projects.bind_source(version["id"], project["id"], version["id"])
@@ -755,7 +760,7 @@ async def bulk_download(request):
     if not versions:
         return failure("There are no finished images to download.", 409)
     files = [(f'project-{v["project_id"][:8]}/studio-{v["id"]}',
-              state["store"].directory / ("uploads" if v["kind"] == "upload" else "images") / (v["id"] + ".png")) for v in versions]
+              media_file(state["store"].directory, "uploads" if v["kind"] == "upload" else "images", v["id"])) for v in versions]
     try:
         result = await state["downloads"].create(files, image_format, jpeg_download)
     except FileNotFoundError:
@@ -898,7 +903,9 @@ async def delete_image(request):
 
 
 def jpeg_download(path):
-    """Encode a sharing copy without changing the saved PNG or its dimensions."""
+    """A sharing copy at the saved dimensions; photos saved as JPEG are shared as they are."""
+    if path.suffix == ".jpg":
+        return path.read_bytes()
     with Image.open(path) as original:
         profile = original.info.get("icc_profile")
         if original.mode in ("RGBA", "LA") or "transparency" in original.info:
@@ -920,7 +927,7 @@ async def media(request):
     except ValueError:
         raise web.HTTPNotFound()
     kind = request.match_info["kind"]
-    folders = {"image": ("images", ".png"), "upload": ("uploads", ".png"), "thumb": ("thumbs", ".webp"), "mask": ("masks", ".png")}
+    folders = {"image": "images", "upload": "uploads", "thumb": "thumbs", "mask": "masks"}
     if kind not in folders:
         raise web.HTTPNotFound()
     image_exists = state["store"].one("SELECT id FROM images WHERE id=?", (media_id,))
@@ -928,17 +935,20 @@ async def media(request):
     mask_exists = state["store"].one("SELECT id FROM masks WHERE id=?", (media_id,)) if kind == "mask" else None
     if not {"image": image_exists, "upload": upload_exists, "thumb": image_exists or upload_exists, "mask": mask_exists}[kind]:
         raise web.HTTPNotFound()
-    folder, suffix = folders[kind]
-    path = state["store"].directory / folder / (media_id + suffix)
+    directory = state["store"].directory
+    path = (media_file(directory, folders[kind], media_id) if kind in ("image", "upload")
+            else directory / folders[kind] / (media_id + (".webp" if kind == "thumb" else ".png")))
     if not path.is_file():
         raise web.HTTPNotFound()
     output_format = request.query.get("format")
     if output_format is not None and (kind not in ("image", "upload") or output_format not in ("png", "jpg", "jpeg")):
         return failure("Choose PNG or JPG for a full-size image download.")
     headers = {}
-    jpeg = output_format in ("jpg", "jpeg")
+    jpeg = output_format in ("jpg", "jpeg") and path.suffix != ".jpg"
+    if output_format == "png" and path.suffix != ".png":
+        return failure("This photo is saved as JPG. Download it as JPG.")
     if request.query.get("download") == "1":
-        extension = ".jpg" if jpeg else suffix
+        extension = ".jpg" if jpeg else path.suffix
         headers["Content-Disposition"] = f'attachment; filename="studio-{media_id}{extension}"'
     if jpeg:
         try:

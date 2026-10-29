@@ -429,10 +429,13 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(graph["2"]["inputs"]["image"],["5",0])
         self.assertFalse(graph["2"]["inputs"]["use_kv_cache"])
         self.assertEqual(len(self.upload_names),1)
-        path = Path(self.temp.name)/"images"/(edited["id"]+".png")
+        # Results are saved as JPEG with the recipe in the comment; the engine still received the workflow.
+        path = Path(self.temp.name)/"images"/(edited["id"]+".jpg")
         with Image.open(path) as image:
-            self.assertEqual(json.loads(image.info["studio"]),edited["recipe"])
-            self.assertIn("workflow",image.info)
+            self.assertEqual(image.format,"JPEG")
+            self.assertEqual(json.loads(image.info["comment"]),edited["recipe"])
+        self.assertIn("workflow",self.submitted[-1]["extra_data"]["extra_pnginfo"])
+        self.assertFalse(path.with_suffix(".png").exists())
         self.assertEqual((await self.client.get(f"/media/thumb/{edited['id']}")).status,200)
 
     async def test_worker_both_no_resize_modes_bypass_upscaler_and_save_model_pixels(self):
@@ -443,9 +446,9 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             image = next(item for item in images if item["id"]==image_id)
             graph = self.submitted[-1]["prompt"]
             self.assertFalse({"ImageScale","ImageUpscaleWithModel","UpscaleModelLoader","SaveImage"} & {node["class_type"] for node in graph.values()})
-            with Image.open(Path(self.temp.name)/"images"/(image_id+".png")) as png:
-                self.assertEqual(png.size,expected)
-                self.assertEqual(json.loads(png.info["studio"]),image["recipe"])
+            with Image.open(Path(self.temp.name)/"images"/(image_id+".jpg")) as saved:
+                self.assertEqual(saved.size,expected)
+                self.assertEqual(json.loads(saved.info["comment"]),image["recipe"])
             self.assertEqual(image["recipe"]["resize_mode"],resize_mode)
 
     async def test_worker_saves_final_size_png_with_complete_upscale_workflow(self):
@@ -461,11 +464,11 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(graph["7"]["inputs"]["image"],["2",0])
         self.assertEqual(graph["8"]["inputs"]["width"],643)
         self.assertEqual(graph["9"]["inputs"]["images"],["8",0])
-        path = Path(self.temp.name)/"images"/(image["id"]+".png")
-        with Image.open(path) as png:
-            self.assertEqual(png.size,(643,427))
-            self.assertEqual(json.loads(png.info["studio"]),image["recipe"])
-            workflow = json.loads(png.info["workflow"])
+        path = Path(self.temp.name)/"images"/(image["id"]+".jpg")
+        with Image.open(path) as saved:
+            self.assertEqual(saved.size,(643,427))
+            self.assertEqual(json.loads(saved.info["comment"]),image["recipe"])
+            workflow = submitted["extra_data"]["extra_pnginfo"]["workflow"]
             self.assertTrue({"UpscaleModelLoader","ImageUpscaleWithModel","ImageScale","SaveImage"} <= {n["type"] for n in workflow["nodes"]})
             nodes = {node["id"]:node for node in workflow["nodes"]}
             for link_id,origin,origin_slot,target,target_slot,_ in workflow["links"]:
@@ -474,8 +477,8 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         await self.client.post("/api/generate",json={"prompt":"A cafe","quality":"fast","output_size":"2k"})
         images = await self.wait_images(2)
         image_2k = next(item for item in images if item["recipe"]["output_size"] == "2k")
-        with Image.open(Path(self.temp.name)/"images"/(image_2k["id"]+".png")) as png:
-            self.assertEqual(png.size,(2048,2048))
+        with Image.open(Path(self.temp.name)/"images"/(image_2k["id"]+".jpg")) as saved:
+            self.assertEqual(saved.size,(2048,2048))
 
         # A canvas rounded up to the next multiple of 16 needs only a resize.
         form = aiohttp.FormData()
@@ -490,9 +493,9 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("6",graph)
         self.assertNotIn("7",graph)
         self.assertEqual(graph["8"]["inputs"]["image"],["2",0])
-        with Image.open(Path(self.temp.name)/"images"/(small_id+".png")) as png:
-            self.assertEqual(png.size,(79,79))
-            self.assertEqual(json.loads(png.info["studio"]),small_image["recipe"])
+        with Image.open(Path(self.temp.name)/"images"/(small_id+".jpg")) as saved:
+            self.assertEqual(saved.size,(79,79))
+            self.assertEqual(json.loads(saved.info["comment"]),small_image["recipe"])
 
 
 if __name__ == "__main__":

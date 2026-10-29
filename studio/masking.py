@@ -8,6 +8,7 @@ import numpy as np
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps, PngImagePlugin
 
+from .media import media_file
 from .sizing import MAX_PIXELS, MAX_SIDE
 
 
@@ -81,7 +82,7 @@ def engine_reference(directory, recipe):
     selection = recipe["masked_edit"]
     x,y,width,height = selection["crop"]
     left,top,cw,ch = selection["canvas_content"]
-    with Image.open(directory / "uploads" / (recipe["source_id"] + ".png")) as original:
+    with Image.open(media_file(directory, "uploads", recipe["source_id"])) as original:
         content = original.convert("RGB")
         if recipe.get("identity_swap", {}).get("appearance_mask"):
             from .identity import neutralize_clothing
@@ -323,7 +324,7 @@ def blend_selected(path, directory, recipe, base_path=None):
     selection = recipe["masked_edit"]
     x,y,width,height = selection["crop"]
     left,top,cw,ch = selection["canvas_content"]
-    with Image.open(path) as generated, Image.open(directory/"uploads"/(recipe["source_id"]+".png")) as source, Image.open(directory/"masks"/(selection["mask_id"]+".png")) as raw:
+    with Image.open(path) as generated, Image.open(media_file(directory, "uploads", recipe["source_id"])) as source, Image.open(directory/"masks"/(selection["mask_id"]+".png")) as raw:
         if generated.size!=(recipe["generation_width"],recipe["generation_height"]):
             raise ValueError("The edited patch has an unexpected canvas size.")
         original=source.convert("RGB")
@@ -380,7 +381,7 @@ def engine_mask(directory, recipe):
 
 def protect_unselected(path, directory, recipe):
     """Avoid any float/PNG roundtrip changing pixels outside the selection."""
-    with Image.open(path) as generated, Image.open(directory / "uploads" / (recipe["source_id"] + ".png")) as source, Image.open(directory / "masks" / (recipe["masked_edit"]["mask_id"] + ".png")) as raw:
+    with Image.open(path) as generated, Image.open(media_file(directory, "uploads", recipe["source_id"])) as source, Image.open(directory / "masks" / (recipe["masked_edit"]["mask_id"] + ".png")) as raw:
         metadata = PngImagePlugin.PngInfo()
         for key in ("prompt", "workflow", "studio"):
             if key in generated.info:

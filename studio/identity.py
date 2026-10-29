@@ -11,6 +11,8 @@ import io
 import numpy as np
 from PIL import Image, ImageChops, ImageFilter
 
+from .media import media_file
+
 PARTS = ("face", "head", "body", "clothes")
 MODES = {"head": ["head"], "whole": list(PARTS)}
 CONCEPTS = ("hair", "person")
@@ -280,7 +282,7 @@ def engine_donor(directory, recipe):
     swap = recipe["identity_swap"]
     limit = DONOR_SIDE[recipe["quality"]]
     references = []
-    with Image.open(directory / "uploads" / (swap["donor_id"] + ".png")) as image:
+    with Image.open(media_file(directory, "uploads", swap["donor_id"])) as image:
         photo = image.convert("RGB")
     for index, (x, y, width, height) in enumerate(swap["donor_crops"]):
         crop = body_guide_image(directory, swap["body_guide"], [x, y, width, height]) if index == 0 and swap.get("body_guide") else \

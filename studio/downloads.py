@@ -29,7 +29,7 @@ class Downloads:
                     if image_format == "jpg":
                         archive.writestr(name + ".jpg", jpeg_encoder(source))
                     else:
-                        archive.write(source, name + ".png")
+                        archive.write(source, name + source.suffix)
         try:
             async with self.lock:
                 self.prune()

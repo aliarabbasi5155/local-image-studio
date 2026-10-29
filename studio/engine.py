@@ -10,6 +10,7 @@ from pathlib import Path
 
 import aiohttp
 from PIL import Image, ImageOps
+from .media import media_file, save_jpeg
 from .native import NativeEngine
 from .masking import engine_mask, engine_reference, engine_placement_guide, engine_shape_guide, blend_selected, protect_unselected
 from .identity import engine_donor, identity_hint, refinement_recipe, swap_hint
@@ -313,6 +314,14 @@ def append_processing(graph, workflow, recipe, prefix):
     workflow["last_node_id"] = 9; workflow["last_link_id"] = next_link - 1
 
 
+def save_result(temporary, path, recipe):
+    """The engine hands back a PNG; the library keeps a JPEG with the recipe inside."""
+    with Image.open(temporary) as image:
+        save_jpeg(image, path.with_suffix(".jpg.part"), recipe)
+    path.with_suffix(".jpg.part").replace(path)
+    temporary.unlink()
+
+
 def make_thumbnail(source, destination):
     with Image.open(source) as image:
         image = ImageOps.exif_transpose(image).convert("RGB")
@@ -400,7 +409,7 @@ class Engine:
         async with self.session.get(self.base + "/view", params=output) as response:
             response.raise_for_status()
             content = await response.read()
-        path = self.store.directory / "images" / (job["id"] + ".png")
+        path = self.store.directory / "images" / (job["id"] + ".jpg")
         temporary = path.with_suffix(".part")
         temporary.write_bytes(content)
         with Image.open(temporary) as image:
@@ -432,7 +441,7 @@ class Engine:
                     head_path.unlink(missing_ok=True)
         elif recipe.get("masked_edit"):
             await asyncio.to_thread(protect_unselected, temporary, self.store.directory, recipe)
-        temporary.replace(path)
+        await asyncio.to_thread(save_result, temporary, path, recipe)
         await asyncio.to_thread(make_thumbnail, path, self.store.directory / "thumbs" / (job["id"] + ".webp"))
         with self.store.db:
             self.store.db.execute("INSERT OR IGNORE INTO images (id,created,filename,recipe) VALUES (?,?,?,?)",
@@ -459,10 +468,10 @@ class Engine:
         async with self.session.ws_connect(self.base + "/ws", params={"clientId": self.client_id}, heartbeat=20) as ws:
             if not prompt_id:
                 if job["recipe"]["mode"] == "edit":
-                    source = self.store.directory / "uploads" / (job["recipe"]["source_id"] + ".png")
+                    source = media_file(self.store.directory, "uploads", job["recipe"]["source_id"])
                     with source.open("rb") as file:
                         form = aiohttp.FormData()
-                        form.add_field("image", file, filename=source.name, content_type="image/png")
+                        form.add_field("image", file, filename=source.name, content_type="image/jpeg" if source.suffix == ".jpg" else "image/png")
                         form.add_field("subfolder", "web-studio")
                         form.add_field("overwrite", "true")
                         uploaded = await self.request("POST", "/upload/image", data=form)
