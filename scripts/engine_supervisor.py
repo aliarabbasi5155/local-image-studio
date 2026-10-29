@@ -1,11 +1,41 @@
 """Own the native image process, waking it on demand and stopping it when idle."""
 import asyncio
 import contextlib
+import os
 import time
 from pathlib import Path
 
 import aiohttp
 import psutil
+
+
+# Set in the environment of the engine this helper starts, so a restarted helper can find it again.
+MARKER = "STUDIO_ENGINE_OWNER"
+
+
+class AdoptedProcess:
+    """An engine this helper started before it last restarted, controlled like a fresh child."""
+    def __init__(self, process):
+        self.process = process
+
+    @property
+    def returncode(self):
+        try:
+            return None if self.process.status() != psutil.STATUS_ZOMBIE else 0
+        except psutil.NoSuchProcess:
+            return 0
+
+    def terminate(self):
+        with contextlib.suppress(psutil.NoSuchProcess):
+            self.process.terminate()
+
+    def kill(self):
+        with contextlib.suppress(psutil.NoSuchProcess):
+            self.process.kill()
+
+    async def wait(self):
+        with contextlib.suppress(psutil.NoSuchProcess):
+            await asyncio.to_thread(self.process.wait)
 
 
 class EngineSupervisor:
@@ -19,6 +49,7 @@ class EngineSupervisor:
         self.started = None
         self.error = None
         self.session = None
+        self.searched = 0
 
     async def probe(self, path):
         async with self.session.get(self.base + path) as response:
@@ -34,9 +65,22 @@ class EngineSupervisor:
             if str(self.root / "outputs") not in stats.get("system", {}).get("argv", []):
                 return "unavailable"
             self.started = None
+            if not self.process and time.monotonic() - self.searched > 30:
+                self.searched = time.monotonic()
+                found = await asyncio.to_thread(self.find_own_engine)
+                if found:
+                    self.process = AdoptedProcess(found)
             return "ready"
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
             return ("starting" if self.started is not None else "unresponsive") if self.process else "sleeping"
+
+    def find_own_engine(self):
+        """The ComfyUI this helper started before a restart. One started by hand has no marker and stays its own."""
+        outputs = str(self.root / "outputs")
+        for process in psutil.process_iter(["cmdline", "environ"]):
+            if outputs in (process.info["cmdline"] or []) and (process.info["environ"] or {}).get(MARKER) == "helper":
+                return process
+        return None
 
     async def status(self):
         state = await self.state()
@@ -58,7 +102,7 @@ class EngineSupervisor:
                 self.error = None
                 with (self.root / "runtime/comfyui-launcher.log").open("a") as log:
                     self.process = await asyncio.create_subprocess_exec(
-                        str(self.root / "scripts/start.sh"), cwd=self.root,
+                        str(self.root / "scripts/start.sh"), cwd=self.root, env={**os.environ, MARKER: "helper"},
                         stdout=log, stderr=log, stdin=asyncio.subprocess.DEVNULL)
                 self.started = time.monotonic()
             return await self.status()

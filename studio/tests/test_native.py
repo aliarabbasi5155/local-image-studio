@@ -9,7 +9,7 @@ import aiohttp
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from scripts.engine_supervisor import EngineSupervisor
+from scripts.engine_supervisor import MARKER, AdoptedProcess, EngineSupervisor
 from studio.native import NativeEngine
 
 
@@ -25,6 +25,8 @@ class SupervisorTests(unittest.IsolatedAsyncioTestCase):
         self.engine.started = time.monotonic()
         self.engine.last_activity = time.monotonic() - 601
         self.engine.probe = AsyncMock(side_effect=self.probe)
+        # Never look at this Mac's real processes from a test.
+        self.engine.find_own_engine = Mock(return_value=None)
         self.queue = {'queue_running': [], 'queue_pending': []}
 
     async def asyncTearDown(self):
@@ -62,6 +64,32 @@ class SupervisorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.engine.wake())['state'], 'ready')
         await self.engine.check_idle()
         self.process.terminate.assert_not_called()
+
+    async def test_restarted_helper_adopts_its_own_engine_but_not_one_started_by_hand(self):
+        self.engine.process = None
+        found = Mock(); found.status.return_value = 'running'; found.wait = Mock()
+        self.engine.find_own_engine = Mock(return_value=found)
+        self.assertEqual((await self.engine.status())['managed'], True)
+        await self.engine.check_idle()
+        found.terminate.assert_called_once()
+        self.assertIsNone(self.engine.process)
+        # The search itself: only a ComfyUI with the helper's marker and this project's outputs counts.
+        outputs = str(self.root / 'outputs')
+        def process(cmdline, environ):
+            return Mock(info={'cmdline': cmdline, 'environ': environ})
+        candidates = [process(['main.py', '--output-directory', outputs], {}), process(['main.py', '--output-directory', '/other'], {MARKER: 'helper'}),
+                      process(None, None), process(['main.py', '--output-directory', outputs], {MARKER: 'helper'})]
+        with patch('scripts.engine_supervisor.psutil.process_iter', return_value=candidates):
+            self.assertIs(EngineSupervisor.find_own_engine(self.engine), candidates[3])
+        with patch('scripts.engine_supervisor.psutil.process_iter', return_value=candidates[:3]):
+            self.assertIsNone(EngineSupervisor.find_own_engine(self.engine))
+
+    async def test_spawned_engine_carries_the_marker(self):
+        self.engine.process = None
+        self.engine.probe = AsyncMock(side_effect=aiohttp.ClientConnectionError())
+        with patch('scripts.engine_supervisor.asyncio.create_subprocess_exec', AsyncMock(return_value=self.process)) as spawn:
+            await self.engine.wake()
+        self.assertEqual(spawn.await_args.kwargs['env'][MARKER], 'helper')
 
     async def test_concurrent_wake_starts_only_one_process(self):
         self.engine.process = None
