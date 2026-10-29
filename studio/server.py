@@ -598,6 +598,14 @@ async def offline_copy(request):
     return web.Response(text=body, content_type="application/json", headers={"ETag": tag})
 
 
+async def photos(request):
+    section = request.query.get("section", "library")
+    if section not in ("library", "archive"):
+        return failure("Choose Library or Archive.")
+    return web.json_response(request.app[STATE]["store"].projects.images(section, request.query.get("q", "")[:200],
+        max(0, int(request.query.get("offset", 0))), min(1000, max(1, int(request.query.get("limit", 48))))))
+
+
 async def favorites(request):
     return web.json_response(request.app[STATE]["store"].projects.favorites(
         request.query.get("q", "")[:200], max(0, int(request.query.get("offset", 0))),
@@ -999,9 +1007,9 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
         web.get("/api/auth", auth), web.post("/api/login", login), web.post("/api/logout", logout),
         web.get("/api/health", health), web.get("/api/options", options),
         web.get("/api/videos/options", videos.options), web.get("/api/videos", videos.library),
-        web.post("/api/videos", videos.submit), web.post("/api/videos/{id}/cancel", videos.cancel),
+        web.post("/api/videos", videos.submit), web.post("/api/videos/{id}/cancel", videos.cancel), web.delete("/api/videos/{id}", videos.delete),
         web.get("/api/videos/{id}/recipe", videos.recipe), web.get("/media/video/{id}", videos.media),
-        web.get("/api/favorites", favorites), web.post("/api/bulk", bulk_action), web.get("/api/offline", offline_copy),
+        web.get("/api/favorites", favorites), web.get("/api/photos", photos), web.post("/api/bulk", bulk_action), web.get("/api/offline", offline_copy),
         web.post("/api/bulk-download", bulk_download), web.get("/api/downloads/{token}", download_archive),
         web.get("/api/projects",project_library), web.get("/api/projects/{id}",project_detail),
         web.patch("/api/projects/{id}",update_project), web.delete("/api/projects/{id}",delete_project),

@@ -98,13 +98,23 @@ class OfflineCopyTests(unittest.IsolatedAsyncioTestCase):
         lake, = await self.generate(prompt="A quiet lake at dawn")
         await self.client.patch(f"/api/projects/{harbor['project_id']}/versions/{first}", json={"favorite": True})
         await self.client.patch(f"/api/projects/{garden['project_id']}", json={"archived": True})
+        # Clips made from the first edit and the fox belong to their projects.
+        clips = []
+        for project_id, version_id in ((harbor["project_id"], first), (fox, fox)):
+            source = await (await self.client.post(f"/api/projects/{project_id}/versions/{version_id}/edit-source", json={})).json()
+            clips.append(str(uuid.uuid4()))
+            self.store.execute("INSERT INTO videos (id,created,status,recipe) VALUES (?,?,?,?)", (clips[-1], time.time(), "complete", json.dumps(
+                {"prompt": "Waves roll in", "source_id": source["id"], "width": 768, "height": 512, "frames": 97, "fps": 24})))
         copy = await (await self.client.get("/api/offline")).json()
+        self.assertEqual({v["id"] for p in copy["projects"] for v in p["videos"]}, set(clips))
 
         def queries():
             return [{"kind": "library", "section": section, "q": query, "offset": offset, "limit": limit}
                     for section, query, offset, limit in (("library", "", 0, 48), ("favorites", "", 0, 48), ("archive", "", 0, 48),
                                                           ("library", "FLOWER", 0, 48), ("library", "", 1, 1))] + \
                    [{"kind": "favorites", "q": query, "offset": 0, "limit": 48} for query in ("", "boat")] + \
+                   [{"kind": "photos", "section": section, "q": query, "offset": offset, "limit": limit}
+                    for section, query, offset, limit in (("library", "", 0, 48), ("archive", "", 0, 48), ("library", "fox", 0, 48), ("library", "", 2, 2))] + \
                    [{"kind": "detail", "id": harbor["project_id"]}]
         changes = [("PATCH", f"/api/projects/{fox}", {"favorite": True}),
                    ("PATCH", f"/api/projects/{harbor['project_id']}/versions/{first}", {"favorite": False}),
@@ -114,7 +124,9 @@ class OfflineCopyTests(unittest.IsolatedAsyncioTestCase):
                    ("POST", "/api/bulk", {"scope": "projects", "ids": [lake], "action": "delete"}),
                    ("DELETE", f"/api/projects/{lake}", {"confirm": True}),
                    ("PATCH", f"/api/projects/{harbor['project_id']}/versions/{second}", {"archived": True}),
-                   ("DELETE", f"/api/projects/{harbor['project_id']}/versions/{uuid.uuid4()}", {"confirm": True})]
+                   ("DELETE", f"/api/projects/{harbor['project_id']}/versions/{uuid.uuid4()}", {"confirm": True}),
+                   ("DELETE", f"/api/videos/{clips[0]}", {}), ("DELETE", f"/api/videos/{clips[0]}", {"confirm": True}),
+                   ("DELETE", f"/api/videos/{uuid.uuid4()}", {"confirm": True}), ("DELETE", f"/api/projects/{fox}", {"confirm": True})]
         steps = queries() + [{"change": {"method": m, "path": p, "body": b}} for m, p, b in changes] + queries()
         phone = json.loads((await asyncio.to_thread(subprocess.run, ["node", str(PARITY)], input=json.dumps({"copy": copy, "steps": steps}),
                                                     capture_output=True, text=True, check=True)).stdout)
@@ -127,6 +139,8 @@ class OfflineCopyTests(unittest.IsolatedAsyncioTestCase):
                 return (await self.json("GET", f"/api/projects?section={step['section']}&q={step['q']}&offset={step['offset']}&limit={step['limit']}"))["body"]
             if step["kind"] == "favorites":
                 return (await self.json("GET", f"/api/favorites?q={step['q']}&offset={step['offset']}&limit={step['limit']}"))["body"]
+            if step["kind"] == "photos":
+                return (await self.json("GET", f"/api/photos?section={step['section']}&q={step['q']}&offset={step['offset']}&limit={step['limit']}"))["body"]
             return (await self.json("GET", f"/api/projects/{step['id']}"))["body"]
         mac = [await answer(step) for step in steps]
         for index, (step, expected, actual) in enumerate(zip(steps, mac, phone)):

@@ -75,6 +75,34 @@ class VideoTests(unittest.IsolatedAsyncioTestCase):
         recipe = await (await self.client.get(f"/api/videos/{ids[0]}/recipe")).json()
         self.assertEqual(recipe["seed"], 10)
 
+    async def test_clips_live_in_their_project_and_go_with_it(self):
+        await self.login()
+        form = aiohttp.FormData()
+        form.add_field("image", photo(), filename="harbor.png", content_type="image/png")
+        upload = await (await self.client.post("/api/uploads", data=form)).json()
+        queued = (await (await self.submit_video(source_id=upload["id"])).json())["id"]
+        project = await (await self.client.get(f"/api/projects/{upload['project_id']}")).json()
+        clip, = project["videos"]
+        self.assertEqual((clip["id"], clip["kind"], clip["status"], clip["ready"]), (queued, "video", "queued", False))
+        self.assertEqual((clip["parent"]["id"], clip["thumbnail"]), (upload["id"], f"/media/thumb/{upload['id']}"))
+        self.assertEqual((await self.client.get(clip["thumbnail"])).status, 200)
+        card, = (await (await self.client.get("/api/projects")).json())["projects"]
+        self.assertEqual(([v["id"] for v in card["animating"]], card["cover"]["id"], card["updated"]), ([queued], upload["id"], clip["created"]))
+        # A queued clip blocks deleting it or its project, as a queued image does.
+        self.assertEqual((await self.client.delete(f"/api/projects/{upload['project_id']}", json={"confirm": True})).status, 409)
+        self.assertEqual((await self.client.delete(f"/api/videos/{queued}", json={"confirm": True})).status, 409)
+        await self.client.post(f"/api/videos/{queued}/cancel", json={})
+        self.assertEqual((await self.client.delete(f"/api/videos/{queued}", json={})).status, 400)
+        self.assertEqual((await self.client.delete(f"/api/videos/{queued}", json={"confirm": True})).status, 200)
+        self.assertFalse((self.videos.directory / (queued + ".png")).exists())
+        finished = (await (await self.submit_video(source_id=upload["id"])).json())["id"]
+        self.store.execute("UPDATE videos SET status='complete' WHERE id=?", (finished,))
+        (self.videos.directory / (finished + ".mp4")).write_bytes(b"mp4")
+        self.assertEqual((await self.client.get(f"/api/projects/{upload['project_id']}")).status, 200)
+        self.assertEqual((await self.client.delete(f"/api/projects/{upload['project_id']}", json={"confirm": True})).status, 200)
+        self.assertIsNone(self.store.one("SELECT id FROM videos WHERE id=?", (finished,)))
+        self.assertFalse((self.videos.directory / (finished + ".mp4")).exists())
+
     async def test_video_download_and_range_are_protected(self):
         await self.source()
         video_id = (await (await self.submit_video()).json())["id"]

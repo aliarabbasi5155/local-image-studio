@@ -90,9 +90,6 @@ class Videos:
         self.store, self.engine = store, engine
         self.directory = store.directory / "videos"
         self.directory.mkdir(exist_ok=True)
-        store.execute("""CREATE TABLE IF NOT EXISTS videos (
-            id TEXT PRIMARY KEY, created REAL NOT NULL, status TEXT NOT NULL,
-            recipe TEXT NOT NULL, error TEXT, finished REAL)""")
         # A disconnected native request is cancelled, never silently re-submitted.
         store.execute("UPDATE videos SET status='failed', error='Studio restarted during video generation. Submit again to retry.' WHERE status='running'")
         self.wake = asyncio.Event()
@@ -166,6 +163,21 @@ class Videos:
 
     async def library(self, request):
         return web.json_response({"videos": self.entries()})
+
+    async def delete(self, request):
+        video_id = request.match_info["id"]
+        row = self.store.one("SELECT status FROM videos WHERE id=?", (video_id,))
+        if not row:
+            raise web.HTTPNotFound()
+        payload = await request.json()
+        if not isinstance(payload, dict) or payload.get("confirm") is not True:
+            return web.json_response({"error": "Confirm deletion of this video first."}, status=400)
+        if row["status"] in ("queued", "running"):
+            return web.json_response({"error": "Stop the video first, or wait for it to finish."}, status=409)
+        self.store.execute("DELETE FROM videos WHERE id=?", (video_id,))
+        for suffix in (".mp4", ".png"):
+            (self.directory / (video_id + suffix)).unlink(missing_ok=True)
+        return web.json_response({"ok": True})
 
     async def cancel(self, request):
         video_id = request.match_info["id"]

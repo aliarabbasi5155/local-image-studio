@@ -7,6 +7,8 @@ from .media import media_file
 
 
 ACTIVE = ("queued", "submitted", "running")
+# A clip belongs to the project of the photo it was made from: its source is bound like an edit's.
+PROJECT_VIDEOS = "SELECT v.*, s.project_id, s.parent_id FROM videos v JOIN project_sources s ON s.id=json_extract(v.recipe,'$.source_id')"
 
 
 class Projects:
@@ -152,6 +154,16 @@ class Projects:
             result["parent"] = None
         return result
 
+    @staticmethod
+    def clip(row):
+        recipe = json.loads(row["recipe"])
+        ready = row["status"] == "complete"
+        return {"id": row["id"], "kind": "video", "project_id": row["project_id"], "created": row["created"], "status": row["status"],
+                "ready": ready, "error": row["error"], "prompt": recipe["prompt"], "recipe": recipe, "width": recipe["width"],
+                "height": recipe["height"], "seconds": round(recipe["frames"] / recipe["fps"], 1),
+                "url": f"/media/video/{row['id']}" if ready else None, "thumbnail": f"/media/thumb/{recipe['source_id']}",
+                "parent": {"id": row["parent_id"]}}
+
     def detail(self, project_id):
         project = self.store.one("SELECT * FROM projects WHERE id=?", (project_id,))
         if not project:
@@ -166,9 +178,10 @@ class Projects:
             child = next((version for version in versions if version["parent_id"] == project["root_id"] and version["parent"]), None)
             if saved or child:
                 root = {"id":project["root_id"], "url":f"/media/upload/{saved['id']}" if saved else child["parent"]["url"], "ready":True, "recovered":True}
+        videos = [self.clip(row) for row in self.store.rows(PROJECT_VIDEOS + " WHERE s.project_id=? ORDER BY v.created,v.id", (project_id,))]
         favorite_count = sum(version["favorite"] and version["ready"] for version in versions)
-        project.update(favorite=bool(favorite_count), favorite_count=favorite_count,
-                       updated=max((version["created"] for version in versions),default=project["created"]),
+        project.update(favorite=bool(favorite_count), favorite_count=favorite_count, videos=videos,
+                       updated=max([version["created"] for version in versions] + [video["created"] for video in videos], default=project["created"]),
                        saved_count=sum(version["ready"] for version in versions),
                        archived=bool(project["archived"]), versions=versions, root=root,
                        edits=sum(version["sequence"] > 0 for version in versions))
@@ -186,18 +199,23 @@ class Projects:
                    and (not query or query.lower() in (p["title"] + " " + " ".join(v["prompt"] for v in p["versions"])).lower())]
         summaries = []
         for project in matches[offset:offset+limit]:
-            root = project["root"]
-            cover = root if root and not root.get("recovered") and root.get("thumbnail") else next((v for v in project["versions"] if v["ready"]), None)
+            # The card shows the newest image, and opening the card shows that same image.
+            cover = next((v for v in reversed(project["versions"]) if v["ready"]), None)
             summaries.append({k:project[k] for k in ("id","created","updated","title","favorite","favorite_count","saved_count","archived","edits","root_id")} |
-                             {"cover":cover, "pending":[v for v in project["versions"] if not v["ready"]]})
+                             {"cover":cover, "pending":[v for v in project["versions"] if not v["ready"]],
+                              "animating":[v for v in project["videos"] if v["status"] in ACTIVE]})
         return {"projects":summaries, "total":len(matches), "counts":counts,
                 "navigation":[{"id":p["id"],"title":p["title"]} for p in matches]}
 
     def favorites(self, query="", offset=0, limit=48):
+        return self.images("favorites", query, offset, limit)
+
+    def images(self, section="library", query="", offset=0, limit=48):
+        """Every finished image, newest first: the library's image view, its archive, or the favorites."""
         library = self.library()
-        projects = [self.detail(row["id"]) for row in self.store.rows("SELECT id FROM projects WHERE archived=0")]
+        projects = [self.detail(row["id"]) for row in self.store.rows("SELECT id FROM projects WHERE archived=?", (int(section == "archive"),))]
         photos = [dict(version,project_title=p["title"],is_root=version["id"]==p["root_id"])
-                  for p in projects for version in p["versions"] if version["ready"] and version["favorite"]
+                  for p in projects for version in p["versions"] if version["ready"] and (section != "favorites" or version["favorite"])
                   and (not query or query.lower() in (p["title"]+" "+version["prompt"]).lower())]
         photos.sort(key=lambda photo:(photo["created"],photo["id"]),reverse=True)
         matching = {photo["project_id"] for photo in photos}
@@ -214,6 +232,9 @@ class Projects:
         sources = self.store.rows(f"SELECT id FROM project_sources WHERE project_id IN ({marks})", project_ids)
         if self.store.one(f"SELECT j.id FROM jobs j JOIN versions v ON j.id=v.id WHERE v.project_id IN ({marks}) AND j.status IN ('queued','submitted','running')", project_ids):
             raise ValueError("Stop this project's queued or running images before deleting it.")
+        videos = self.store.rows(PROJECT_VIDEOS + f" WHERE s.project_id IN ({marks})", project_ids)
+        if any(video["status"] in ACTIVE for video in videos):
+            raise ValueError("Stop this project's video before deleting it.")
         removable_sources = []
         for source in sources:
             used_elsewhere = self.store.one(f"SELECT v.id FROM versions v WHERE v.project_id NOT IN ({marks}) AND v.source_id=?", (*project_ids, source["id"]))
@@ -225,6 +246,7 @@ class Projects:
         files += [directory / "masks" / (mask["id"] + ".png") for mask in masks]
         files += [media_file(directory, "uploads", source_id) for source_id in removable_sources]
         files += [directory / "thumbs" / (image_id + ".webp") for image_id in {v["id"] for v in members if v["kind"]=='image'} | set(removable_sources)]
+        files += [directory / "videos" / (video["id"] + suffix) for video in videos for suffix in (".mp4", ".png")]
         staged = []
         try:
             for path in files:
@@ -239,6 +261,8 @@ class Projects:
                 for source_id in removable_sources:
                     self.store.db.execute("DELETE FROM masks WHERE source_id=?", (source_id,))
                     self.store.db.execute("DELETE FROM uploads WHERE id=?", (source_id,))
+                for video in videos:
+                    self.store.db.execute("DELETE FROM videos WHERE id=?", (video["id"],))
                 self.store.db.execute(f"DELETE FROM project_sources WHERE project_id IN ({marks})", project_ids)
                 self.store.db.execute(f"DELETE FROM versions WHERE project_id IN ({marks})", project_ids)
                 self.store.db.execute(f"DELETE FROM projects WHERE id IN ({marks})", project_ids)

@@ -16,6 +16,7 @@ const results = steps.map(step => {
   }
   if (step.kind === 'library') return OfflineCopy.library(projects, step.section, step.q, step.offset, step.limit);
   if (step.kind === 'favorites') return OfflineCopy.favorites(projects, step.q, step.offset, step.limit);
+  if (step.kind === 'photos') return OfflineCopy.images(projects, step.section, step.q, step.offset, step.limit);
   return projects.find(project => project.id === step.id) || null;
 });
 process.stdout.write(JSON.stringify(results));

@@ -60,7 +60,8 @@ async function offlineRequest(path, options = {}) {
     if (route === '/api/jobs') return {jobs:[]};
     if (route === '/api/projects') return OfflineCopy.library(connection.view, query.get('section') || 'library', search, offset, limit);
     if (route === '/api/favorites') return OfflineCopy.favorites(connection.view, search, offset, limit);
-    if (route === '/api/videos') return {videos:copy.videos || []};
+    if (route === '/api/photos') return OfflineCopy.images(connection.view, query.get('section') || 'library', search, offset, limit);
+    if (route === '/api/videos') return {videos:(copy.videos || []).filter(v => !connection.pending.deletedVideos?.[v.id])};
     if (route === '/api/videos/options') return {ready:false, model:'', error:'Making videos needs your Mac. Your saved clips still play here.'};
     const project = route.match(/^\/api\/projects\/([^/]+)$/);
     if (project) {
@@ -112,6 +113,10 @@ async function sendPending() {
       for (const [id, project] of Object.entries(pending.deletedVersions)) {
         await report(await call(`/api/projects/${project}/versions/${id}`, 'DELETE', {confirm:true}));
         delete pending.deletedVersions[id]; await save();
+      }
+      for (const id of Object.keys(pending.deletedVideos || {})) {
+        await report(await call(`/api/videos/${id}`, 'DELETE', {confirm:true}));
+        delete pending.deletedVideos[id]; await save();
       }
       for (const [id, archived] of Object.entries(pending.archived)) {
         await report(await call(`/api/projects/${id}`, 'PATCH', {archived}));

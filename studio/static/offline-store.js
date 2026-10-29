@@ -6,7 +6,7 @@ const OfflineCopy = (() => {
   const data = 'studio-offline-v1', media = 'studio-offline-media-v1';
   const active = ['queued', 'submitted', 'running'];
   const entry = name => `/__studio_offline/${name}.json`;
-  const empty = () => ({archived:{}, favorites:{}, deletedProjects:{}, deletedVersions:{}});
+  const empty = () => ({archived:{}, favorites:{}, deletedProjects:{}, deletedVersions:{}, deletedVideos:{}});
   const size = pending => pending ? Object.values(pending).reduce((sum, group) => sum + Object.keys(group).length, 0) : 0;
   const descending = (key, a, b) => (b[key] - a[key]) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
   const newest = (a, b) => descending('updated', a, b);
@@ -22,8 +22,9 @@ const OfflineCopy = (() => {
 
   function summarize(project) {
     const versions = project.versions, favorites = versions.filter(v => v.favorite && v.ready).length;
+    const created = [...versions, ...project.videos].map(v => v.created);
     return Object.assign(project, {favorite:favorites > 0, favorite_count:favorites,
-      updated:versions.length ? Math.max(...versions.map(v => v.created)) : project.created,
+      updated:created.length ? Math.max(...created) : project.created,
       saved_count:versions.filter(v => v.ready).length, edits:versions.filter(v => v.sequence > 0).length});
   }
   // The library as it looks with this phone's changes applied.
@@ -31,7 +32,8 @@ const OfflineCopy = (() => {
     const projects = [];
     for (const original of copy.projects) {
       if (pending.deletedProjects[original.id]) continue;
-      const project = structuredClone(original);
+      const project = structuredClone(original), deletedVideos = pending.deletedVideos || {};
+      project.videos = (project.videos || []).filter(v => !deletedVideos[v.id]);
       if (project.id in pending.archived) project.archived = pending.archived[project.id];
       for (const version of project.versions) if (version.id in pending.favorites) version.favorite = pending.favorites[version.id];
       const removed = project.versions.filter(v => pending.deletedVersions[v.id]);
@@ -54,14 +56,15 @@ const OfflineCopy = (() => {
       (!needle || `${p.title} ${p.versions.map(v => v.prompt).join(' ')}`.toLowerCase().includes(needle)));
     return {total:matches.length, counts, navigation:matches.map(p => ({id:p.id, title:p.title})),
       projects:matches.slice(offset, offset + limit).map(p => {
-        const cover = p.root && !p.root.recovered && p.root.thumbnail ? p.root : p.versions.find(v => v.ready) || null;
+        const cover = [...p.versions].reverse().find(v => v.ready) || null;
         return {id:p.id, created:p.created, updated:p.updated, title:p.title, favorite:p.favorite, favorite_count:p.favorite_count,
-          saved_count:p.saved_count, archived:p.archived, edits:p.edits, root_id:p.root_id, cover, pending:p.versions.filter(v => !v.ready)};
+          saved_count:p.saved_count, archived:p.archived, edits:p.edits, root_id:p.root_id, cover, pending:p.versions.filter(v => !v.ready),
+          animating:p.videos.filter(v => active.includes(v.status))};
       })};
   }
-  function favorites(projects, query = '', offset = 0, limit = 48) {
-    const live = projects.filter(p => !p.archived), needle = query.toLowerCase();
-    const photos = live.flatMap(p => p.versions.filter(v => v.ready && v.favorite && (!needle || `${p.title} ${v.prompt}`.toLowerCase().includes(needle)))
+  function images(projects, section = 'library', query = '', offset = 0, limit = 48) {
+    const live = projects.filter(p => p.archived === (section === 'archive')), needle = query.toLowerCase();
+    const photos = live.flatMap(p => p.versions.filter(v => v.ready && (section !== 'favorites' || v.favorite) && (!needle || `${p.title} ${v.prompt}`.toLowerCase().includes(needle)))
       .map(v => ({...v, project_title:p.title, is_root:v.id === p.root_id})));
     photos.sort((a, b) => descending('created', a, b));
     const matching = new Set(photos.map(photo => photo.project_id));
@@ -87,6 +90,7 @@ const OfflineCopy = (() => {
         if (version.parent?.url && !ready.has(version.parent.id)) extra.push(version.parent.url);
       }
       if (project.root?.recovered && project.root.url) extra.push(project.root.url);
+      for (const video of project.videos || []) { if (video.ready) thumbs.push(video.thumbnail); if (video.url) extra.push(video.url); }
     }
     for (const video of videos) if (video.url) extra.push(video.url);
     return [...new Set([...thumbs, ...images, ...extra])];
@@ -101,13 +105,23 @@ const OfflineCopy = (() => {
     const archive = (id, value) => { if (copy.projects.find(p => p.id === id)?.archived === value) delete pending.archived[id]; else pending.archived[id] = value; };
     const removeVersion = (version) => { pending.deletedVersions[version.id] = version.project_id; delete pending.favorites[version.id]; };
     const removeProject = id => {
-      const known = copy.projects.find(p => p.id === id).versions.map(v => v.id);
+      const original = copy.projects.find(p => p.id === id), known = original.versions.map(v => v.id);
       for (const versionId of known) { delete pending.favorites[versionId]; delete pending.deletedVersions[versionId]; }
+      for (const video of original.videos || []) delete pending.deletedVideos[video.id];
       delete pending.archived[id]; pending.deletedProjects[id] = known;
     };
     const busy = versions => versions.some(v => active.includes(v.status));
     const done = result => ({status:200, body:result()});
     const parts = path.split('/').slice(3), target = project(parts[0]);
+    pending.deletedVideos ??= {};
+    if (path.startsWith('/api/videos/') && parts.length === 1 && method === 'DELETE') {
+      const video = current.flatMap(p => p.videos).find(v => v.id === parts[0]);
+      if (!video) return fail(404, 'Not Found');
+      if (body?.confirm !== true) return fail(400, 'Confirm deletion of this video first.');
+      if (busy([video])) return fail(409, 'Stop the video first, or wait for it to finish.');
+      pending.deletedVideos[video.id] = video.project_id;
+      return done(() => ({ok:true}));
+    }
     if (path === '/api/bulk' && method === 'POST') {
       if (!body || !['projects', 'images'].includes(body.scope)) return fail(400, 'Select projects or images first.');
       if (!Array.isArray(body.ids) || body.ids.length < 1 || body.ids.length > 500 || body.ids.some(id => typeof id !== 'string')) return fail(400, 'Select between 1 and 500 entries.');
@@ -142,6 +156,7 @@ const OfflineCopy = (() => {
     if (parts.length === 1) {
       if (body?.confirm !== true) return fail(400, 'Confirm permanent deletion of the whole project first.');
       if (busy(target.versions)) return fail(409, 'Stop this project’s queued or running images before deleting it.');
+      if (busy(target.videos)) return fail(409, 'Stop this project’s video before deleting it.');
       removeProject(target.id);
       return done(() => ({ok:true}));
     }
@@ -159,5 +174,6 @@ const OfflineCopy = (() => {
     return done(() => ({ok:true}));
   }
 
-  return {data, media, empty, size, read, write, erase, view, library, favorites, detail, mediaPaths, change};
+  const favorites = (projects, query, offset, limit) => images(projects, 'favorites', query, offset, limit);
+  return {data, media, empty, size, read, write, erase, view, library, images, favorites, detail, mediaPaths, change};
 })();

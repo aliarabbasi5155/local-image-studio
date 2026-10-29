@@ -78,7 +78,7 @@ test('offline deletion keeps comparisons, refuses running work and remembers wha
   assert.equal(store.change(copy, pending, 'POST', '/api/bulk', {scope:'projects', ids:[id(10)], action:'delete', confirm:true}).status, 409);
   assert.equal(store.change(copy, pending, 'DELETE', `/api/projects/${id(1)}`, {}).status, 400);
   store.change(copy, pending, 'DELETE', `/api/projects/${id(1)}`, {confirm:true});
-  assert.deepEqual(plain(pending), {archived:{}, favorites:{}, deletedVersions:{}, deletedProjects:{[id(1)]:[id(1), id(2), id(3)]}});
+  assert.deepEqual(plain(pending), {archived:{}, favorites:{}, deletedVersions:{}, deletedVideos:{}, deletedProjects:{[id(1)]:[id(1), id(2), id(3)]}});
   assert.equal(store.change(copy, pending, 'PATCH', `/api/projects/${id(1)}`, {favorite:true}).status, 404);
   assert.equal(store.change(copy, pending, 'POST', '/api/generate', {}), null);
 });

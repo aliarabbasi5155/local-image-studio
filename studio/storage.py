@@ -39,6 +39,10 @@ class Store:
                 width INTEGER NOT NULL, height INTEGER NOT NULL, bounds TEXT NOT NULL,
                 sha256 TEXT NOT NULL, coverage REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS videos (
+                id TEXT PRIMARY KEY, created REAL NOT NULL, status TEXT NOT NULL,
+                recipe TEXT NOT NULL, error TEXT, finished REAL
+            );
         """)
         self.db.commit()
         if 'progress_detail' not in {row['name'] for row in self.rows('PRAGMA table_info(jobs)')}:
