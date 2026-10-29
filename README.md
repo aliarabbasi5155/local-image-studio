@@ -42,6 +42,10 @@ status panel show the Mac's work and available memory.
 For local changes, Paint an area adds an optional brush mask. The editor works on
 a crop and blends the selected area back into the original, preserving unpainted
 pixels and the original dimensions. Masks are saved with submitted image recipes.
+**Close-up** makes a separate image of a framed area: drag a box or name a subject
+and choose Find. It blends the photo's structure with model-generated fine detail,
+with Standard, 2K and 4K output and an aligned plain-enlargement comparison.
+See [Close-up](studio/README.md#close-up) for fidelity and size tradeoffs.
 **Identity swap** replaces the head (face and hair) or the whole person using
 another photo. SAM 3 finds both people, a pink preview shows
 what may change, and every other pixel stays exact. See

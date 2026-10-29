@@ -1,8 +1,8 @@
 """Close-ups: a new, larger image of one area of a photo that stays consistent with it.
 
-Upscaling alone looks artificial, and regenerating alone can drift. A close-up keeps every frequency the original
-photo actually resolves and takes only finer detail from the model, so identity, shapes, colors and light come from
-the photo and the model adds texture it never had. Where the model changed something, its detail is not used.
+Upscaling alone can look artificial, and regenerating alone can drift. A close-up combines the photo's low
+frequencies with finer model detail, weighted by agreement in coarse structure. This reduces changes to
+identity, shapes, colors and light; it cannot guarantee fidelity or recover unknown real-world detail.
 """
 import math
 
@@ -13,7 +13,7 @@ from .masking import match_colors
 from .media import media_file
 
 SIZES = ("standard", "2k", "4k")
-# The merge scale, in multiples of the enlargement: at 1.0 the photo keeps every detail it resolves.
+# Gaussian cutoff in multiples of the enlargement; this is a soft blend, not a strict frequency boundary.
 DETAIL = {"faithful": 1.0, "detailed": 1.6}
 # Above this difference (0–255) between the model's and the photo's coarse image, the model changed content.
 CHANGED = 28

@@ -404,6 +404,8 @@ async def generate(request):
     source = state["store"].one("SELECT * FROM uploads WHERE id=?", (source_id,)) if mode == "edit" else None
     if mode == "edit" and not source:
         return failure("Upload a photo or choose an image from your library first.")
+    if framed is not None and close_up_size(json.loads(prepared["box"]), prepared["size"], QUALITIES[quality]["sizes"]) != (source["width"], source["height"]):
+        return failure("The quality changed after this frame was prepared. Frame the close-up again.")
     if source and not state["store"].projects.source(source_id):
         state["store"].projects.create_upload(source)
     binding = state["store"].projects.source(source_id) if source else None
@@ -741,7 +743,7 @@ async def delete_versions(state, versions):
         project = store.projects.detail(version["project_id"])
         if version["id"] == project["root_id"] and version["ready"]:
             if version["kind"] == "image" and not store.one(
-                    "SELECT id FROM project_sources WHERE project_id=? AND parent_id=?", (project["id"], version["id"])):
+                    "SELECT id FROM project_sources WHERE project_id=? AND parent_id=? AND id NOT IN (SELECT id FROM close_ups)", (project["id"], version["id"])):
                 source = await save_upload(state, media_file(store.directory, "images", version["id"]).read_bytes(), "Studio image")
                 store.projects.bind_source(source["id"], project["id"], version["id"])
             elif version["kind"] == "upload":

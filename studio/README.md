@@ -242,7 +242,7 @@ grouped using their saved parent and source links.
 - **The strip:** every image and clip of the project in time order. Images still
   being made show their progress there; open one to see its progress or stop it.
 - **Edit:** choose **Fast**, **Balanced** or **High**, describe the change and send.
-  The result appears in the strip and opens when it finishes. **Area**, **Person**
+  The result appears in the strip and opens when it finishes. **Area**, **Close-up**, **Person**
   and **Animate** sit beside Edit and work on the same screen.
 - **Settings** (the gear, or ⋯ in the viewer): size, resizing and images per edit
   or per new image, SNOFS, area-edit options and video size. Edits default to the
@@ -426,6 +426,32 @@ manual painting still works. To reinstall/start only the selector:
 ```bash
 .venv/bin/python scripts/setup_sam3.py --start
 ```
+
+## Close-up
+
+Open a photo and choose **Close-up**. Drag outside the frame to draw a new one,
+drag inside to move it, or drag a corner to resize it. You can also name a subject
+(for example, “face” or “hand”) and choose **Find**. If several subjects match,
+choose Find again to cycle through them, then adjust the frame before sending.
+Finding subjects uses the same local SAM model as Area and needs the Mac to be idle.
+
+**Faithful** uses a conservative blend of the original photo's structure and
+the model's finer detail. **More detail** allows model detail at a broader scale,
+with more risk of drift. Alignment, color matching and local disagreement weights
+reduce changes to the source. Generated texture is plausible detail, not recovered
+ground truth; identity and features are not guaranteed to remain exact.
+
+**Standard** generates directly within the chosen quality's size budget, up to
+about one megapixel. **2K** and **4K** set the longest saved edge to 2048 or 4096
+pixels; the model still generates near its native budget, then the result is
+upscaled and blended with the enlarged crop. These sizes do not mean native 4K
+detail generation. Large frames may shrink at Standard; the size hint says so.
+Frames must be at least 32 × 32 source pixels and no more than 4:1 in shape.
+
+The close-up becomes a new version in the same project. **Compare** shows its
+plain enlarged crop, so both sides have matching framing. That comparison is
+saved for offline use. **Reuse settings** restores the frame, subject, detail,
+size, quality and seed on its original photo, if that photo is still available.
 
 ## Identity swap
 

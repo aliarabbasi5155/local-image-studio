@@ -1,6 +1,6 @@
 'use strict';
 // The project viewer: the photo fills the screen, the controls float over it, and every image and clip of the
-// project sits in one strip. Tools (Edit, Area, Person, Animate) work in place on the same screen.
+// project sits in one strip. Tools (Edit, Area, Close-up, Person, Animate) work in place on the same screen.
 let editorSaved = {};
 try { editorSaved = JSON.parse(localStorage.getItem('studio-editor') || '{}'); } catch {}
 const viewer = {project:null, items:[], selected:null, quality:editorSaved.quality || 'balanced', drafts:editorSaved.drafts || {},
@@ -96,7 +96,7 @@ function renderTop() {
   $('#lb-compare').hidden = !comparisonAvailable();
   $('#lb-compare').setAttribute('aria-pressed', String(viewer.comparing));
   $('#lb-compare-choice').hidden = !viewer.comparing;
-  for (const button of document.querySelectorAll('[data-compare]')) button.setAttribute('aria-checked', String(button.dataset.compare === viewer.compare));
+  for (const button of document.querySelectorAll('[data-compare]')) button.setAttribute('aria-checked', String(button.dataset.compare === (item.recipe?.close_up ? 'parent' : viewer.compare)));
   $('#lb-reuse').hidden = !item.recipe || isVideo(item);
   $('#lb-copy').hidden = !item.recipe;
   $('#lb-recipe').hidden = !item.recipe || !item.ready;
@@ -105,6 +105,7 @@ function renderTop() {
   const zoomed = item.recipe?.close_up;
   $('#lb-caption').textContent = zoomed ? `Close-up${zoomed.subject ? ` · ${zoomed.subject}` : ''}` : item.recipe ? item.prompt : '';
   $('[data-compare="root"]').hidden = !!zoomed;
+  $('[data-compare="parent"]').textContent = zoomed ? 'Plain enlargement' : 'Parent';
   $('#lb-caption').classList.remove('open');
   const projectIndex = state.navigation.findIndex(p => p.id === project.id);
   $('.lb-prev').hidden = index <= 0 && projectIndex <= 0;
@@ -163,7 +164,7 @@ function setPeek(on) {
   if (on && !ensureReference()) return;
   viewer.peeking = on;
   $('.lightbox').classList.toggle('peeking', on);
-  $('#lb-badge').textContent = viewer.compare === 'root' ? 'Original' : 'Parent';
+  $('#lb-badge').textContent = selectedImage()?.recipe?.close_up ? 'Plain enlargement' : viewer.compare === 'root' ? 'Original' : 'Parent';
   $('#lb-badge').hidden = !on;
   if (on && navigator.vibrate) navigator.vibrate(8);
 }
@@ -453,8 +454,10 @@ async function reuseInViewer(recipe) {
   if (!projectId) return toast('Open the original project to reuse this edit.');
   if (viewer.project?.id !== projectId || !$('#detail-dialog').open) await showProject(projectId, recipe.parent_version_id);
   const parent = recipe.parent_version_id || recipe.parent_image_id;
+  if (recipe.close_up && !viewer.items.some(item => item.id === parent && item.ready)) return toast('The original photo for this frame is no longer available. Choose a photo and frame a new close-up.');
   if (viewer.items.some(item => item.id === parent)) selectItem(parent);
   viewer.quality = recipe.quality;
+  if (recipe.close_up) { viewer.reuse = null; saveEditor(); return openCloseUp(recipe); }
   viewer.reuse = {output_size:recipe.output_size || 'preset', resize_mode:recipe.resize_mode || 'auto', snofs:recipe.snofs, seed:recipe.seed};
   if (recipe.identity_swap) {
     maskSelections.delete(draftKey()); saveEditor();
@@ -513,6 +516,7 @@ function bindViewer() {
     if (!quality) return;
     viewer.quality = quality.dataset.quality; saveEditor();
     for (const button of document.querySelectorAll('[data-quality]')) button.setAttribute('aria-checked', String(button === quality));
+    if (viewer.tool === 'closeup') renderFrame();
     scheduleViewerEstimate();
   });
   $('#project-menu').addEventListener('click', event => { if (event.target.closest('.lb-menu-items button,.lb-menu-items a')) $('#project-menu').open = false; });
@@ -589,6 +593,7 @@ $('#detail-dialog').addEventListener('close', () => {
   viewer.loading++; clearTimeout(viewerEstimateTimer); viewerEstimateRevision++;
   document.querySelectorAll('.lightbox video').forEach(video => video.pause());
   if (typeof closeMaskEditor === 'function') closeMaskEditor();
+  if (typeof closeCloseUp === 'function') closeCloseUp();
 });
 document.addEventListener('keydown', event => {
   if (!$('#detail-dialog').open || $('#delete-dialog').open || !viewer.project || !$('#mask-content')?.hidden || event.target.closest('textarea,input,select,summary,button,video')) return;

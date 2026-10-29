@@ -3,7 +3,7 @@
 // app saved for offline use (offline-store.js). Library data otherwise comes from the Mac, and
 // generation requests always go to it. Incoming shares have their own temporary inbox.
 importScripts('/static/share-store.js', '/static/offline-store.js');
-const CACHE = 'studio-shell-v9';
+const CACHE = 'studio-shell-v10';
 const SHELL = ['/', '/static/style.css', '/static/projects.css', '/static/polish.css', '/static/sharing.css', '/static/offline.css', '/static/viewer.css',
   '/static/offline-store.js', '/static/offline.js', '/static/settings.js', '/static/app.js', '/static/projects.js', '/static/automatic.js',
   '/static/masking.js', '/static/closeup.js', '/static/identity.js', '/static/video.js', '/static/actions.js', '/static/share-store.js', '/static/sharing.js',

@@ -10,6 +10,8 @@ from studio.closeup import close_up_size, merge_detail
 from studio.engine import QUALITIES
 from studio.media import media_file
 from studio.tests import test_projects as project_fixtures
+from studio.tests import test_studio as engine_fixtures
+from studio.server import STATE
 
 
 def scene(size=(600, 400)):
@@ -79,6 +81,44 @@ class MergeTests(unittest.TestCase):
 class CloseUpAPITests(unittest.IsolatedAsyncioTestCase):
     asyncSetUp = project_fixtures.ProjectTests.asyncSetUp
     asyncTearDown = project_fixtures.ProjectTests.asyncTearDown
+    upload = project_fixtures.ProjectTests.upload
+    complete = project_fixtures.ProjectTests.complete
+
+    async def test_prepared_frame_rejects_quality_changes_and_other_edit_modes(self):
+        photo = await self.upload()
+        url = f"/api/projects/{photo['project_id']}/versions/{photo['id']}/close-up"
+        source = await (await self.client.post(url, json={"box": [0, 0, 100, 100], "quality": "high"})).json()
+        base = {"mode": "edit", "prompt": "Close-up", "source_id": source["id"], "quality": "high", "close_up": {}}
+        for change in ({"quality": "fast"}, {"mask_id": "anything"}, {"identity_swap": {}},
+                       {"close_up": {"detail": "unknown"}}, {"close_up": {"subject": "x" * 201}}, {"project_id": "other"}):
+            response = await self.client.post("/api/generate", json={**base, **change})
+            self.assertEqual(response.status, 400, (change, await response.text()))
+        self.assertEqual(self.store.rows("SELECT id FROM jobs"), [])
+
+    async def test_deleted_root_is_not_recovered_from_a_crop_and_project_deletion_cleans_frames(self):
+        result = await (await self.client.post("/api/generate", json={"prompt": "Original", "quality": "fast"})).json()
+        root = result["jobs"][0]
+        self.complete(root)
+        url = f"/api/projects/{root}/versions/{root}/close-up"
+        source = await (await self.client.post(url, json={"box": [0, 0, 100, 100], "quality": "fast"})).json()
+        result = await (await self.client.post("/api/generate", json={"mode": "edit", "prompt": "Close-up", "quality": "fast",
+                          "source_id": source["id"], "close_up": {}})).json()
+        child = result["jobs"][0]
+        self.complete(child)
+        response = await self.client.delete(f"/api/projects/{root}/versions/{root}", json={"confirm": True})
+        self.assertEqual(response.status, 200, await response.text())
+        project = await (await self.client.get(f"/api/projects/{root}")).json()
+        self.assertTrue(project["root"]["recovered"])
+        self.assertNotEqual(project["root"]["url"], source["url"])
+        original = await (await self.client.get(project["root"]["url"])).read()
+        with Image.open(io.BytesIO(original)) as image:
+            self.assertEqual(image.size, (512, 512))
+        self.assertEqual(project["versions"][0]["parent"]["url"], source["url"])
+        self.assertTrue(media_file(self.store.directory, "uploads", source["id"]).exists())
+        response = await self.client.delete(f"/api/projects/{root}", json={"confirm": True})
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertEqual(self.store.rows("SELECT id FROM close_ups"), [])
+        self.assertFalse(media_file(self.store.directory, "uploads", source["id"]).exists())
 
     async def test_framed_area_becomes_an_aligned_source_and_a_base_model_close_up(self):
         stream = io.BytesIO(); scene().save(stream, "PNG")
@@ -115,3 +155,35 @@ class CloseUpAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((recipe["width"], recipe["height"], recipe["resize_mode"]), (1843, 2048, "auto"))
         self.assertLess(recipe["generation_width"] * recipe["generation_height"], 1_100_000)
         self.assertEqual(json.dumps(recipe["close_up"]["detail"]), '"detailed"')
+
+
+class CloseUpEngineTests(unittest.IsolatedAsyncioTestCase):
+    asyncSetUp = engine_fixtures.EngineTests.asyncSetUp
+    asyncTearDown = engine_fixtures.EngineTests.asyncTearDown
+    wait_images = engine_fixtures.EngineTests.wait_images
+
+    async def test_worker_merges_model_output_and_saves_size_metadata_and_comparison(self):
+        stream = io.BytesIO(); scene().save(stream, "PNG")
+        form = aiohttp.FormData(); form.add_field("image", stream.getvalue(), filename="scene.png", content_type="image/png")
+        photo = await (await self.client.post("/api/uploads", data=form)).json()
+        store = self.app[STATE]["store"]
+        for count, size in enumerate(("standard", "2k"), 1):
+            source = await (await self.client.post(f"/api/projects/{photo['project_id']}/versions/{photo['id']}/close-up",
+                      json={"box": [180, 80, 220, 240], "size": size, "quality": "fast"})).json()
+            response = await self.client.post("/api/generate", json={"mode": "edit", "prompt": "Close-up", "quality": "fast",
+                          "source_id": source["id"], "seed": 42, "close_up": {"subject": "face"}})
+            self.assertEqual(response.status, 202, await response.text())
+            job_id = (await response.json())["jobs"][0]
+            images = await self.wait_images(count)
+            recipe = next(image for image in images if image["id"] == job_id)["recipe"]
+            with Image.open(media_file(store.directory, "images", job_id)) as result, \
+                 Image.open(media_file(store.directory, "uploads", source["id"])) as comparison:
+                self.assertEqual(result.size, (source["width"], source["height"]))
+                self.assertEqual(json.loads(result.info["comment"]), recipe)
+                # The fake model returns solid navy: the final image must retain the source's scene.
+                self.assertLess(float(np.abs(coarse(result, 8) - coarse(comparison, 8)).mean()), 3)
+            graph = self.submitted[-1]["prompt"]
+            self.assertEqual(graph["1"]["inputs"]["loras"], "")
+            self.assertNotIn("image_strength", graph["2"]["inputs"])
+            self.assertTrue((store.directory / "thumbs" / (job_id + ".webp")).exists())
+            self.assertFalse((store.directory / "images" / (job_id + ".part")).exists())

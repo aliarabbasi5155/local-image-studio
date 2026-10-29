@@ -174,8 +174,8 @@ class Projects:
         # Legacy image deletion can remove a root; its children's independent
         # sources can still provide the original photo for comparison.
         if not root:
-            saved = self.store.one("SELECT u.* FROM uploads u JOIN project_sources s ON u.id=s.id WHERE s.project_id=? AND s.parent_id=? ORDER BY u.created LIMIT 1", (project_id, project["root_id"]))
-            child = next((version for version in versions if version["parent_id"] == project["root_id"] and version["parent"]), None)
+            saved = self.store.one("SELECT u.* FROM uploads u JOIN project_sources s ON u.id=s.id WHERE s.project_id=? AND s.parent_id=? AND u.id NOT IN (SELECT id FROM close_ups) ORDER BY u.created LIMIT 1", (project_id, project["root_id"]))
+            child = next((version for version in versions if version["parent_id"] == project["root_id"] and version["parent"] and not (version.get("recipe") or {}).get("close_up")), None)
             if saved or child:
                 root = {"id":project["root_id"], "url":f"/media/upload/{saved['id']}" if saved else child["parent"]["url"], "ready":True, "recovered":True}
         videos = [self.clip(row) for row in self.store.rows(PROJECT_VIDEOS + " WHERE s.project_id=? ORDER BY v.created,v.id", (project_id,))]
@@ -259,6 +259,7 @@ class Projects:
                     self.store.db.execute("DELETE FROM images WHERE id=?", (version["id"],))
                     self.store.db.execute("DELETE FROM jobs WHERE id=?", (version["id"],))
                 for source_id in removable_sources:
+                    self.store.db.execute("DELETE FROM close_ups WHERE id=?", (source_id,))
                     self.store.db.execute("DELETE FROM masks WHERE source_id=?", (source_id,))
                     self.store.db.execute("DELETE FROM uploads WHERE id=?", (source_id,))
                 for video in videos:
