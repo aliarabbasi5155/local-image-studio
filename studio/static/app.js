@@ -5,12 +5,8 @@ const escapeHTML = text => String(text ?? '').replace(/[&<>"']/g, c => ({'&':'&a
 const activeStatuses = ['queued', 'submitted', 'running'];
 let saved;
 try { saved = JSON.parse(localStorage.getItem('studio-composer') || '{}'); } catch { saved = {}; }
-const state = {view:'library', projects:[], navigation:[], jobs:[], total:0, query:'', options:null, detail:null,
-  mode:'create', quality:saved.quality || 'balanced', aspect:saved.aspect || 'square',
-  outputSize:saved.outputSize || (saved.mode === 'edit' ? 'original' : 'preset'),
-  resizeMode:saved.resizeMode || 'auto',
-  variations:saved.variations || 1, snofs:saved.snofs !== false, source:null,
-  drafts:saved.drafts || {create:'',edit:''}, seed:saved.seed ?? null,
+const state = {view:'library', layout:saved.layout === 'images' ? 'images' : 'projects', projects:[], navigation:[], jobs:[], total:0, query:'', options:null,
+  quality:saved.quality || 'balanced', aspect:saved.aspect || 'square', draft:saved.draft ?? saved.drafts?.create ?? '', reuse:null,
   composerCollapsed:saved.composerCollapsed === true, authenticated:false};
 let toastTimer, searchTimer, refreshing = false, gallerySignature = '', fetching = false;
 let deletingImage = null, deletePending = false, libraryRevision = 0;
@@ -19,7 +15,7 @@ async function api(path, options={}) {
   if (connection.offline) return offlineRequest(path, options);
   // Library reads are quick on the Mac, so a silent wait on one means the phone is away from home.
   // Status and options can wait on the Mac's helpers, so they keep no limit.
-  const quick = (options.method || 'GET') === 'GET' && /^\/api\/(auth|jobs|projects|favorites)\b/.test(path);
+  const quick = (options.method || 'GET') === 'GET' && /^\/api\/(auth|jobs|projects|favorites|photos)\b/.test(path);
   const wait = options.timeout ?? (quick ? 8000 : null);
   let response;
   try { response = await fetch(path, {credentials:'same-origin', ...options, signal:wait && AbortSignal.timeout ? AbortSignal.timeout(wait) : undefined,
@@ -37,9 +33,8 @@ async function api(path, options={}) {
 }
 const send = (path, body, method='POST') => api(path, {method, body:JSON.stringify(body)});
 function persist() {
-  state.drafts[state.mode] = $('#prompt').value;
-  try { localStorage.setItem('studio-composer', JSON.stringify({mode:state.mode, quality:state.quality,
-    aspect:state.aspect,outputSize:state.outputSize,resizeMode:state.resizeMode,variations:state.variations,snofs:state.snofs,source:state.source,drafts:state.drafts,seed:state.seed,composerCollapsed:state.composerCollapsed})); } catch { /* Private browsing may disable storage. */ }
+  state.draft = $('#prompt').value;
+  try { localStorage.setItem('studio-composer', JSON.stringify({quality:state.quality, aspect:state.aspect, draft:state.draft, layout:state.layout, composerCollapsed:state.composerCollapsed})); } catch { /* Private browsing may disable storage. */ }
 }
 function renderComposerVisibility() {
   $('.composer-wrap').classList.toggle('is-collapsed',state.composerCollapsed);
@@ -62,9 +57,8 @@ function toast(message, action, callback) {
   toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 6000);
 }
 function showLogin() {
-  if (typeof closeVideos === 'function') closeVideos();
   state.authenticated = false; $('#shared-dialog').close(); if (typeof updateSharedNotice === 'function') updateSharedNotice().catch(() => {}); $('#app').hidden = true; $('#login').hidden = false;
-  $('#delete-dialog').close(); $('#detail-dialog').close(); $('#info-dialog').close(); $('#metrics-dialog').close(); $('#mask-dialog').close(); $('#pin').focus();
+  $('#delete-dialog').close(); $('#detail-dialog').close(); $('#info-dialog').close(); $('#metrics-dialog').close(); $('#settings-dialog')?.close(); $('#pin').focus();
 }
 async function enterStudio() {
   state.options = await api('/api/options');
@@ -86,60 +80,21 @@ function renderEngine() {
 function engineLabel(status) {
   return {ready:'Your Mac is ready',sleeping:'Sleeping · wakes automatically',starting:'Starting image engine',away:'Away from your Mac · using this phone'}[status.engine_state] || (status.engine_ready?'Your Mac is ready':'Image engine is offline');
 }
-function qualityHint() {
-  const quality = state.options.qualities[state.quality];
-  let [width,height] = quality.sizes[state.aspect];
-  $('#quality-hint').textContent = quality.description;
-  if (state.mode === 'edit' && (state.outputSize !== 'preset' || state.resizeMode === 'native')) {
-    if (!state.source) { $('#output-hint').textContent = 'Choose a photo to see its output size.'; return; }
-    width = state.source.width; height = state.source.height;
-  }
-  if (state.resizeMode !== 'native' && (state.outputSize === '2k' || state.outputSize === '4k')) {
-    const scale = (state.outputSize === '2k' ? 2048 : 4096) / Math.max(width,height);
-    width = Math.max(1,Math.round(width*scale)); height = Math.max(1,Math.round(height*scale));
-  }
-  if (state.resizeMode === 'native' && state.mode === 'edit') {
-    const [pw,ph] = quality.sizes[state.aspect];
-    const scale = Math.min(1,Math.max(pw,ph)/Math.max(width,height),Math.sqrt(1048576/(width*height)),2048/Math.max(width,height));
-    width = Math.max(64,16*Math.floor(width*scale/16+0.5)); height = Math.max(64,16*Math.floor(height*scale/16+0.5));
-  } else if (state.resizeMode === 'direct') {
-    width = Math.max(64,16*Math.floor(width/16+0.5)); height = Math.max(64,16*Math.floor(height/16+0.5));
-  }
-  let method = state.outputSize === 'preset' ? 'Preset size' : state.outputSize === 'original' ? 'Same size and shape as your photo' : 'AI upscale · keeps the image shape';
-  if (state.resizeMode === 'native') method = 'Native output · no resizing or AI upscaling';
-  if (state.resizeMode === 'direct') method = 'Generated at full size · no resizing or AI upscaling · dimensions use 16-pixel steps';
-  if (state.resizeMode === 'direct' && width*height > 1048576) method += ' · Large images take longer and use more memory';
-  $('#output-hint').textContent = `${width} × ${height} · ${method}`;
+function choiceChips(name, choices, selected) {
+  return choices.map(([value, label, title]) => `<button type="button" role="radio" data-${name}="${value}" aria-checked="${value === selected}"${title ? ` aria-label="${title}" title="${title}"` : ''}>${label}</button>`).join('');
 }
+const shapeIcon = (width, height) => `<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="${10 - width / 2}" y="${10 - height / 2}" width="${width}" height="${height}" rx="2.5"/></svg>`;
 function renderComposer() {
   if (!state.options.qualities[state.quality]) state.quality = 'balanced';
   if (!state.options.qualities[state.quality].sizes[state.aspect]) state.aspect = 'square';
-  if (!state.options.output_sizes?.[state.outputSize] || (state.mode === 'create' && state.outputSize === 'original')) state.outputSize = 'preset';
-  if (!state.options.resize_modes?.[state.resizeMode]) state.resizeMode = 'auto';
-  document.querySelectorAll('[data-mode]').forEach(button => button.classList.toggle('selected',button.dataset.mode === state.mode));
-  $('#prompt').value = state.drafts[state.mode] || '';
-  $('#prompt').placeholder = state.mode === 'edit' ? 'What should change? Tell us what to keep, too…' : 'Describe an image you’d love to see…';
-  $('#source-area').hidden = state.mode !== 'edit';
-  $('#upload-button').hidden = !!state.source;
-  $('#source-preview').hidden = !state.source;
-  if (state.source) $('#source-preview').innerHTML = `<div class="source-chip"><img src="${escapeHTML(state.source.thumbnail)}" alt="Photo to edit"><span>${escapeHTML(state.source.name)}<small>${state.source.width} × ${state.source.height} · Original stays saved</small></span><button type="button" id="remove-source" aria-label="Remove reference photo">${icon('close')}</button></div>`;
-  $('#quality').value = state.quality; $('#aspect').value = state.aspect; $('#variations').value = state.variations;
-  $('#output-size').value = state.outputSize;
-  $('#output-size').disabled = state.resizeMode === 'native';
-  $('#resize-mode').value = state.resizeMode;
-  $('#output-size option[value="original"]').disabled = state.mode !== 'edit';
-  const originalShape = state.mode === 'edit' && (state.outputSize !== 'preset' || state.resizeMode === 'native');
-  let originalShapeOption = $('#aspect option[value="original"]');
-  if (!originalShapeOption) { originalShapeOption = document.createElement('option'); originalShapeOption.value = 'original'; originalShapeOption.textContent = 'Original photo'; $('#aspect').append(originalShapeOption); }
-  originalShapeOption.hidden = !originalShape; originalShapeOption.disabled = true;
-  $('#aspect').disabled = originalShape;
-  if (originalShape) $('#aspect').value = 'original';
-  $('#snofs').checked = state.snofs;
+  $('#composer-quality').innerHTML = choiceChips('composer-quality', Object.entries(state.options.qualities).map(([key, quality]) => [key, quality.label]), state.quality);
+  $('#composer-aspect').innerHTML = choiceChips('aspect', [['square', shapeIcon(13, 13), 'Square'], ['portrait', shapeIcon(11, 15), 'Portrait'], ['landscape', shapeIcon(16, 11), 'Landscape']], state.aspect);
+  $('#composer-reuse').hidden = !state.reuse;
+  if ($('#prompt').value !== state.draft) $('#prompt').value = state.draft;
+  const variations = state.reuse ? 1 : studioSettings.create.variations;
   $('#generate').disabled = connection.offline;
-  $('#generate-label').textContent = state.mode === 'edit' ? (state.variations > 1 ? `Make ${state.variations} edits` : 'Edit image') : (state.variations > 1 ? `Create ${state.variations} images` : 'Create image');
-  $('#seed').hidden = state.seed === null; $('#seed').value = state.seed ?? '';
-  $('#seed-toggle').textContent = state.seed === null ? 'Random seed' : 'Fixed seed · switch to random';
-  qualityHint(); renderComposerVisibility(); persist(); if (typeof scheduleEstimate === 'function') scheduleEstimate();
+  $('#generate-label').textContent = variations > 1 ? `Create ${variations}` : 'Create';
+  renderComposerVisibility(); persist(); if (typeof scheduleEstimate === 'function') scheduleEstimate();
 }
 function dateText(timestamp) {
   const day = new Date(timestamp*1000);
@@ -160,35 +115,41 @@ function jobHTML(job) {
   const cancellable = activeStatuses.includes(job.status);
   return `<article class="image-card job-card ${failed ? 'failed' : ''}"><div class="job-top"><span>${job.recipe.mode === 'edit' ? 'Edit' : 'Creation'} · Variation ${job.variation}</span>${cancellable ? `<button data-action="cancel" data-id="${job.id}" aria-label="Stop variation ${job.variation}">${icon('close')}</button>` : ''}</div>${icon('spark')}<p>${escapeHTML(job.recipe.prompt)}</p>${failed ? `<div class="job-error">${escapeHTML(job.error)}</div><button class="secondary" data-action="retry" data-id="${job.id}">Reuse settings</button>` : `<div class="job-phase"><span>${escapeHTML(job.cancel_requested ? 'Stopping…' : job.phase)}</span><span data-elapsed="${job.id}">${elapsedText(job)}</span></div><div class="progress-track"><span data-progress="${job.id}"></span></div>`}</article>`;
 }
-function downloadLinks(image, compact=false) {
-  return ['png','jpg'].map(format => {
-    const name = format.toUpperCase();
-    const hint = format === 'png' ? (image.kind === 'upload' ? 'Original image' : 'Original + settings') : 'Easy to share';
-    const query = format === 'jpg' ? '&format=jpg' : '';
-    if (format === 'jpg' && connection.offline) return `<span class="${compact ? 'download-option' : 'secondary'} unavailable" aria-disabled="true" title="JPG copies are made by your Mac">${icon('download')}${compact ? `<span>${name}<small>Needs your Mac</small></span>` : `${name} needs your Mac`}</span>`;
-    return `<a class="${compact ? 'download-option' : 'secondary'}" href="${image.url || `/media/image/${image.id}`}?download=1${query}" download="studio-${image.id}.${format}" aria-label="Download ${name}" title="${hint}">${icon('download')}${compact ? `<span>${name}<small>${hint}</small></span>` : `Download ${name}`}</a>`;
-  }).join('');
+function cardActions(buttons) {
+  return `<div class="card-actions">${buttons.join('')}</div>`;
 }
 function imageHTML(project) {
   const cover = project.cover;
   const pending = project.pending.filter(v => activeStatuses.includes(v.status));
   const failed = project.pending.find(v => v.status === 'failed');
-  const job = state.jobs.find(j=>j.id===pending[0]?.id) || pending[0]?.job;
-  return `<article class="image-card project-card ${bulk.gallery.ids.has(project.id)?'is-selected':''}"><div class="card-preview"><button class="image-open" data-action="project" data-id="${project.id}" aria-label="Open project: ${escapeHTML(project.title.slice(0,100))}">${cover ? `<img src="${cover.thumbnail}" alt="${escapeHTML(project.title)}" loading="lazy">` : `<span class="project-placeholder">${icon('spark')}<span>${failed ? 'Needs attention' : 'Creating the original…'}</span></span>`}</button>${bulkBox('gallery',project.id,project.title)}<div class="card-actions"><button data-action="project-favorite" data-id="${project.id}" class="${project.favorite ? 'favorited' : ''}" aria-label="${project.favorite ? `Contains ${project.favorite_count} favorite images. Remove all image favorites` : 'Favorite all images in project'}" title="${project.favorite_count ? `${project.favorite_count} favorite images · click to unfavorite all` : 'Favorite all images'}" aria-pressed="${project.favorite}">${icon('heart')}</button><button data-action="project-archive" data-id="${project.id}" aria-label="${project.archived ? 'Restore project' : 'Archive project'}">${icon(project.archived ? 'restore' : 'archive')}</button><button data-action="project-delete" data-id="${project.id}" class="delete-image" aria-label="Delete whole project">${icon('trash')}</button></div>${cover ? `<details class="card-download"><summary aria-label="Download original image" title="Choose PNG or JPG">${icon('download')}</summary><div class="download-menu">${downloadLinks(cover,true)}</div></details>` : ''}${job?progressHTML(job):''}</div><div class="card-info"><p>${escapeHTML(project.title)}</p><div class="card-meta"><span class="tag">${cover?.kind === 'upload' ? 'Uploaded' : 'Original'}</span><span>${project.edits} ${project.edits === 1 ? 'edit' : 'edits'}</span>${project.favorite_count?`<span class="favorite-count" title="Favorite images">♥ ${project.favorite_count}</span>`:''}<span class="date">${dateText(project.updated)}</span></div>${failed?'<div class="job-error">An image needs attention. Open to retry.</div>':''}</div></article>`;
+  const job = state.jobs.find(j => j.id === pending[0]?.id) || pending[0]?.job;
+  const work = job ? progressHTML(job) : project.animating?.length ? `<div class="work-badge" role="status"><span class="work-ring spinning">${icon('spark')}</span><span class="work-copy"><strong>Animating</strong></span></div>` : '';
+  return `<article class="image-card project-card ${bulk.gallery.ids.has(project.id)?'is-selected':''}"><div class="card-preview"><button class="image-open" data-action="project" data-id="${project.id}" aria-label="Open project: ${escapeHTML(project.title.slice(0,100))}">${cover ? `<img src="${cover.thumbnail}" alt="${escapeHTML(project.title)}" loading="lazy">` : `<span class="project-placeholder">${icon('spark')}<span>${failed ? 'Needs attention' : 'Creating…'}</span></span>`}</button>${bulkBox('gallery',project.id,project.title)}${cardActions([
+    `<button data-action="project-favorite" data-id="${project.id}" class="${project.favorite ? 'favorited' : ''}" aria-label="${project.favorite ? 'Remove all favorites in this project' : 'Favorite every image in this project'}" aria-pressed="${project.favorite}">${icon('heart')}</button>`,
+    `<button data-action="project-archive" data-id="${project.id}" aria-label="${project.archived ? 'Restore project' : 'Archive project'}">${icon(project.archived ? 'restore' : 'archive')}</button>`,
+    cover ? `<button data-action="download" data-id="${project.id}" aria-label="Download as JPG">${icon('download')}</button>` : '',
+    `<button data-action="project-delete" data-id="${project.id}" class="delete-image" aria-label="Delete whole project">${icon('trash')}</button>`])}${work}</div><div class="card-info"><p>${escapeHTML(project.title)}</p><div class="card-meta"><span>${project.edits ? `${project.edits} ${project.edits === 1 ? 'edit' : 'edits'}` : cover?.kind === 'upload' ? 'Uploaded' : 'Original'}</span>${project.favorite_count?`<span class="favorite-count" title="Favorite images">♥ ${project.favorite_count}</span>`:''}<span class="date">${dateText(project.updated)}</span></div>${failed?'<div class="job-error">An image needs attention</div>':''}</div></article>`;
 }
-function favoriteHTML(image) {
-  return `<article class="image-card favorite-card ${bulk.gallery.ids.has(image.id)?'is-selected':''}"><div class="card-preview"><button class="image-open" data-action="favorite-open" data-id="${image.id}" aria-label="Open favorite image: ${escapeHTML(image.prompt.slice(0,100))}"><img src="${image.thumbnail}" alt="${escapeHTML(image.prompt)}" loading="lazy"></button>${bulkBox('gallery',image.id,image.prompt)}<div class="card-actions"><button data-action="favorite-toggle" data-id="${image.id}" class="favorited" aria-label="Remove image from favorites" aria-pressed="true">${icon('heart')}</button><button data-action="favorite-delete" data-id="${image.id}" class="delete-image" aria-label="Delete this image">${icon('trash')}</button></div><details class="card-download"><summary aria-label="Download favorite image">${icon('download')}</summary><div class="download-menu">${downloadLinks(image,true)}</div></details></div><div class="card-info"><p>${escapeHTML(image.recipe?image.prompt:image.project_title)}</p><div class="card-meta"><span class="tag">${image.is_root?'Original':image.recipe?.masked_edit?'Area edit':'Edit'}</span><span>${image.width} × ${image.height}</span><span class="date">${dateText(image.created)}</span></div></div></article>`;
+function photoHTML(image) {
+  return `<article class="image-card favorite-card ${bulk.gallery.ids.has(image.id)?'is-selected':''}"><div class="card-preview"><button class="image-open" data-action="favorite-open" data-id="${image.id}" aria-label="Open image: ${escapeHTML((image.recipe ? image.prompt : image.project_title).slice(0,100))}"><img src="${image.thumbnail}" alt="${escapeHTML(image.prompt)}" loading="lazy"></button>${bulkBox('gallery',image.id,image.prompt)}${cardActions([
+    `<button data-action="favorite-toggle" data-id="${image.id}" class="${image.favorite ? 'favorited' : ''}" aria-label="${image.favorite ? 'Remove from favorites' : 'Favorite'}" aria-pressed="${image.favorite}">${icon('heart')}</button>`,
+    `<button data-action="download" data-id="${image.id}" aria-label="Download as JPG">${icon('download')}</button>`,
+    `<button data-action="favorite-delete" data-id="${image.id}" class="delete-image" aria-label="Delete this image">${icon('trash')}</button>`])}</div><div class="card-info"><p>${escapeHTML(image.recipe ? image.prompt : image.project_title)}</p><div class="card-meta"><span>${image.is_root ? 'Original' : image.recipe?.identity_swap ? 'Person swap' : image.recipe?.masked_edit ? 'Area edit' : 'Edit'}</span><span class="date">${dateText(image.created)}</span></div></div></article>`;
 }
+const showsImages = () => state.view === 'favorites' || state.layout === 'images';
 function renderGallery() {
-  const signature = JSON.stringify([state.view,state.query,state.projects.map(p=>[p.id,p.title,p.favorite,p.favorite_count,p.updated,p.edits,p.cover?.id,p.pending?.map(v=>[v.id,v.status])])]);
+  const signature = JSON.stringify([state.view,state.layout,state.query,state.projects.map(p=>[p.id,p.title,p.favorite,p.favorite_count,p.updated,p.edits,p.cover?.id,p.pending?.map(v=>[v.id,v.status]),p.animating?.length])]);
   if (signature !== gallerySignature) {
     gallerySignature = signature;
-    $('#gallery').innerHTML = state.projects.map(state.view==='favorites'?favoriteHTML:imageHTML).join('') || emptyHTML();
+    $('#gallery').innerHTML = state.projects.map(showsImages()?photoHTML:imageHTML).join('') || emptyHTML();
+    $('#gallery').classList.toggle('photo-grid', showsImages());
   }
   updateWorkBadges();renderBulk('gallery');
   $('#load-more').hidden = state.projects.length >= state.total;
   $('#page-title').firstChild.textContent = {library:'Your library',favorites:'Your favorites',archive:'Your archive'}[state.view];
-  const unit=state.view==='favorites'?'image':'project';
+  const unit=showsImages()?'image':'project';
+  $('#layout-toggle').hidden = state.view === 'favorites';
+  for (const button of document.querySelectorAll('[data-layout]')) button.setAttribute('aria-checked', String(button.dataset.layout === state.layout));
   $('#page-count').textContent = `${state.total} ${unit}${state.total===1?'':'s'}`;
   document.querySelectorAll('[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === state.view));
 }
@@ -199,9 +160,10 @@ async function refresh(loadMore=false) {
     const offset = loadMore ? state.projects.length : 0;
     const view = state.view, query = state.query, revision = libraryRevision;
     const limit = loadMore ? 48 : Math.max(48,state.projects.length);
-    const [library, jobs] = await Promise.all([api(`${view==='favorites'?'/api/favorites':'/api/projects'}?section=${view}&q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`), api('/api/jobs')]);
-    if (view !== state.view || query !== state.query || revision !== libraryRevision) { setTimeout(refresh,0); return; }
-    const entries=view==='favorites'?library.images:library.projects;
+    const images = showsImages(), endpoint = view === 'favorites' ? '/api/favorites' : images ? '/api/photos' : '/api/projects';
+    const [library, jobs] = await Promise.all([api(`${endpoint}?section=${view}&q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`), api('/api/jobs')]);
+    if (view !== state.view || query !== state.query || revision !== libraryRevision || images !== showsImages()) { setTimeout(refresh,0); return; }
+    const entries=images?library.images:library.projects;
     if (loadMore) {const seen=new Set(state.projects.map(p=>p.id));state.projects.push(...entries.filter(p=>!seen.has(p.id)));} else state.projects = entries;
     state.navigation=library.navigation;state.jobs = jobs.jobs; state.total = library.total;
     for (const view of ['library','favorites','archive']) $(`#count-${view}`).textContent = library.counts[view];
@@ -214,35 +176,28 @@ async function refresh(loadMore=false) {
 async function changeView(view) {
   libraryRevision++;state.view = view;state.projects=[];state.total=0;bulk.gallery.active=false;bulk.gallery.ids.clear();gallerySignature = ''; await refresh(); window.scrollTo({top:0,behavior:'smooth'});
 }
-function setMode(mode) {
-  persist(); if (mode === 'edit' && state.mode !== 'edit' && state.outputSize === 'preset') state.outputSize = 'original';
-  state.mode = mode; state.composerCollapsed = false;
-  $('#compose-error').hidden = true; renderComposer(); $('#prompt').focus();
+function setLayout(layout) {
+  if (state.layout === layout) return;
+  state.layout = layout; persist(); changeView(state.view);
 }
 function reuse(recipe) {
   if (recipe.mode === 'edit') return reuseInViewer(recipe);
-  state.mode = 'create'; state.quality = recipe.quality; state.aspect = recipe.aspect;
-  state.outputSize = recipe.output_size || 'preset'; state.resizeMode = recipe.resize_mode || 'auto';
-  state.snofs = recipe.snofs; state.seed = recipe.seed; state.variations = 1;
-  state.drafts.create = recipe.prompt; state.composerCollapsed = false;
+  state.quality = recipe.quality; state.aspect = recipe.aspect; state.draft = recipe.prompt; state.composerCollapsed = false;
+  state.reuse = {output_size:recipe.output_size || 'preset', resize_mode:recipe.resize_mode || 'auto', snofs:recipe.snofs, seed:recipe.seed, variations:1};
   renderComposer(); $('#detail-dialog').close(); changeView('library'); $('#prompt').focus();
-  toast('Settings restored. Change anything, then create.');
 }
 async function action(name,id) {
   try { await projectAction(name,id); } catch (error) { toast(error.message); }
 }
 document.addEventListener('click', event => {
-  const download = event.target.closest('.card-download');
-  document.querySelectorAll('.card-download[open]').forEach(menu => {
-    if (menu !== download || event.target.closest('.download-option')) menu.open = false;
-  });
   const view = event.target.closest('[data-view]'); if (view) changeView(view.dataset.view);
-  const mode = event.target.closest('[data-mode]'); if (mode) setMode(mode.dataset.mode);
+  const layout = event.target.closest('[data-layout]'); if (layout) setLayout(layout.dataset.layout);
   const item = event.target.closest('[data-action]'); if (item) action(item.dataset.action,item.dataset.id);
   const close = event.target.closest('[data-close]'); if (close) $(`#${close.dataset.close}`).close();
+  const quality = event.target.closest('[data-composer-quality]'); if (quality) { state.quality = quality.dataset.composerQuality; renderComposer(); }
+  const aspect = event.target.closest('[data-aspect]'); if (aspect) { state.aspect = aspect.dataset.aspect; renderComposer(); }
   const suggestion = event.target.closest('[data-suggestion]');
-  if (suggestion) { state.drafts.create = suggestion.dataset.suggestion; state.mode = 'create'; state.composerCollapsed = false; renderComposer(); $('#prompt').focus(); }
-  if (event.target.closest('#remove-source')) { state.source = null; renderComposer(); }
+  if (suggestion) { state.draft = suggestion.dataset.suggestion; state.composerCollapsed = false; renderComposer(); $('#prompt').focus(); }
 });
 $('#login-form').onsubmit = async event => {
   event.preventDefault(); const button = $('#login-form button'); button.disabled = true; $('#login-error').textContent = '';
@@ -253,17 +208,14 @@ $('#login-form').onsubmit = async event => {
 $('#compose-form').onsubmit = async event => {
   event.preventDefault(); if (refreshing) return;
   const errorElement = $('#compose-error'); errorElement.hidden = true;
-  if (state.mode === 'edit' && !state.source) { errorElement.textContent = 'Choose a photo to edit first.'; errorElement.hidden = false; return; }
   refreshing = true; $('#generate').disabled = true;
   try {
-    persist(); const body = {mode:state.mode,prompt:$('#prompt').value,quality:state.quality,aspect:state.aspect,variations:state.variations,
-      snofs:state.snofs,seed:state.seed,output_size:state.outputSize,resize_mode:state.resizeMode,source_id:state.source?.id,parent_image_id:state.source?.parent_image_id};
-    await send('/api/generate',body); await changeView('library');
-    toast(state.variations > 1 ? `${state.variations} variations queued. They’ll appear as each finishes.` : 'Your image is on its way. It will save automatically.');
+    persist(); const body = {mode:'create',prompt:$('#prompt').value,quality:state.quality,aspect:state.aspect,...createRecipe(),...(state.reuse || {}),seed:state.reuse?.seed ?? null};
+    await send('/api/generate',body); state.draft = ''; state.reuse = null; renderComposer(); await changeView('library');
   } catch (error) { errorElement.textContent = error.message; errorElement.hidden = false; }
   finally { refreshing = false; $('#generate').disabled = connection.offline; }
 };
-$('#upload-root').onclick = $('#upload-button').onclick = () => $('#upload').click();
+$('#upload-root').onclick = () => $('#upload').click();
 $('#upload').onchange = async event => {
   const file = event.target.files[0]; if (!file) return;
   if (file.size > 20*1024*1024) { toast('Choose a photo smaller than 20 MB.'); event.target.value = ''; return; }
@@ -274,22 +226,16 @@ $('#upload').onchange = async event => {
     finally { event.target.value = ''; }
     return;
   }
-  const form = new FormData(); form.append('image',file); $('#upload-root').disabled = $('#upload-button').disabled = true;
-  try { const root = await api('/api/uploads',{method:'POST',body:form}); await refresh(); await showProject(root.project_id,root.id); toast('Original saved. You can edit it now or come back later.'); }
+  const form = new FormData(); form.append('image',file); $('#upload-root').disabled = true;
+  try { const root = await api('/api/uploads',{method:'POST',body:form}); await refresh(); await showProject(root.project_id,root.id); }
   catch (error) { toast(error.message); }
-  finally { $('#upload-root').disabled = $('#upload-button').disabled = false; event.target.value = ''; }
+  finally { $('#upload-root').disabled = false; event.target.value = ''; }
 };
-for (const name of ['quality','aspect','variations','snofs']) $(`#${name}`).onchange = event => {
-  persist(); state[name] = name === 'snofs' ? event.target.checked : name === 'variations' ? Number(event.target.value) : event.target.value;
-  renderComposer();
-};
-$('#output-size').onchange = event => { persist(); state.outputSize = event.target.value; renderComposer(); };
-$('#resize-mode').onchange = event => { persist(); state.resizeMode = event.target.value; renderComposer(); };
 $('#prompt').oninput = persist;
-$('#seed-toggle').onclick = () => { state.seed = state.seed === null ? 123 : null; renderComposer(); if (state.seed !== null) $('#seed').focus(); };
-$('#seed').oninput = event => { state.seed = event.target.value === '' ? null : Number(event.target.value); persist(); };
+$('#composer-reuse').onclick = () => { state.reuse = null; renderComposer(); };
 $('#composer-toggle').onclick = () => setComposerCollapsed(!state.composerCollapsed);
-$('#new-image').onclick = () => { $('#detail-dialog').close(); state.drafts.create = ''; state.mode = 'create'; state.seed = null; state.composerCollapsed = false; renderComposer(); changeView('library'); $('#prompt').focus(); };
+$('#new-image').onclick = () => { $('#detail-dialog').close(); state.draft = ''; state.reuse = null; state.composerCollapsed = false; renderComposer(); changeView('library'); $('#prompt').focus(); };
+$('#open-settings').onclick = $('#sidebar-settings').onclick = () => openSettings();
 function searchImages(immediate=false) {
   clearTimeout(searchTimer); state.query = $('#search').value; gallerySignature = '';
   if (immediate) refresh(); else searchTimer = setTimeout(refresh,250);
@@ -301,10 +247,6 @@ $('#load-more').onclick = () => refresh(true);
 $('#phone-info').onclick = $('#mobile-info').onclick = () => $('#info-dialog').showModal();
 $('#logout').onclick = () => lockStudio().catch(error => toast(error.message));
 document.addEventListener('keydown',event => {
-  if (event.key === 'Escape') {
-    const menu = $('.card-download[open]');
-    if (menu) { menu.open = false; menu.querySelector('summary').focus(); event.preventDefault(); }
-  }
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && state.authenticated && !document.querySelector('dialog[open]')) {
     event.preventDefault();
     if (state.composerCollapsed) { setComposerCollapsed(false); $('#prompt').focus(); }

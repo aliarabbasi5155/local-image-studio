@@ -1,7 +1,8 @@
 'use strict';
-const bulk = {gallery:{active:false,ids:new Set()},viewer:{active:false,ids:new Set()}};
-function selectionEntries(context) { return context==='viewer' ? viewer.project?.versions || [] : state.projects; }
-function selectionScope(context) { return context==='viewer' || state.view==='favorites' ? 'images' : 'projects'; }
+// Selecting many at once happens in the library; the viewer stays about one photo.
+const bulk = {gallery:{active:false,ids:new Set()}};
+function selectionEntries() { return state.projects; }
+function selectionScope() { return showsImages() ? 'images' : 'projects'; }
 function bulkBox(context,id,label) {
   if(!bulk[context].active)return '';
   const checked=bulk[context].ids.has(id);
@@ -17,11 +18,10 @@ function renderBulk(context) {
   if(host.dataset.signature===signature)return;
   host.dataset.signature=signature;
   host.classList.toggle('selecting',selection.active);
-  host.innerHTML=selection.active ? `<div class="bulk-toolbar"><strong>${count} selected</strong><button type="button" data-bulk="all" data-context="${context}">Select shown</button><button type="button" data-bulk="clear" data-context="${context}" ${count?'':'disabled'}>Clear</button><div class="bulk-tools"><button type="button" data-bulk="favorite" data-context="${context}" ${count?'':'disabled'} title="Favorite selected ${unit}">${icon('heart')}<span>Favorite</span></button><button type="button" data-bulk="unfavorite" data-context="${context}" ${count?'':'disabled'} title="Remove selected favorites">${icon('heart')}<span>Unfavorite</span></button><details class="bulk-download"><summary aria-label="Download selection" ${count?'':'aria-disabled="true"'}>${icon('download')}<span>Download</span></summary><div class="download-menu"><button type="button" data-bulk="png" data-context="${context}" ${count && !connection.offline?'':'disabled'}>PNG ZIP · with recipes</button><button type="button" data-bulk="jpg" data-context="${context}" ${count && !connection.offline?'':'disabled'}>JPG ZIP · easy to share</button>${connection.offline?'<small>ZIP files are made by your Mac.</small>':''}</div></details><button type="button" class="danger" data-bulk="delete" data-context="${context}" ${count?'':'disabled'}>${icon('trash')}<span>Delete</span></button></div><button type="button" data-bulk="done" data-context="${context}">Done</button></div>${scope==='projects'?'<small>Actions apply to every image in the selected projects.</small>':''}` : `<button type="button" class="selection-start" data-bulk="start" data-context="${context}" ${entries.length?'':'disabled'}>${icon('select')} Select ${unit==='projects'?'projects':'images'}</button>`;
+  host.innerHTML=selection.active ? `<div class="bulk-toolbar"><strong>${count} selected</strong><button type="button" data-bulk="all" data-context="${context}">Select shown</button><button type="button" data-bulk="clear" data-context="${context}" ${count?'':'disabled'}>Clear</button><div class="bulk-tools"><button type="button" data-bulk="favorite" data-context="${context}" ${count?'':'disabled'} title="Favorite selected ${unit}">${icon('heart')}<span>Favorite</span></button><button type="button" data-bulk="unfavorite" data-context="${context}" ${count?'':'disabled'} title="Remove selected favorites">${icon('heart')}<span>Unfavorite</span></button><button type="button" data-bulk="jpg" data-context="${context}" ${count && !connection.offline?'':'disabled'} title="${connection.offline?'ZIP files are made by your Mac':'Download the selection as JPGs in a ZIP'}">${icon('download')}<span>Download</span></button><button type="button" class="danger" data-bulk="delete" data-context="${context}" ${count?'':'disabled'}>${icon('trash')}<span>Delete</span></button></div><button type="button" data-bulk="done" data-context="${context}">Done</button></div>${scope==='projects'?'<small>Actions apply to every image in the selected projects.</small>':''}` : `<button type="button" class="selection-start" data-bulk="start" data-context="${context}" ${entries.length?'':'disabled'}>${icon('select')} Select ${unit==='projects'?'projects':'images'}</button>`;
 }
 function renderSelection(context) {
-  if(context==='viewer' && $('.version-strip'))renderTimeline();else if(context==='gallery'){gallerySignature='';renderGallery();}
-  renderBulk(context);
+  gallerySignature='';renderGallery();renderBulk(context);
 }
 function resetSelection(context) {bulk[context].active=false;bulk[context].ids.clear();renderSelection(context);}
 async function bulkAction(action,context) {
@@ -31,11 +31,11 @@ async function bulkAction(action,context) {
   if(!selection.ids.size)return;
   const body={scope:selectionScope(context),ids:[...selection.ids]};
   if(action==='delete'){confirmBulkDeletion(context,body);return;}
-  if(action==='png' || action==='jpg'){
+  if(action==='jpg'){
     toast('Preparing your ZIP…');
     const result=await send('/api/bulk-download',{...body,format:action});
     const link=document.createElement('a');link.href=result.url;link.download=result.filename;document.body.append(link);link.click();link.remove();
-    toast(`${result.images} image${result.images===1?'':'s'} ready in a ${action.toUpperCase()} ZIP.`);return;
+    toast(`${result.images} image${result.images===1?'':'s'} ready.`);return;
   }
   await send('/api/bulk',{...body,action:'favorite',favorite:action==='favorite'});
   await refresh();renderSelection(context);toast(action==='favorite'?'Selection favorited.':'Selection removed from favorites.');

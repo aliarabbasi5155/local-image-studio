@@ -3,6 +3,4 @@ body.is-offline .server-summary{border-color:#7a6250;background:#29242b;color:#e
 .offline-content:empty{display:none}
 .offline-content h3{font-size:13px;font-weight:500;margin:22px 0 12px}
 .offline-content p{color:var(--muted);font-size:11px;line-height:1.7}
-.download-option.unavailable,.secondary.unavailable{opacity:.5;cursor:not-allowed}
-.download-option.unavailable:hover{background:none}
-.bulk-download small{display:block;padding:6px 9px 2px;font-size:9px;color:#b5a9a1}
+.secondary.unavailable{opacity:.5;cursor:not-allowed}

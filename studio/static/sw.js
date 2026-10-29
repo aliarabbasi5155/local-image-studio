@@ -3,12 +3,11 @@
 // app saved for offline use (offline-store.js). Library data otherwise comes from the Mac, and
 // generation requests always go to it. Incoming shares have their own temporary inbox.
 importScripts('/static/share-store.js', '/static/offline-store.js');
-const CACHE = 'studio-shell-v7';
-const SHELL = ['/', '/static/style.css', '/static/projects.css', '/static/masking.css', '/static/automatic.css',
-  '/static/polish.css', '/static/mask-workspace.css', '/static/identity.css', '/static/app.js', '/static/projects.js', '/static/automatic.js',
-  '/static/masking.js', '/static/identity.js', '/static/actions.js', '/static/share-store.js', '/static/sharing.js', '/static/sharing.css',
-  '/static/manifest.json', '/static/icon.svg', '/static/icon-192.png', '/static/video.js', '/static/video.css',
-  '/static/offline-store.js', '/static/offline.js', '/static/offline.css'];
+const CACHE = 'studio-shell-v8';
+const SHELL = ['/', '/static/style.css', '/static/projects.css', '/static/polish.css', '/static/sharing.css', '/static/offline.css', '/static/viewer.css',
+  '/static/offline-store.js', '/static/offline.js', '/static/settings.js', '/static/app.js', '/static/projects.js', '/static/automatic.js',
+  '/static/masking.js', '/static/identity.js', '/static/video.js', '/static/actions.js', '/static/share-store.js', '/static/sharing.js',
+  '/static/manifest.json', '/static/icon.svg', '/static/icon-192.png'];
 const MEDIA = /^\/media\/(image|upload|thumb|video)\/([0-9a-f-]{36})$/;
 
 self.addEventListener('install', event => {

@@ -254,8 +254,8 @@ document.addEventListener('click', event => {
 function renderConnection() {
   document.body.classList.toggle('is-offline', connection.offline);
   if (!state.options || !state.authenticated) return;
-  renderEngine(); renderComposer(); gallerySignature = ''; renderGallery(); renderBulk('viewer');
-  if ($('#detail-dialog').open && viewer.project) renderSelected(false);
+  renderEngine(); renderComposer(); gallerySignature = ''; renderGallery();
+  if ($('#detail-dialog').open && viewer.project) renderViewer();
   renderOfflineStatus(); updateSharedNotice().catch(() => {});
 }
 function savedAgo(timestamp) {

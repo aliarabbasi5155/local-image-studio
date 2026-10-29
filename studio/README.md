@@ -3,19 +3,18 @@
 A small website for the existing FLUX.2 Klein / SNOFS setup. Use it on this Mac
 or a phone on the same Wi-Fi. It includes image creation and editing, 1–4
 variations, quality presets, exact original-size edits, 2K/4K output, Favorites,
-a reversible Archive, and saved recipes.
+a reversible Archive, and saved recipes. New uploads and results are saved as
+quality-95 JPEG (about a quarter of a PNG's size); photos saved earlier stay PNG.
 Images can also be permanently deleted after confirmation.
 
 ## Photo to video
 
-Choose **Photo to video · Your clips** above the library to upload a photo,
-or open any completed project image and choose **Animate photo**. Describe the
-motion, choose **Match photo** (the default) or **Preview**, then generate a clip
-of approximately **2, 4 or 6 seconds** at 24 fps (49, 97 or 145 frames).
-The photo determines the aspect ratio; there is no landscape/portrait/square override.
-Start with a short clip.
-Use a fixed seed to reuse the same settings. Every clip has MP4 playback, download,
-and a separate settings JSON. The video library shows the latest 100 jobs.
+Open any finished image and choose **Animate**. Describe the motion, pick about
+**2, 4 or 6 seconds** at 24 fps (49, 97 or 145 frames) and send. The clip joins
+the project's strip right after the images, plays in the viewer, and can be
+downloaded as MP4 or deleted on its own; deleting the project deletes its clips.
+The photo determines the aspect ratio. **Match photo** (the default) or **Preview**
+is chosen in Settings → Videos. Start with a short clip.
 
 **Match photo** saves the exact photo width and height. Inference uses a smaller
 canvas for this Mac's memory budget, and the result is resized to the original
@@ -154,10 +153,10 @@ The installed app opens full screen and keeps its own sign-in. While it can
 reach your Mac it also keeps a copy of your library on the phone, including
 full-size images and finished clips, and keeps that copy up to date. Away from
 home it opens that copy instead: you can browse, search, compare, favorite,
-archive, delete, download PNGs and play clips. Changes wait on the phone and
+archive, delete, download JPGs and play clips. Changes wait on the phone and
 reach your Mac the next time the app can reach it. A project that gained new
 images on the Mac in the meantime is kept rather than deleted. Creating,
-editing, selections, identity swaps, videos, JPG and ZIP downloads need the Mac.
+editing, selections, person swaps, videos and ZIP downloads need the Mac.
 Photos uploaded or shared away from home wait in the phone's inbox. **Lock
 studio** removes the copy from the phone. Only the installed app keeps a copy;
 an ordinary browser tab, such as the one on this Mac, does not.
@@ -220,95 +219,60 @@ References: [Chrome Web Share Target](https://developer.chrome.com/docs/capabili
 
 ## Projects and editing
 
-The selection editor gives the photo most of the screen. On phones, **Auto select**
-or **Tools** opens a scrollable panel over the photo; **Back to photo** folds it
-away. Brush, Erase, Pan, Undo, zoom and **Use this area** stay within reach. Pinch
-to zoom, or use + / − and **Fit**. Zoomed photos can fill the entire canvas. On a
-larger screen, selection and blending controls sit beside the photo.
+The library shows one card per **project**, ordered by its most recent image, edit
+or clip. A card shows the project's newest image, and opening it lands on that
+image. **Images** at the top lists every finished image instead, newest first.
+Each generated image or uploaded photo starts a project. Existing images are
+grouped using their saved parent and source links.
 
-The library shows one card per **project**, ordered by its most recent image/edit.
-Each generated image or uploaded photo
-starts a project. Existing images are grouped using their saved parent and source
-links; importing the old library leaves its PNGs and recipes unchanged.
-
-- **Create:** describe an image in the bottom panel, choose quality, shape, size
-  and 1–4 variations. Every variation starts its own project. **Minimize** and
-  **Expand** keep the draft and give you more browsing space.
-- **Upload image:** saves a PNG, JPG or WebP as the **Original** and opens its editor.
-  Editing is optional; close the viewer and the uploaded original remains saved.
-- **Open a project:** the screen-filling viewer starts on the original. A centered horizontal
-  thumbnail strip shows its edits in time order. Select a thumbnail, then type
-  in the edit box to make a child of that particular image. Multiple edit
-  variations are sibling versions in the same project. The header shows which
-  earlier image the selected version came from. Drafts are remembered per image.
-- **Compare:** turn **Compare** on or off; your choice is remembered. When enabled,
-  choose **Immediate parent** or **Original**. Drag the divider or move the slider.
-  **Reset split** restores 50/50.
-  If an earlier result was deleted, its independent saved source still supports
-  parent comparison. Deleted versions disappear from the strip; parent links stay intact.
-- **Zoom:** pinch with two fingers, or use **+**, **−**, and **100%**. Both images
-  zoom together. Drag to pan when zoomed; drag to compare at 100%.
-- **Fullscreen and controls:** the viewer fills the page immediately; its
-  fullscreen button also hides browser chrome when supported. **Hide controls**
-  or a tap on the center of the photo/background fades the interface away; tap
-  again to reveal it. Reduced-motion device preferences are respected.
-  **H** toggles controls. Arrow keys move between versions when the photo is
-  focused; Shift + arrow keys switch projects. The top previous/next buttons
-  switch between projects in the current collection.
-  Tap the left or right edge of the photo to move between images. At the first
-  or last image, a **Previous project / Next project** marker signals crossing
-  to the adjacent project. Dragging or pinching does not trigger navigation.
-- **Edit settings:** choose quality, output size, resizing, variations, seed and
-  SNOFS. Changes are remembered. The prompt that produced the selected version
-  appears above its edit box; expand it to read the full prompt. The copy icon
-  copies that prompt, including on a phone using local HTTP. The gear opens
-  settings; **Copy saved settings** copies the selected image's complete recipe.
-  **Reuse settings**
-  copies the prompt and settings, selecting the earlier parent when it is still
-  present. If that parent was deleted, the saved result becomes the editing target.
-- **Favorites:** shows individual starred images, including uploaded originals.
-  The viewer menu favorites only the selected image. A library card's heart and
-  count indicate that it contains starred images. Clicking that heart favorites
-  all its images, or removes all its image favorites. Existing project favorites
-  become a favorite on the original once; previous per-image favorites are kept.
-- **Archive:** archives the whole project, retaining its original and all edits.
-  Open Archive and choose **Restore project** to bring it back.
-- **Delete this image:** in the viewer menu, deletes only the selected image after
-  confirmation. Its children and saved parent comparisons remain usable. The
-  original can also be removed from the timeline while its comparison source
-  and children stay. To remove the whole family, use **Delete whole project** in the menu
-  or the trash button on the library card. Stop that project's pending jobs
-  before deleting it. Permanent deletion has no restore; Archive is reversible.
-- **Download:** the arrow on a library thumbnail downloads the original as PNG
-  or JPG. The viewer's download buttons save the selected version. Both retain
-  the full saved dimensions. Generated PNGs include their settings and workflow;
-  uploaded originals have no generation recipe. JPG is a sharing copy at quality
-  95, with transparent areas flattened to white. **Download recipe** saves a
-  generated version's settings separately.
-- **Bulk actions:** click **Select projects** in Library/Archive or **Select images**
-  in Favorites/the viewer. Use the check buttons and **Select shown**, then favorite,
-  unfavorite, download or delete the selection. Library/Archive actions include
-  every image in each selected project; image selections affect only those images.
-  Downloads are one ZIP of full-size PNGs (with embedded recipes) or JPG copies.
-  Pending images must finish before an image download. Project ZIPs contain all
-  finished images. Deletion always asks for confirmation. Stop selected active
-  generations before deleting them. **Done** exits selection mode.
+- **Create:** describe an image in the bottom panel and choose quality and shape.
+  Every variation starts its own project. **Minimize** and **Expand** keep the draft.
+- **Upload photo:** saves a PNG, JPEG or WebP as the **Original** and opens it.
+- **The viewer:** the photo fills the screen and the controls float over it.
+  Tap once to hide or show them; they stay hidden while you move between images
+  and projects. Swipe left or right for the next image; past the last image of a
+  project, swiping continues into the next project. Arrow keys do the same on a
+  computer (Shift switches projects), and **H** toggles the controls.
+- **Zoom:** pinch or double-tap. The zoomed photo fills the whole screen, not just
+  its own frame. Drag to pan.
+- **Compare:** press and hold the photo to see what it came from; let go to
+  return. The compare button turns on a split you can drag, also while zoomed,
+  with **Parent | Original** to choose what to compare with. If an earlier result
+  was deleted, its saved source still supports the comparison.
+- **The strip:** every image and clip of the project in time order. Images still
+  being made show their progress there; open one to see its progress or stop it.
+- **Edit:** choose **Fast**, **Balanced** or **High**, describe the change and send.
+  The result appears in the strip and opens when it finishes. **Area**, **Person**
+  and **Animate** sit beside Edit and work on the same screen.
+- **Settings** (the gear, or ⋯ in the viewer): size, resizing and images per edit
+  or per new image, SNOFS, area-edit options and video size. Edits default to the
+  photo's size without resizing, one image at a time. **Reuse settings** copies
+  an earlier recipe for the next edit or creation only.
+- **Favorite, download, delete:** the small buttons at the top. Downloads are
+  JPGs at full size. Deleting removes only that image or clip; its children and
+  saved comparisons stay. ⋯ holds **Reuse settings**, **Copy prompt**,
+  **Download recipe**, **Archive project** and **Delete whole project**. Stop a
+  project's pending work before deleting it; deletion has no restore.
+- **Favorites:** individual starred images. A library card's heart favorites all
+  of its images, or removes all their favorites.
+- **Archive:** hides the whole project; open Archive and restore it any time.
+- **Bulk actions:** **Select projects** (or **Select images**) in the library, then
+  favorite, unfavorite, download as a JPG ZIP or delete the selection.
 
 ## Selected-area editing (mask / inpainting)
 
-Open a project and select the image you want to change. Click **Select an area**:
+Open a project and select the image you want to change. Choose **Area**; the same
+screen switches to selection mode:
 
-1. Use **Brush** to paint pink over the parts that may change. **Erase**, **Undo**,
-   and **Clear** help correct the selection. Pinch with two fingers to zoom, or
-   use the zoom buttons. **Pan** moves the photo when zoomed.
-2. Adjust **Edge softness** if needed. Start with 8 pixels; 0 gives a sharp edge.
-   Click **Use this area**. Cancel keeps the earlier selection.
-3. Describe the change in the usual edit box and click **Edit image**. Quality,
-   variations, seed and SNOFS still apply. The result is another version in the
-   same project, with its mask and settings saved in its recipe.
+1. With **Brush**, **Paint** pink over the parts that may change. **Erase**,
+   **Undo** and **Clear** correct it; pinch to zoom, and **Move** pans with one
+   finger. **Auto** finds the area for you (below).
+2. Choose **Done**. **Cancel** keeps the earlier selection.
+3. Describe the change and send. Quality and Settings still apply. The result is
+   another version in the same project, with its mask and settings saved in its recipe.
 
-**Selected area only** turns the mask on or pauses it for a whole-image edit.
-**Adjust selection** reopens the painter; **Remove mask** returns to whole-image editing.
+The **Selected area** chip in the edit bar switches between the area and the
+whole photo. Choose **Area** again to adjust the selection.
 Selections belong to each individual version. Unsent masks stay in the current
 browser tab; reloading clears them. After submitting, the mask is saved on the
 server, and **Reuse settings** reloads it along with the prompt on the earlier
@@ -326,8 +290,9 @@ expose a native latent mask input, so this is crop-based masked editing rather
 than a dedicated inpainting model. Manual painting uses the existing model;
 automatic selection adds the separate SAM 3 model described below.
 
-The saved PNG keeps the exact original dimensions and preserves every pixel
-outside the painted mask. Edge softness fades inward from the boundary. The
+The saved result keeps the exact original dimensions, and every pixel outside the
+painted mask is copied from the original before saving. New results are saved as
+JPEG, so those pixels match the original to JPEG precision rather than bit for bit. Edge softness fades inward from the boundary. The
 website uses unpainted context to correct small position/scale drift and color
 casts only when the comparisons support a reliable improvement. It does not use
 the edited object's original color as the color target, so requested recolors
@@ -335,18 +300,16 @@ can stay changed. Automatic blending adds a smooth local color correction near
 the selection, using matching unpainted surroundings. This handles uneven casts
 at different corners that one whole-patch adjustment cannot correct. Corrections
 fade where there is too little reliable context. These options and the canvas
-geometry are saved in the recipe;
-the PNG also records which corrections actually applied. The embedded ComfyUI
-workflow performs crop editing and basic blending; context correction is the
-website's final processing step.
+geometry are saved in the recipe. The ComfyUI workflow performs crop editing and
+basic blending; context correction is the website's final processing step.
 
-Open **Speed & blending** in the painter:
+These options are in Settings → Area edits:
 
 - **Edge blending:** Automatic is the default for new masks. It chooses an
   inward transition width for the selection size and working resolution, and
   adds local color matching when **Match surrounding colors** is enabled.
-  Manual retains the earlier fixed **Edge softness** slider and whole-patch
-  color adjustment. Reusing older recipes keeps their manual blending.
+  **Soft edge** retains the earlier fixed edge slider, shown in the painter, and
+  whole-patch color adjustment. Reusing older recipes keeps their manual blending.
 - **Working resolution:** Balanced defaults to a 768-pixel long-edge limit;
   Quick uses 512. Maximum uses the chosen quality's limit, up to about one
   megapixel. A smaller canvas runs faster but retains less fine detail. The
@@ -373,8 +336,7 @@ run is used for local color matching.
 Output-size and whole-image resize controls are disabled while the mask is active.
 Quality sets the model and upper resolution limit; Working resolution can lower
 that limit. The crop may be resized to fit back into
-the original, while the rest of the photo is copied directly. JPG downloads are
-lossy sharing copies. For exact preserved pixels, download PNG.
+the original, while the rest of the photo is copied directly.
 
 For local edits on a 2K/4K photo, upload or select that full-size photo first.
 Small selections can finish faster than whole-image edits; broad selections still
@@ -384,7 +346,7 @@ including shadows; an overly tight mask can cut off an otherwise correct edit.
 
 ## Automatic selection with SAM 3
 
-Type your edit instruction, then open **Select an area**. The editor suggests a
+Type your edit instruction, then choose **Area** and **Auto**. It suggests a
 mode and common object names from the instruction; you can change them.
 
 - **Change something existing:** enter a short English object name such as
@@ -407,8 +369,8 @@ mode and common object names from the instruction; you can change them.
 protected regions, with a small safety margin. Brush strokes cannot enter these
 regions while protection is on. Check the preview: detection can miss small or
 hidden faces, and SAM does not decide which person your instruction refers to.
-The saved PNG copies protected faces and all unselected pixels exactly from
-the original. JPG downloads are lossy. To deliberately change a face or cover
+The saved result copies protected faces and all unselected pixels from the
+original, to JPEG precision. To deliberately change a face or cover
 part of it with a new object, turn face protection off and review the selection.
 
 The object SAM finds is replaced completely; only the **Extra room** around it
@@ -435,7 +397,7 @@ Both default on when the object name is clothing, such as `dress` or `shirt`:
   30-second High edit took about 40–50 seconds; timing estimates learn these
   runs separately.
 
-**Use this area** returns to your usual edit box. The final mask, protected
+**Done** returns to the edit bar. The final mask, protected
 face/skin mask, object outline, selection settings and destination are saved
 with the edit. **Reuse settings** restores them. Cancelling the selection editor leaves the earlier mask unchanged.
 Add/Move edits also give Flux a second reference with a small destination marker;
@@ -467,25 +429,24 @@ manual painting still works. To reinstall/start only the selector:
 
 ## Identity swap
 
-Open a photo, then choose **Identity swap**. The left photo supplies the scene,
-pose, head angle and interactions. **Library** or **Upload** on the right chooses
-the replacement person.
+Open a photo, then choose **Person**. The photo on screen supplies the scene,
+pose, head angle and interactions. **Choose a person** (from your library) or
+**Upload** picks the replacement person.
 
 | Mode | What changes | What the original supplies |
 | --- | --- | --- |
-| **Head identity** | The head, face, ears and hair | Body, outfit, head angle, expression and scene |
-| **Whole identity** | The entire person, including body build and outfit | Position, pose, head angle, gestures and interaction with objects |
+| **Head** | The head, face, ears and hair | Body, outfit, head angle, expression and scene |
+| **Whole person** | The entire person, including body build and outfit | Position, pose, head angle, gestures and interaction with objects |
 
 Use a clear reference with one prominent person. Similar head angles help;
 whole identity also needs the reference's body and outfit visible. Optional
 notes describe additional preferences.
 
-Choose **Preview swap** first. Pink marks the pixels that may change; pixels
-outside it are copied exactly from the original. SAM looks for held objects and
+Send once to preview. Pink on the photo marks the pixels that may change; pixels
+outside it are copied from the original. SAM looks for held objects and
 excludes detected objects and other people from both passes. If an object is
-missed, name it in **Object to keep** (for example, “wine glass”) and preview
-again. Check that the object is outside the pink area before choosing **Swap
-identity**. Detection is fallible, especially with transparent or partly hidden
+missed, name it under **Keep a held object** (for example, “wine glass”) and preview
+again. Check that the object is outside the pink area, then send again to swap. Detection is fallible, especially with transparent or partly hidden
 objects. The preview reports whether any object was detected.
 
 Head identity uses an enlarged crop of the original and a dedicated reference
@@ -519,14 +480,14 @@ maps them to one of the two current modes and rebuilds the areas.
 
 ## Timing and server status
 
-The Create panel and editor show a compact timing chip based on actual completed
-runs with the same model, SNOFS choice, create/edit mode and processing method,
-and similar canvas/output sizes and shape. The median of up to eight matching
-recent runs provides the estimate. Unfamiliar sizes show **Learning**; timings
-are not extrapolated from a much smaller image.
+The Create panel and the edit bar show a short estimate such as **≈ 40 s**, based
+on actual completed runs with the same model, SNOFS choice, create/edit mode and
+processing method, and similar canvas/output sizes and shape. The median of up to
+eight matching recent runs provides the estimate. Unfamiliar sizes show nothing
+rather than a guess extrapolated from a much smaller image.
 
-Work badges on cards and in the viewer show the engine's actual sampling-step
-percentage (for example **2 / 4 steps · 50%**) or upscale-tile progress. This is
+Library cards and the viewer's strip show progress on the image being made, with
+the engine's actual sampling-step percentage or upscale-tile progress. This is
 progress of the named stage, not a fabricated percentage of the whole request.
 Preparation, waiting, blending and saving show activity without a fake percentage.
 Elapsed time is measured from submission. When matching history exists, a compact
@@ -546,18 +507,16 @@ JPEG or PNG before uploading.
 
 ## Output size
 
-Choose **Output size** in Create or the viewer’s **Edit settings**. The line below the controls
-shows the dimensions that will be saved.
+Choose **Size** and **Resizing** in Settings, separately for edits and for new
+images. Edits default to the photo's size without resizing.
 
-The **Resize** menu lets you choose how the output is made:
+**Resizing** chooses how the output is made:
 
 - **Resize / AI upscale** keeps the existing behavior and fits the result to your selected output size.
 - **No resize · native size** saves the model's output directly at the quality preset's resolution. Edits use the photo's shape. The output-size selector is disabled because no enlargement happens.
 - **No resize · full size** generates directly at your selected size, without AI upscaling or a final resize. Larger images take longer and need more memory. Model dimensions use 16-pixel steps, so an odd-sized photo may save a few pixels larger or smaller.
 
-The choice is remembered in your browser, saved in each image's recipe and restored by **Reuse settings**. To compare both no-resize options, use the same photo, prompt and fixed seed.
-
-![Output size controls with a saved 4K editing recipe](../examples/studio-output-sizes.png)
+The choice is remembered in your browser, saved in each image's recipe and restored by **Reuse settings** for the next edit.
 
 | Choice | Saved image |
 | --- | --- |
@@ -568,7 +527,7 @@ The choice is remembered in your browser, saved in each image's recipe and resto
 
 In Edit mode, Match original, 2K and 4K keep the source photo's aspect ratio.
 For example, a 751 × 497 photo saves as 751 × 497, 2048 × 1355 or 4096 × 2711.
-Shape then shows **Original photo**. In Create mode, 2K/4K use the chosen shape;
+In Create mode, 2K/4K use the chosen shape;
 a square 4K image is 4096 × 4096. Choose Preset when you want to change an edit
 to a preset square, portrait or landscape canvas.
 
@@ -577,9 +536,8 @@ With **Resize / AI upscale**, large outputs are generated on a smaller canvas, e
 without cropping. The generation canvas stays near one megapixel to fit this
 Mac's memory. A 4K output uses at least 1024 pixels on the generation canvas's
 longest edge, even with Fast. These are AI-upscaled outputs. An image's details
-show both **Size** and **Generated at**; its PNG and saved recipe retain the
-generation dimensions and upscaler settings. **Reuse settings** restores the
-output-size choice, and **Edit this image** starts with Match original.
+show both **Size** and **Generated at**; its saved recipe retains the
+generation dimensions and upscaler settings.
 
 Match original supports up to 16,777,216 pixels and 8192 pixels per side.
 Original-shape output supports aspect ratios from 1:32 to 32:1. Your saved
@@ -599,8 +557,8 @@ generation canvas also depends on the requested dimensions, so Balanced and
 High can share a canvas size. Fast uses the 4-bit model; Balanced and High use
 the 8-bit model.
 All presets use the distilled model's four steps and guidance 1.0. SNOFS is
-enabled by default and can be switched off. The optional fixed seed makes it
-easy to revisit the same settings; random seed gives a fresh starting point.
+enabled by default and can be switched off in Settings. Each image gets a random
+seed; **Reuse settings** repeats an earlier seed for the next image.
 
 Two real Fast square creations with SNOFS took about 21 and 19 seconds on this
 Mac, and a Fast square edit took about 30 seconds. Larger images and other
@@ -618,8 +576,9 @@ time waiting in the queue. See [the measured runs](../benchmarks/20261005-output
 | Path | Contents |
 | --- | --- |
 | `studio.sqlite3` | Jobs, recipes, favorite/archive state and sign-in sessions |
-| `images/` | Original generated PNGs, with embedded recipe and ComfyUI workflow |
-| `uploads/` | Saved editing sources, normalized to PNG |
+| `images/` | Generated results: JPEG with the recipe in its comment (earlier ones are PNG) |
+| `uploads/` | Uploaded originals and editing sources, as JPEG (earlier ones are PNG) |
+| `videos/` | Finished clips (MP4) and the photo each was made from |
 | `thumbs/` | Small gallery previews |
 | `masks/` | Saved editing selections and protected face masks |
 | `access-pin.txt` | Your local access PIN |

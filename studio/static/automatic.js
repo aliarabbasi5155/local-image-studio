@@ -51,11 +51,11 @@ async function initializeAutoSelection(existing) {
   const m=maskEditor;
   m.selectionMetadata=existing?.automatic;
   m.auto={pool:[],faces:[],skin:[],core:null,result:null,index:0,mode:'change',placement:null,bodyTouched:!!existing?.automatic};
-  $('.mask-tools').insertAdjacentHTML('beforebegin',`<details class="mask-auto" open><summary>${icon('settings')} Automatic selection <span id="auto-summary"></span></summary><div class="auto-fields"><label>Edit type<select id="auto-mode"><option value="change">Change</option><option value="move">Move</option><option value="add">Add</option></select></label><label id="auto-target-label">Object to select<input id="auto-target" placeholder="shirt, hand, jacket…" maxlength="80" autocomplete="off"></label><button id="auto-find" type="button">Find area</button><div class="auto-checks"><label class="auto-check"><input id="auto-protect" type="checkbox" checked>Protect detected faces</label><label class="auto-check auto-body" title="Arms, legs, neck and other visible skin stay pixel-exact. Turn off when new clothing should cover more skin."><input id="auto-skin" type="checkbox">Keep visible skin</label><label class="auto-check auto-body" title="Shows Flux the original outline and asks it to keep the same proportions. Slightly slower."><input id="auto-shape" type="checkbox">Keep body shape</label></div><label class="auto-margin">Extra room <input id="auto-margin" type="range" min="0" max="48" value="12"><output id="auto-margin-value">12 px</output></label><div id="auto-matches" hidden><label>Choose a match<select id="auto-match"></select></label><button id="auto-all" type="button">Select all</button></div><p id="auto-status" role="status">Use a short object name, then check the pink preview. Brush and erase can refine it.</p></div></details>`);
+  $('.mask-tools').insertAdjacentHTML('beforebegin',`<div class="mask-auto" hidden><div class="mask-auto-row"><select id="auto-mode" aria-label="Edit type"><option value="change">Change</option><option value="move">Move</option><option value="add">Add</option></select><label id="auto-target-label" class="mask-auto-target"><span class="sr-only">Object to select</span><input id="auto-target" placeholder="What to select, like shirt or hand" maxlength="80" autocomplete="off"></label><button id="auto-find" type="button" class="lb-text strong">Find area</button></div><div class="auto-checks"><label class="lb-check"><input id="auto-protect" type="checkbox" checked>Protect faces</label><label class="lb-check auto-body" title="Arms, legs and neck stay exactly as they are. Turn off when new clothing should cover more skin."><input id="auto-skin" type="checkbox">Keep skin</label><label class="lb-check auto-body" title="Keeps the original body outline and proportions. Slightly slower."><input id="auto-shape" type="checkbox">Keep shape</label><label class="auto-margin">Room <input id="auto-margin" type="range" min="0" max="48" value="12"><output id="auto-margin-value">12 px</output></label></div><div id="auto-matches" hidden><select id="auto-match" aria-label="Choose a match"></select><button id="auto-all" type="button" class="lb-text">Select all</button></div><p id="auto-status" role="status"></p><span id="auto-summary" hidden></span></div>`);
   $('[data-mask-tool="pan"]').insertAdjacentHTML('beforebegin','<button data-mask-tool="place" type="button" aria-pressed="false" hidden>Draw destination</button>');
   $('.mask-stage').insertAdjacentHTML('beforeend','<canvas id="mask-protection" aria-hidden="true"></canvas>');
   const protectedCanvas=$('#mask-protection');protectedCanvas.width=m.canvas.width;protectedCanvas.height=m.canvas.height;
-  $('#auto-target').value=existing?.automatic?.target || suggestedMaskTarget($('#viewer-edit-prompt')?.value || '');
+  $('#auto-target').value=existing?.automatic?.target || suggestedMaskTarget(viewer.drafts[draftKey()] || '');
   $('#auto-protect').checked=existing?.automatic?.protect_faces!==false;
   $('#auto-skin').checked=existing?.automatic?existing.automatic.protect_skin===true:clothingTarget($('#auto-target').value);
   $('#auto-shape').checked=existing?existing.preserveShape===true:clothingTarget($('#auto-target').value);
@@ -66,7 +66,7 @@ async function initializeAutoSelection(existing) {
     $('[data-mask-tool="place"]').hidden=m.auto.mode==='change';
     for(const label of document.querySelectorAll('.auto-body'))label.hidden=m.auto.mode!=='change';
     $('[data-mask-tool="place"]').textContent=m.auto.mode==='add'?'Draw placement':'Draw destination';
-    $('#auto-status').textContent=m.auto.mode==='add'?'Draw a box for the new object, including its shadows. Find faces first if you want face protection.':m.auto.mode==='move'?'Find the existing part, then draw its destination. Hand moves need room for the wrist/arm; the exact pose may need retries.':'Find an existing object, then check the pink preview.';
+    $('#auto-status').textContent=m.auto.mode==='add'?'Draw a box where the new object goes.':m.auto.mode==='move'?'Find the part, then draw where it goes.':'';
     if(m.auto.result)refreshAutoSelection();
     if(m.auto.mode==='add'){
       m.tool='place';for(const button of document.querySelectorAll('[data-mask-tool]'))button.setAttribute('aria-pressed',String(button.dataset.maskTool==='place'));
@@ -83,7 +83,7 @@ async function initializeAutoSelection(existing) {
   $('#auto-shape').onchange=()=>{m.auto.bodyTouched=true;};
   $('#auto-target').oninput=()=>{if(!m.auto.bodyTouched)$('#auto-skin').checked=$('#auto-shape').checked=clothingTarget($('#auto-target').value);updateMaskButtons();};
   if(existing?.protectionBlob&&($('#auto-protect').checked||$('#auto-skin').checked))await restoreFaceProtection(existing.protectionBlob,m);
-  $('#auto-mode').value=existing?.automatic?.mode || suggestedMaskMode($('#viewer-edit-prompt')?.value || '');
+  $('#auto-mode').value=existing?.automatic?.mode || suggestedMaskMode(viewer.drafts[draftKey()] || '');
   $('#auto-mode').dispatchEvent(new Event('change'));
   if(existing?.automatic?.placement){const b=existing.automatic.placement;m.auto.placement={tool:'place',mode:m.auto.mode,points:[{x:b[0]*m.canvas.width/m.version.width,y:b[1]*m.canvas.height/m.version.height},{x:b[2]*m.canvas.width/m.version.width,y:b[3]*m.canvas.height/m.version.height}]};}
 }
@@ -107,7 +107,7 @@ async function findAutomaticArea() {
   if(!target&&!protect)throw new Error('Draw the placement box, or enable face protection first.');
   m.finding=true;updateMaskButtons();
   for(const id of ['auto-find','auto-mode','auto-target','auto-protect','auto-skin','auto-shape','auto-match','auto-all'])$('#'+id).disabled=true;
-  $('#auto-status').classList.remove('auto-warning');$('#auto-status').textContent='Finding the area on your Mac…';$('#auto-summary').textContent='Finding…';
+  $('#auto-status').classList.remove('auto-warning');$('#auto-status').textContent='Finding…';$('#auto-summary').textContent='Finding…';
   try{
     let source=viewer.sources.get(m.version.id);
     if(!source){source=await send(`/api/projects/${viewer.project.id}/versions/${m.version.id}/edit-source`,{});viewer.sources.set(m.version.id,source);}
@@ -121,8 +121,8 @@ async function findAutomaticArea() {
     $('#auto-match').innerHTML=m.auto.pool.map((_,i)=>`<option value="${i}">Match ${i+1} of ${m.auto.pool.length}</option>`).join('')+'<option value="all">All matches</option>';
     $('#auto-matches').hidden=m.auto.mode==='add'||m.auto.pool.length<2;
     refreshAutoSelection();
-    const faces=(protect?`${m.auto.faces.length} face${m.auto.faces.length===1?'':'s'} protected. `:'')+(skin?(m.auto.skin.length?'Visible skin kept; new clothing cannot cover it. ':'No visible skin found. '):'');
-    $('#auto-status').textContent=(m.auto.mode==='add'?'Draw a placement box for the new object. ':m.auto.pool.length?`${m.auto.pool.length} match${m.auto.pool.length===1?'':'es'} found. Choose the correct pink area. `:'No match found. Try a simpler name or use the brush. ')+faces+(protect&&!m.auto.faces.length?'No faces detected; check the preview carefully. ':'')+(result.cached?'Reused selection.':`Found in ${Math.round(result.seconds)} seconds.`);
+    const faces=(protect?(m.auto.faces.length?` · ${m.auto.faces.length} face${m.auto.faces.length===1?'':'s'} protected`:' · no faces found'):'')+(skin&&m.auto.skin.length?' · skin kept':'');
+    $('#auto-status').textContent=(m.auto.mode==='add'?'Now draw a box where it goes':m.auto.pool.length?`${m.auto.pool.length} found${m.auto.pool.length>1?' · choose one':''}`:'Nothing found · try a simpler word or paint it')+faces;
     $('#auto-summary').textContent=m.auto.mode==='add'?'Draw placement':`${m.auto.pool.length} found`;
   }finally{if(maskEditor===m){m.finding=false;for(const id of ['auto-find','auto-mode','auto-target','auto-protect','auto-skin','auto-shape','auto-match','auto-all'])$('#'+id).disabled=false;updateMaskButtons();}}
 }

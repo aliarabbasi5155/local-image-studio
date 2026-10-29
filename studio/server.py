@@ -33,11 +33,10 @@ STATIC = Path(__file__).parent / "static"
 MAX_UPLOAD = 20 * 1024 * 1024
 ACTIVE = ("queued", "submitted", "running")
 LOOPBACK = ("localhost", "127.0.0.1", "::1")
-STATIC_FILES = ("app.js", "projects.js", "masking.js", "automatic.js", "actions.js", "setup.js", "style.css", "projects.css",
-                "masking.css", "automatic.css", "mask-workspace.css", "polish.css", "setup.css", "identity.css", "identity.js", "icon.svg", "icon-192.png",
-                "icon-512.png", "icon-maskable.png", "apple-touch-icon.png", "manifest.json",
-                "share-store.js", "sharing.js", "sharing.css", "share-help.html", "share-help.js", "video.js", "video.css",
-                "offline-store.js", "offline.js", "offline.css")
+STATIC_FILES = ("app.js", "projects.js", "masking.js", "automatic.js", "actions.js", "identity.js", "video.js", "settings.js", "setup.js",
+                "style.css", "projects.css", "polish.css", "sharing.css", "offline.css", "viewer.css", "setup.css",
+                "icon.svg", "icon-192.png", "icon-512.png", "icon-maskable.png", "apple-touch-icon.png", "manifest.json",
+                "share-store.js", "sharing.js", "share-help.html", "share-help.js", "offline-store.js", "offline.js")
 
 
 def failure(message, status=400):
