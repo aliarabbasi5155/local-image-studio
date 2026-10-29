@@ -2,12 +2,14 @@
 import asyncio
 import contextlib
 import json
+import math
 import secrets
 import time
 import uuid
 from pathlib import Path
 
 import aiohttp
+import numpy as np
 from aiohttp import web
 from PIL import Image, ImageOps
 
@@ -15,15 +17,43 @@ CONFIG = json.loads((Path(__file__).resolve().parents[1] / "config/video.json").
 SIZES = {"landscape": (768, 512), "portrait": (512, 768), "square": (512, 512)}
 
 
-def save_video_source(source, target):
+def save_video_source(source, target, recipe=None):
     # Bound transfer and image-conditioning memory even for a large generated PNG.
     with Image.open(source) as image:
         image = ImageOps.exif_transpose(image).convert("RGB")
-        image.thumbnail((1536, 1536), Image.Resampling.LANCZOS)
+        if recipe and recipe.get("sizing_version") == 2:
+            image = image.resize((recipe["content_width"], recipe["content_height"]), Image.Resampling.LANCZOS)
+            left, top = recipe["pad_left"], recipe["pad_top"]
+            right = recipe["generation_width"] - image.width - left
+            bottom = recipe["generation_height"] - image.height - top
+            image = Image.fromarray(np.pad(np.asarray(image), ((top, bottom), (left, right), (0, 0)), mode="edge"))
+        else:
+            image.thumbnail((1536, 1536), Image.Resampling.LANCZOS)
         image.save(target, "PNG")
 
 
-def validate_recipe(payload):
+def plan_video_size(width, height, output_size="original"):
+    if (type(width) is not int or type(height) is not int or min(width, height) < 16
+            or max(width, height) > 8192 or width * height > 16_777_216):
+        raise ValueError("Video photos must be 16–8192 pixels per edge and at most 16 megapixels.")
+    if output_size not in ("preview", "original"):
+        raise ValueError("Choose Preview or Match photo.")
+    # Integer multiples of the reduced ratio preserve it exactly, even for odd sizes.
+    divisor = math.gcd(width, height)
+    unit_w, unit_h = width // divisor, height // divisor
+    factor = max(1, min(divisor, math.floor(min(768 / unit_w, 768 / unit_h,
+                                               math.sqrt(262144 / (unit_w * unit_h))))))
+    output_w, output_h = (width, height) if output_size == "original" else (unit_w * factor, unit_h * factor)
+    scale = min(1, 768 / output_w, 768 / output_h, math.sqrt(262144 / (output_w * output_h)))
+    content_w, content_h = max(1, round(output_w * scale)), max(1, round(output_h * scale))
+    canvas_w, canvas_h = math.ceil(content_w / 64) * 64, math.ceil(content_h / 64) * 64
+    return {"sizing_version": 2, "output_size": output_size, "source_width": width, "source_height": height,
+            "width": output_w, "height": output_h, "generation_width": canvas_w, "generation_height": canvas_h,
+            "content_width": content_w, "content_height": content_h,
+            "pad_left": (canvas_w - content_w) // 2, "pad_top": (canvas_h - content_h) // 2}
+
+
+def validate_recipe(payload, source_size=None):
     if not isinstance(payload, dict):
         raise ValueError("Choose a photo and describe its motion.")
     prompt = payload.get("prompt")
@@ -36,14 +66,21 @@ def validate_recipe(payload):
         seed = secrets.randbelow(2**32)
     if not isinstance(shape, str) or shape not in SIZES:
         raise ValueError("Choose landscape, portrait or square.")
-    if type(frames) is not int or frames not in (49, 97):
-        raise ValueError("Choose a 2 or 4 second clip.")
+    if type(frames) is not int or frames not in (49, 97, 145):
+        raise ValueError("Choose a 2, 4 or 6 second clip.")
     if type(seed) is not int or not 0 <= seed < 2**32:
         raise ValueError("Seed must be between 0 and 4294967295.")
     width, height = SIZES[shape]
-    return {"prompt": prompt.strip(), "shape": shape, "width": width, "height": height,
+    result = {"prompt": prompt.strip(), "shape": shape, "width": width, "height": height,
             "frames": frames, "fps": 24, "seed": seed, "model": CONFIG["label"],
             "model_revision": CONFIG["model"]["revision"], "runtime_revision": CONFIG["runtime_revision"]}
+    if source_size is not None or payload.get("sizing_version") == 2:
+        if "shape" in payload:
+            raise ValueError("Video shape follows the photo automatically. Reload Studio to update its controls.")
+        source_size = source_size or (payload.get("source_width"), payload.get("source_height"))
+        result.pop("shape")
+        result.update(plan_video_size(*source_size, payload.get("output_size", "original")))
+    return result
 
 
 class Videos:
@@ -80,30 +117,36 @@ class Videos:
             status = await self.native("GET", "/video/status")
         except (OSError, RuntimeError, aiohttp.ClientError, asyncio.TimeoutError) as error:
             status = {"ready": False, "error": str(error)}
+        if status.get("ready") and status.get("sizing_version", 0) < 2:
+            status.update(ready=False, error="Restart the Mac helper to enable photo-sized videos.")
         return web.json_response({**status, "model": CONFIG["label"]})
 
     async def submit(self, request):
         payload = await request.json()
-        recipe = validate_recipe(payload)
+        if not isinstance(payload, dict):
+            raise ValueError("Choose a photo and describe its motion.")
         source_id = payload.get("source_id")
-        source = self.store.one("SELECT id FROM uploads WHERE id=?", (source_id,)) if isinstance(source_id, str) else None
+        source = self.store.one("SELECT id,width,height FROM uploads WHERE id=?", (source_id,)) if isinstance(source_id, str) else None
         if not source:
             raise ValueError("Choose an uploaded or saved image first.")
+        recipe = validate_recipe(payload, (source["width"], source["height"]))
         try:
             status = await self.native("GET", "/video/status")
         except (OSError, RuntimeError, aiohttp.ClientError, asyncio.TimeoutError) as error:
             return web.json_response({"error": str(error)}, status=503)
         if not status.get("ready"):
             return web.json_response({"error": status.get("error", "Install the video model first.")}, status=503)
+        if status.get("sizing_version", 0) < 2:
+            return web.json_response({"error": "Restart the Mac helper to enable photo-sized videos."}, status=503)
         async with self.submission_lock:
             if self.store.one("SELECT COUNT(*) AS n FROM videos WHERE status IN ('queued','running')")["n"] >= 4:
                 return web.json_response({"error": "Finish or cancel a video before adding more."}, status=429)
             video_id = str(uuid.uuid4())
-            recipe.update(source_id=source_id, id=video_id, source_long_edge_limit=1536)
+            recipe.update(source_id=source_id, id=video_id)
             # Independent source survives later image/project deletion.
             source_path = self.store.directory / "uploads" / (source_id + ".png")
             try:
-                save_video_source(source_path, self.directory / (video_id + ".png"))
+                save_video_source(source_path, self.directory / (video_id + ".png"), recipe)
                 self.store.execute("INSERT INTO videos (id,created,status,recipe) VALUES (?,?,?,?)",
                                    (video_id, time.time(), "queued", json.dumps(recipe)))
             except BaseException:

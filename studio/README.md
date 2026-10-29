@@ -10,11 +10,30 @@ Images can also be permanently deleted after confirmation.
 
 Choose **Photo to video · Your clips** above the library to upload a photo,
 or open any completed project image and choose **Animate photo**. Describe the
-motion, choose landscape (768 × 512), portrait (512 × 768), or square (512 × 512),
-then generate a clip of approximately 2 or 4 seconds at 24 fps. The model fits the
-photo to the selected shape, which can crop its edges. Start with a short clip.
+motion, choose **Match photo** (the default) or **Preview**, then generate a clip
+of approximately **2, 4 or 6 seconds** at 24 fps (49, 97 or 145 frames).
+The photo determines the aspect ratio; there is no landscape/portrait/square override.
+Start with a short clip.
 Use a fixed seed to reuse the same settings. Every clip has MP4 playback, download,
 and a separate settings JSON. The video library shows the latest 100 jobs.
+
+**Match photo** saves the exact photo width and height. Inference uses a smaller
+canvas for this Mac's memory budget, and the result is resized to the original
+dimensions with Lanczos; this is not native full-resolution generation or AI
+upscaling. **Preview** chooses a smaller integer size with exactly the same ratio,
+targeting a 768-pixel long edge and 262,144 pixels. Some unusual ratios cannot be
+reduced exactly and therefore keep the original output size. Both choices show
+the final dimensions before submission. Inputs may be up to 8192 pixels per edge
+and 16 megapixels.
+
+The full photo is resized onto a model canvas aligned to 64 pixels, with repeated
+edge pixels filling only the added margin. After generation, FFmpeg removes that
+margin and restores the selected output dimensions with square pixels. No source
+edge is intentionally cropped, and the final width/height ratio is exact. This
+does not prevent the model itself from moving or changing subjects/framing.
+Even dimensions use H.264 4:2:0. To preserve odd dimensions exactly, those outputs
+use H.264 4:4:4; some browsers/hardware players may require downloading and playing
+them in a compatible player. Audio is preserved during finishing.
 
 The optional backend is **LTX-2.3 distilled 1.1, Q4, MLX**, with block streaming
 for this 24 GB Mac. The runtime is a community Apple Silicon port; exact runtime,
@@ -29,6 +48,13 @@ scene and motion. The model introduced some camera movement despite a static-cam
 prompt, so exact framing/motion adherence is not guaranteed. This one short square
 clip does not establish timings or quality for the larger/longer presets.
 See [the recorded check](../benchmarks/video-check.json).
+
+The photo-size update also completed a real **145-frame / 6.04-second** check
+from a **1001 × 667** source, saving exactly **1001 × 667** with square pixels and
+audio in **568.64 seconds end to end** on this Mac. All frames decoded successfully.
+That odd-sized file uses H.264 4:4:4. Its generation canvas was 640 × 448, with
+padding removed before restoring the photo dimensions. See
+[the six-second size check](../benchmarks/video-sizing-check.json).
 
 One-time setup, **on the Mac, outside Docker**:
 
@@ -65,8 +91,10 @@ instead of silently generating it twice; queued jobs resume.
 
 Clips and independent source copies live in `studio-data/videos/`; their jobs
 and recipes live in the existing SQLite database. Back up the whole data folder.
-Video source copies are limited to a 1536-pixel long edge for bounded transfer
-and conditioning memory; the library's original photo keeps its dimensions.
+New video source copies contain the prepared model canvas, bounded to a 768-pixel
+long edge. Recipes record source, model, content and final dimensions, including
+the padding to remove. The library's original photo keeps its dimensions.
+Jobs saved before this update retain their legacy shape settings and remain runnable.
 Deleting an image/project does not delete its independent videos. Video deletion
 is not currently exposed in the UI. Diagnostic output from the latest native
 generation is in `runtime/video-inference.log`. The existing PIN and HTTPS rules
@@ -77,7 +105,8 @@ It submits the bundled lakeside example through the authenticated API, downloads
 result, checks frame count/dimensions/duration and decodes the MP4 with FFmpeg.
 It writes `benchmarks/video-check.json` and an MP4 under `outputs/`; it also creates
 a photo project and clip in the selected Studio instance. Use `--url` and
-`--pin-file` to target a separate test library.
+`--pin-file` to target a separate test library. `--frames 145 --output-size original`
+checks a six-second photo-sized output; `--report` selects a separate report file.
 
 References: [MLX runtime](https://github.com/dgrauet/ltx-2-mlx),
 [Q4 model pack](https://huggingface.co/dgrauet/ltx-2.3-mlx-q4),

@@ -31,7 +31,7 @@ async def check(args):
             form.add_field("image", source, filename=args.image.name, content_type="image/png")
             image = await request("POST", "/api/uploads", data=form)
         submitted = await request("POST", "/api/videos", json={"source_id": image["id"], "prompt": args.prompt,
-            "shape": "square", "frames": 49, "seed": 42})
+            "output_size": args.output_size, "frames": args.frames, "seed": 42})
         video_id = submitted["id"]
         print("Video job:", video_id, flush=True)
         deadline = time.monotonic() + 7200
@@ -54,13 +54,14 @@ async def check(args):
                     file.write(chunk)
         probe = json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(output)], text=True))
         video = next(stream for stream in probe["streams"] if stream["codec_type"] == "video")
-        assert (video["width"], video["height"]) == (512, 512), video
-        assert 1.9 <= float(probe["format"]["duration"]) <= 2.2, probe
-        assert int(video["nb_frames"]) == 49, video
+        assert (video["width"], video["height"]) == (row["recipe"]["width"], row["recipe"]["height"]), video
+        assert video["width"] * image["height"] == video["height"] * image["width"], video
+        assert abs(float(probe["format"]["duration"]) - args.frames / 24) < .15, probe
+        assert int(video["nb_frames"]) == args.frames, video
         subprocess.run(["ffmpeg", "-v", "error", "-i", str(output), "-f", "null", "-"], check=True)
         report = {"job": video_id, "elapsed_seconds": round(time.monotonic() - started, 2),
                   "output": str(output.relative_to(ROOT)), "recipe": row["recipe"], "probe": probe}
-        report_path = ROOT / "benchmarks/video-check.json"
+        report_path = args.report
         report_path.write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps({"output": str(output), "report": str(report_path), "elapsed_seconds": report["elapsed_seconds"]}), flush=True)
 
@@ -70,6 +71,9 @@ if __name__ == "__main__":
     parser.add_argument("--url", default="http://127.0.0.1:7878")
     parser.add_argument("--pin-file", type=Path, default=ROOT / "studio-data/access-pin.txt")
     parser.add_argument("--image", type=Path, default=ROOT / "examples/flux2-klein-9b-8bit.png")
+    parser.add_argument("--frames", type=int, choices=(49, 97, 145), default=49)
+    parser.add_argument("--output-size", choices=("original", "preview"), default="original")
+    parser.add_argument("--report", type=Path, default=ROOT / "benchmarks/video-check.json")
     parser.add_argument("--prompt", default="A quiet lakeside village in warm morning light. The wooden boat rocks gently on small ripples. Wisteria flowers sway softly in the breeze. The camera stays still. Natural subtle movement.")
     arguments = parser.parse_args()
     if URL(arguments.url).host not in ("127.0.0.1", "localhost", "::1"):
