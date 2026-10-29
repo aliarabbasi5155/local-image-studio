@@ -78,7 +78,8 @@ const OfflineCopy = (() => {
     if (!project) return null;
     const result = structuredClone(project);
     const saved = new Map(copy.projects.flatMap(p => p.versions).filter(v => v.ready).map(v => [v.id, v.url]));
-    for (const version of result.versions) if (version.parent && saved.has(version.parent.id)) version.parent.url = saved.get(version.parent.id);
+    // A close-up compares with its own enlarged crop, never with the whole parent photo.
+    for (const version of result.versions) if (version.parent && saved.has(version.parent.id) && !version.recipe?.close_up) version.parent.url = saved.get(version.parent.id);
     return result;
   }
   function mediaPaths(projects, videos = []) {
@@ -87,7 +88,7 @@ const OfflineCopy = (() => {
       const ready = new Set(project.versions.filter(v => v.ready).map(v => v.id));
       for (const version of project.versions) {
         if (version.ready) { thumbs.push(version.thumbnail); images.push(version.url); }
-        if (version.parent?.url && !ready.has(version.parent.id)) extra.push(version.parent.url);
+        if (version.parent?.url && (!ready.has(version.parent.id) || version.recipe?.close_up)) extra.push(version.parent.url);
       }
       if (project.root?.recovered && project.root.url) extra.push(project.root.url);
       for (const video of project.videos || []) { if (video.ready) thumbs.push(video.thumbnail); if (video.url) extra.push(video.url); }

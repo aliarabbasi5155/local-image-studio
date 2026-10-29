@@ -26,6 +26,7 @@ from .masking import normalize_mask, masked_size, automatic_feather
 from .automask import AutoMask, AutomaticSelectionError, validate_selection
 from .identity import CONCEPTS, WORKING_SIDE, blend_width as identity_blend, body_guide, close_up, clothing_area, donor_body, donor_crops, mask_png, swap_areas, request_parts
 from .sizing import OUTPUT_SIZES, RESIZE_MODES, MAX_PIXELS, plan_size
+from .closeup import DETAIL as CLOSE_UP_DETAIL, SIZES as CLOSE_UP_SIZES, close_up_aspect, close_up_prompt, close_up_size, crop_source
 
 ROOT = Path(__file__).resolve().parents[1]
 STATE = web.AppKey("studio", dict)
@@ -33,7 +34,7 @@ STATIC = Path(__file__).parent / "static"
 MAX_UPLOAD = 20 * 1024 * 1024
 ACTIVE = ("queued", "submitted", "running")
 LOOPBACK = ("localhost", "127.0.0.1", "::1")
-STATIC_FILES = ("app.js", "projects.js", "masking.js", "automatic.js", "actions.js", "identity.js", "video.js", "settings.js", "setup.js",
+STATIC_FILES = ("app.js", "projects.js", "masking.js", "automatic.js", "actions.js", "identity.js", "closeup.js", "video.js", "settings.js", "setup.js",
                 "style.css", "projects.css", "polish.css", "sharing.css", "offline.css", "viewer.css", "setup.css",
                 "icon.svg", "icon-192.png", "icon-512.png", "icon-maskable.png", "apple-touch-icon.png", "manifest.json",
                 "share-store.js", "sharing.js", "share-help.html", "share-help.js", "offline-store.js", "offline.js")
@@ -387,6 +388,19 @@ async def generate(request):
     if type(payload.get("snofs", True)) is not bool:
         return failure("Choose whether to use SNOFS.")
     source_id = payload.get("source_id")
+    framed = payload.get("close_up")
+    if framed is not None:
+        prepared = state["store"].one("SELECT * FROM close_ups WHERE id=?", (source_id,)) if isinstance(source_id, str) else None
+        if mode != "edit" or not isinstance(framed, dict) or not prepared:
+            return failure("Frame the close-up again; its area was not prepared.")
+        subject = framed.get("subject", "")
+        if framed.get("detail", "faithful") not in CLOSE_UP_DETAIL or not isinstance(subject, str) or len(subject) > 200:
+            return failure("Choose Faithful or More detail, and describe the subject in under 200 characters.")
+        if payload.get("mask_id") is not None or payload.get("identity_swap") is not None:
+            return failure("A close-up uses the framed area only.")
+        prompt = close_up_prompt(subject.strip())
+        aspect = close_up_aspect(json.loads(prepared["box"]))
+        payload.update(output_size="original", resize_mode="native" if prepared["size"] == "standard" else "auto")
     source = state["store"].one("SELECT * FROM uploads WHERE id=?", (source_id,)) if mode == "edit" else None
     if mode == "edit" and not source:
         return failure("Upload a photo or choose an image from your library first.")
@@ -494,7 +508,7 @@ async def generate(request):
                            state["upscaler"], payload.get("resize_mode", "auto"))
     model = QUALITIES[quality]["model"]
     # Identity uses the base model: a creative LoRA can retain or invent appearance.
-    use_snofs = payload.get("snofs", True) and not (identity is not None and identity.get("mode"))
+    use_snofs = payload.get("snofs", True) and not (identity is not None and identity.get("mode")) and framed is None
     recipe = {"version": 2, "mode": mode, "prompt": prompt.strip(), "quality": quality, "aspect": aspect,
               **sizing, "model": model, "model_source": state["models"][model],
               "steps": 4, "guidance": 1.0, "snofs": bool(use_snofs),
@@ -502,6 +516,10 @@ async def generate(request):
               "source_id": source_id if mode == "edit" else None,
               "source": {k: source[k] for k in ("name", "width", "height", "sha256")} if source else None,
               "parent_image_id": parent_id if mode == "edit" else None}
+    if framed is not None:
+        recipe["close_up"] = {"version": 1, "method": "photo_below_its_resolution_v1", "from": json.loads(prepared["box"]),
+                              "size": prepared["size"], "scale": prepared["scale"], "detail": framed.get("detail", "faithful"),
+                              "subject": subject.strip()}
     if mask:
         blend_mode=payload.get("mask_blend_mode","adaptive")
         blend_width=automatic_feather(json.loads(mask["bounds"]),sizing["processing"]["crop"],sizing["processing"]["canvas_content"]) if blend_mode=="adaptive" else payload.get("mask_feather",8)
@@ -643,6 +661,34 @@ async def project_edit_source(request):
         result = {"id":upload["id"],"name":upload["name"],"width":upload["width"],"height":upload["height"],
                   "url":version["url"],"thumbnail":version["thumbnail"]}
     result.update(project_id=version["project_id"],parent_version_id=version["id"])
+    return web.json_response(result, status=201)
+
+
+async def project_close_up_source(request):
+    """The chosen area of an image, enlarged to the close-up's size: the model's input and the comparison."""
+    state = request.app[STATE]
+    store = state["store"]
+    version = store.projects.version(request.match_info["version_id"])
+    if not version or version["project_id"] != request.match_info["id"] or not version["ready"]:
+        raise web.HTTPNotFound()
+    payload = await request.json()
+    box, size, quality = payload.get("box"), payload.get("size", "standard"), payload.get("quality", "balanced")
+    if not isinstance(box, list) or len(box) != 4 or any(type(v) is not int for v in box) or box[0] < 0 or box[1] < 0 or \
+            box[2] < 32 or box[3] < 32 or box[0] + box[2] > version["width"] or box[1] + box[3] > version["height"]:
+        return failure("Frame an area of at least 32 × 32 pixels inside the photo.")
+    if max(box[2] / box[3], box[3] / box[2]) > 4:
+        return failure("Frame an area no longer than four times its width.")
+    if size not in CLOSE_UP_SIZES or quality not in QUALITIES:
+        return failure("Choose Standard, 2K or 4K and a valid quality.")
+    dimensions = close_up_size(box, size, QUALITIES[quality]["sizes"])
+    path = media_file(store.directory, "uploads" if version["kind"] == "upload" else "images", version["id"])
+    image = await asyncio.to_thread(crop_source, path, box, dimensions)
+    content = io.BytesIO()
+    save_jpeg(image, content)
+    result = await save_upload(state, content.getvalue(), "Close-up source")
+    store.projects.bind_source(result["id"], version["project_id"], version["id"])
+    store.execute("INSERT INTO close_ups VALUES (?,?,?,?,?)", (result["id"], version["id"], json.dumps(box), size, dimensions[0] / box[2]))
+    result.update(project_id=version["project_id"], parent_version_id=version["id"], parent_image_id=version["id"] if version["kind"] == "image" else None)
     return web.json_response(result, status=201)
 
 
@@ -1013,6 +1059,7 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
         web.get("/api/projects",project_library), web.get("/api/projects/{id}",project_detail),
         web.patch("/api/projects/{id}",update_project), web.delete("/api/projects/{id}",delete_project),
         web.post("/api/projects/{id}/versions/{version_id}/edit-source",project_edit_source),
+        web.post("/api/projects/{id}/versions/{version_id}/close-up",project_close_up_source),
         web.patch("/api/projects/{id}/versions/{version_id}",update_version),
         web.delete("/api/projects/{id}/versions/{version_id}",delete_version),
         web.post("/api/estimate",estimate), web.get("/api/metrics",metrics),

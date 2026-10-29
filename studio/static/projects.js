@@ -18,7 +18,7 @@ const timeline = project => [...project.versions, ...(project.videos || [])].sor
 function itemLabel(item) {
   if (isVideo(item)) return `Clip · ${item.seconds} s`;
   if (item.id === viewer.project.root_id) return 'Original';
-  return item.recipe?.identity_swap ? 'Person swap' : item.recipe?.masked_edit ? 'Area edit' : 'Edit';
+  return item.recipe?.close_up ? 'Close-up' : item.recipe?.identity_swap ? 'Person swap' : item.recipe?.masked_edit ? 'Area edit' : 'Edit';
 }
 function saveEditor() {
   const keys = Object.keys(viewer.drafts);
@@ -40,7 +40,7 @@ function scheduleEstimate() {
 }
 
 function viewerHTML() {
-  const tools = [['edit', 'Edit'], ['area', 'Area'], ['identity', 'Person'], ['animate', 'Animate']];
+  const tools = [['edit', 'Edit'], ['area', 'Area'], ['closeup', 'Close-up'], ['identity', 'Person'], ['animate', 'Animate']];
   return `<section class="lightbox" aria-label="Photo viewer">
     <div class="lb-stage" tabindex="0" aria-label="Photo. Swipe for the next image, pinch or double-tap to zoom, press and hold to see what it came from."><div class="lb-photo"></div><div class="lb-divider" hidden><span>${icon('compare')}</span></div><span class="lb-badge" id="lb-badge" hidden></span><div class="lb-status" id="lb-status" hidden></div><button type="button" class="lb-step lb-prev" aria-label="Previous image">${icon('back')}</button><button type="button" class="lb-step lb-next" aria-label="Next image">${icon('next')}</button></div>
     <header class="lb-top"><button type="button" class="lb-icon" data-close="detail-dialog" aria-label="Back to library">${icon('back')}</button>
@@ -102,7 +102,9 @@ function renderTop() {
   $('#lb-recipe').hidden = !item.recipe || !item.ready;
   $('#lb-recipe').href = isVideo(item) ? `/api/videos/${item.id}/recipe` : `/api/images/${item.id}/recipe`;
   $('#lb-archive').textContent = project.archived ? 'Restore project' : 'Archive project';
-  $('#lb-caption').textContent = item.recipe ? item.prompt : '';
+  const zoomed = item.recipe?.close_up;
+  $('#lb-caption').textContent = zoomed ? `Close-up${zoomed.subject ? ` · ${zoomed.subject}` : ''}` : item.recipe ? item.prompt : '';
+  $('[data-compare="root"]').hidden = !!zoomed;
   $('#lb-caption').classList.remove('open');
   const projectIndex = state.navigation.findIndex(p => p.id === project.id);
   $('.lb-prev').hidden = index <= 0 && projectIndex <= 0;
@@ -122,7 +124,8 @@ function comparisonAvailable() {
   const item = selectedImage();
   return !!(item?.parent && referenceURL(item) && referenceURL(item) !== item.url);
 }
-const referenceURL = item => viewer.compare === 'root' ? viewer.project.root?.url : item.parent?.url;
+// A close-up compares with its plain enlargement, the only image framed like it.
+const referenceURL = item => viewer.compare === 'root' && !item.recipe?.close_up ? viewer.project.root?.url : item.parent?.url;
 function renderPhoto() {
   const item = selectedVersion(), photo = $('.lb-photo');
   if (!comparisonAvailable()) viewer.comparing = false;
@@ -250,7 +253,7 @@ function bindStage() {
   const pair = () => { const [a, b] = [...pointers.values()]; return {x:(a.x + b.x) / 2, y:(a.y + b.y) / 2, d:Math.hypot(a.x - b.x, a.y - b.y)}; };
   const nearDivider = p => viewer.comparing && Math.abs(p.x - $('.lb-divider').getBoundingClientRect().left) < 32;
   stage.addEventListener('pointerdown', event => {
-    if (event.button !== 0 || event.target.closest('button,a,video,.lb-status')) return;
+    if (event.button !== 0 || event.target.closest('button,a,video,.lb-status,.lb-crop-layer')) return;
     event.preventDefault(); stage.setPointerCapture(event.pointerId); pointers.set(event.pointerId, point(event));
     clearTimeout(pressTimer); photo.classList.add('moving');
     if (pointers.size === 1) {
@@ -331,6 +334,7 @@ function setTool(tool) {
   if (connection.offline && tool !== 'edit') return toast('This tool needs your Mac. Join your home Wi-Fi to use it.');
   if (tool === 'area') { openMaskEditor().catch(error => toast(error.message)); return; }
   if (tool === 'identity') { openIdentitySwap().catch(error => toast(error.message)); return; }
+  if (tool === 'closeup') { openCloseUp(); return; }
   viewer.tool = tool; renderTools(); fitPhoto();
 }
 function renderTools() {
@@ -342,11 +346,13 @@ function renderTools() {
   }
   // A person swap belongs to one photo: leaving the tool or the photo ends it.
   if (typeof closeIdentity === 'function' && identity && (viewer.tool !== 'identity' || identity.version.id !== image?.id)) { closeIdentity(); if (viewer.tool === 'identity') viewer.tool = 'edit'; }
+  if (typeof closeCloseUp === 'function' && closeup.item && (viewer.tool !== 'closeup' || closeup.item.id !== image?.id)) { closeCloseUp(); if (viewer.tool === 'closeup' && image) { openCloseUp(); return; } }
   const panel = $('#lb-panel');
   if (!image) { panel.innerHTML = ''; panel.hidden = true; return; }
   panel.hidden = false;
   if (viewer.tool === 'identity' && typeof identity !== 'undefined' && identity) renderIdentityPanel();
   else if (viewer.tool === 'animate') renderAnimatePanel();
+  else if (viewer.tool === 'closeup' && typeof closeup !== 'undefined' && closeup.item) renderCloseUpPanel();
   else { viewer.tool = 'edit'; renderEditPanel(); }
   for (const button of document.querySelectorAll('[data-tool]')) button.setAttribute('aria-selected', String(button.dataset.tool === viewer.tool));
 }

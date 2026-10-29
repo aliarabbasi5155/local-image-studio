@@ -90,6 +90,11 @@ test('media list saves thumbnails first and only the comparison copies the phone
     `/media/upload/${id(1)}`, `/media/image/${id(2)}`, `/media/image/${id(3)}`, '/media/video/v']);
   copy.projects[0].versions.splice(1, 1);
   assert.ok(store.mediaPaths(copy.projects).includes(`/media/upload/${id(90)}`));
+  // A close-up's comparison is its own enlarged crop: saved for offline use and never swapped for the parent photo.
+  const zoomed = library();
+  zoomed.projects[0].versions[2].recipe = {prompt:'Close-up', close_up:{subject:'face'}};
+  assert.ok(store.mediaPaths(zoomed.projects).includes(`/media/upload/${id(90)}`));
+  assert.equal(store.detail(zoomed, store.view(zoomed, store.empty()), id(1)).versions[2].parent.url, `/media/upload/${id(90)}`);
 });
 
 test('the copy and its changes persist in cache storage until the studio is locked', async () => {

@@ -12,6 +12,7 @@ import aiohttp
 from PIL import Image, ImageOps
 from .media import media_file, save_jpeg
 from .native import NativeEngine
+from .closeup import merge_close_up
 from .masking import engine_mask, engine_reference, engine_placement_guide, engine_shape_guide, blend_selected, protect_unselected
 from .identity import engine_donor, identity_hint, refinement_recipe, swap_hint
 
@@ -441,6 +442,8 @@ class Engine:
                     head_path.unlink(missing_ok=True)
         elif recipe.get("masked_edit"):
             await asyncio.to_thread(protect_unselected, temporary, self.store.directory, recipe)
+        elif recipe.get("close_up"):
+            await asyncio.to_thread(merge_close_up, temporary, self.store.directory, recipe)
         await asyncio.to_thread(save_result, temporary, path, recipe)
         await asyncio.to_thread(make_thumbnail, path, self.store.directory / "thumbs" / (job["id"] + ".webp"))
         with self.store.db:

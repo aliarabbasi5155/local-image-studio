@@ -39,6 +39,10 @@ class Store:
                 width INTEGER NOT NULL, height INTEGER NOT NULL, bounds TEXT NOT NULL,
                 sha256 TEXT NOT NULL, coverage REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS close_ups (
+                id TEXT PRIMARY KEY, version_id TEXT NOT NULL, box TEXT NOT NULL,
+                size TEXT NOT NULL, scale REAL NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS videos (
                 id TEXT PRIMARY KEY, created REAL NOT NULL, status TEXT NOT NULL,
                 recipe TEXT NOT NULL, error TEXT, finished REAL
