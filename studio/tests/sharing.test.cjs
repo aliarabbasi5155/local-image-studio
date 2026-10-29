@@ -31,7 +31,7 @@ function worker() {
     self:{addEventListener(name, fn) { listeners[name] = fn; }, clients:{claim:async () => {}}},
     setTimeout, fetch:async () => { throw new Error('offline'); }
   });
-  context.importScripts = file => vm.runInContext(fs.readFileSync(path.join(staticDir, path.basename(file)), 'utf8'), context);
+  context.importScripts = (...files) => files.forEach(file => vm.runInContext(fs.readFileSync(path.join(staticDir, path.basename(file)), 'utf8'), context));
   vm.runInContext(fs.readFileSync(path.join(staticDir, 'sw.js'), 'utf8'), context);
   const inbox = vm.runInContext('ShareInbox', context);
   return {inbox, caches, listeners, advance() { now += 86400001; }, failSecondWrite() { failAt = writes + 2; }};

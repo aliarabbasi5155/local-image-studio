@@ -35,7 +35,8 @@ LOOPBACK = ("localhost", "127.0.0.1", "::1")
 STATIC_FILES = ("app.js", "projects.js", "masking.js", "automatic.js", "actions.js", "setup.js", "style.css", "projects.css",
                 "masking.css", "automatic.css", "mask-workspace.css", "polish.css", "setup.css", "identity.css", "identity.js", "icon.svg", "icon-192.png",
                 "icon-512.png", "icon-maskable.png", "apple-touch-icon.png", "manifest.json",
-                "share-store.js", "sharing.js", "sharing.css", "share-help.html", "share-help.js", "video.js", "video.css")
+                "share-store.js", "sharing.js", "sharing.css", "share-help.html", "share-help.js", "video.js", "video.css",
+                "offline-store.js", "offline.js", "offline.css")
 
 
 def failure(message, status=400):
@@ -578,6 +579,20 @@ async def project_detail(request):
     return web.json_response(project)
 
 
+async def offline_copy(request):
+    """The whole library in one response, so the installed phone app can browse it away from home."""
+    state = request.app[STATE]
+    store = state["store"]
+    store.projects.sync()
+    projects = [store.projects.detail(row["id"]) for row in store.rows("SELECT id FROM projects")]
+    body = json.dumps({"projects": [project for project in projects if project["versions"]],
+                       "videos": state["videos"].entries()}, separators=(",", ":"))
+    tag = '"%s"' % hashlib.sha256(body.encode()).hexdigest()[:32]
+    if request.headers.get("If-None-Match") == tag:
+        return web.Response(status=304, headers={"ETag": tag})
+    return web.Response(text=body, content_type="application/json", headers={"ETag": tag})
+
+
 async def favorites(request):
     return web.json_response(request.app[STATE]["store"].projects.favorites(
         request.query.get("q", "")[:200], max(0, int(request.query.get("offset", 0))),
@@ -976,7 +991,7 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
         web.get("/api/videos/options", videos.options), web.get("/api/videos", videos.library),
         web.post("/api/videos", videos.submit), web.post("/api/videos/{id}/cancel", videos.cancel),
         web.get("/api/videos/{id}/recipe", videos.recipe), web.get("/media/video/{id}", videos.media),
-        web.get("/api/favorites", favorites), web.post("/api/bulk", bulk_action),
+        web.get("/api/favorites", favorites), web.post("/api/bulk", bulk_action), web.get("/api/offline", offline_copy),
         web.post("/api/bulk-download", bulk_download), web.get("/api/downloads/{token}", download_archive),
         web.get("/api/projects",project_library), web.get("/api/projects/{id}",project_detail),
         web.patch("/api/projects/{id}",update_project), web.delete("/api/projects/{id}",delete_project),

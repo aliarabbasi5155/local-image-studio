@@ -15,6 +15,7 @@ function estimateText(prediction,count=1) {
 function scheduleEstimate() {
   clearTimeout(mainEstimateTimer);
   const revision = ++estimateRevision;
+  if (connection.offline) { $('#estimate-hint').textContent = 'Creating needs your Mac · your prompt stays saved'; $('#estimate-hint').title = ''; return; }
   mainEstimateTimer = setTimeout(async () => {
     if (!state.authenticated) return;
     try {
@@ -116,7 +117,8 @@ function renderSelected(resetZoom=true) {
   $('#viewer-prompt-details').open = false;
   $('#viewer-edit-prompt').value = viewer.drafts[draftKey()] || '';
   $('#viewer-downloads').innerHTML = version.ready ? downloadLinks(version) : '';
-  $('#viewer-generate').disabled = !version.ready;
+  $('#viewer-generate').disabled = !version.ready || connection.offline;
+  $('#viewer-video').disabled = !version.ready || connection.offline;
   $('#viewer-edit-prompt').disabled = !version.ready;
   $('#viewer-delete-image').hidden = false;
   $('#viewer-delete-image').disabled = activeStatuses.includes(version.status);
@@ -279,6 +281,7 @@ function bindViewer() {
 }
 function scheduleViewerEstimate() {
   clearTimeout(viewerEstimateTimer);const revision=++viewerEstimateRevision;
+  if(connection.offline){if($('#viewer-estimate'))$('#viewer-estimate').textContent='Editing needs your Mac · your prompt stays saved';return;}
   viewerEstimateTimer=setTimeout(async()=>{
     const version=selectedVersion();if(!version?.ready || !$('#detail-dialog').open)return;
     try {
@@ -303,7 +306,7 @@ async function submitViewerEdit(event) {
     if(viewer.project?.id===projectId && viewer.selected===version.id)$('#viewer-edit-prompt').value='';
     await refresh();updateViewerJobStatus();
   } catch(error) {if(viewer.project?.id===projectId){errorBox.textContent=error.message;errorBox.hidden=false;}}
-  finally {if(button.isConnected)button.disabled=!selectedVersion()?.ready;}
+  finally {if(button.isConnected)button.disabled=!selectedVersion()?.ready || connection.offline;}
 }
 async function refreshOpenProject() {
   if(!viewer.project || !$('#detail-dialog').open)return;
@@ -409,12 +412,14 @@ document.addEventListener('keydown',event=>{
 });
 let metricsBusy=false;
 async function refreshMetrics() {
+  if(connection.offline){renderOfflineStatus();return;}
   if(!state.authenticated || metricsBusy)return;metricsBusy=true;
   try {
     const status=await api('/api/metrics'),gb=value=>value==null?'Unavailable':`${(value/1024**3).toFixed(1)} GB`;
     Object.assign(state.options,status);renderEngine();
     $('#server-status').textContent=`${engineLabel(status)} · ${status.active_images?`${status.active_images} image${status.active_images===1?'':'s'} in progress`:'Queue empty'}${status.memory_free!=null?` · ${gb(status.memory_free)} memory available`:''} · Details`;
     $('#metrics-content').innerHTML=`<div class="metrics-grid"><div><span>Image engine</span><strong>${escapeHTML(engineLabel(status))}</strong></div><div><span>Waiting images</span><strong>${status.queued_images}</strong></div><div><span>Mac memory available</span><strong>${gb(status.memory_free)} / ${gb(status.memory_total)}</strong></div><div><span>Last completed image</span><strong>${status.last_image_seconds==null?'No completed run yet':duration(status.last_image_seconds)}</strong></div><div><span>Recent average · last 10</span><strong>${status.recent_average_seconds==null?'Learning':duration(status.recent_average_seconds)}</strong></div><div><span>Image storage available</span><strong>${gb(status.storage_free)}</strong></div><div><span>Engine response</span><strong>${status.engine_response_ms==null?'Unavailable':`${status.engine_response_ms} ms`}</strong></div><div><span>Website running for</span><strong>${duration(status.uptime_seconds)}</strong></div></div><p>${status.auto_start?'The image engine starts when you submit an image and stops after 10 idle minutes to free memory. ':''}Memory is reported by your Mac. Timings include model preparation and saving; different sizes and quality settings take different amounts of time. Estimates learn from your completed images and include the studio queue.</p>`;
+    renderOfflineStatus();
   } catch(error){$('#server-status').textContent='Server status unavailable · tap to retry';}
   finally{metricsBusy=false;}
 }

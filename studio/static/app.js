@@ -16,13 +16,21 @@ let toastTimer, searchTimer, refreshing = false, gallerySignature = '', fetching
 let deletingImage = null, deletePending = false, libraryRevision = 0;
 
 async function api(path, options={}) {
+  if (connection.offline) return offlineRequest(path, options);
+  // Library reads are quick on the Mac, so a silent wait on one means the phone is away from home.
+  // Status and options can wait on the Mac's helpers, so they keep no limit.
+  const quick = (options.method || 'GET') === 'GET' && /^\/api\/(auth|jobs|projects|favorites)\b/.test(path);
+  const wait = options.timeout ?? (quick ? 8000 : null);
   let response;
-  try { response = await fetch(path, {credentials:'same-origin', ...options,
+  try { response = await fetch(path, {credentials:'same-origin', ...options, signal:wait && AbortSignal.timeout ? AbortSignal.timeout(wait) : undefined,
     headers:options.body && !(options.body instanceof FormData) ? {'Content-Type':'application/json',...options.headers} : options.headers}); }
-  catch { const error=new Error('Can’t reach your Mac. Join your home Wi-Fi and keep the Mac awake, then try again.');error.unreachable=true;throw error; }
+  catch {
+    if (path !== '/api/login' && await openOfflineCopy()) { goOffline(); return offlineRequest(path, options); }
+    const error=new Error('Can’t reach your Mac. Join your home Wi-Fi and keep the Mac awake, then try again.');error.unreachable=true;throw error;
+  }
   const body = await response.json();
   if (!response.ok) {
-    if (response.status === 401 && path !== '/api/login') showLogin();
+    if (response.status === 401 && path !== '/api/login') { setOfflineLocked(true); showLogin(); }
     const error=new Error(body.error || 'Something went wrong. Please try again.');error.status=response.status;throw error;
   }
   return body;
@@ -60,19 +68,23 @@ function showLogin() {
 }
 async function enterStudio() {
   state.options = await api('/api/options');
+  // Offline changes reach the Mac before the library is shown, so they never seem to vanish.
+  if (!connection.offline) reportSent(await sendPending().catch(() => null));
   state.authenticated = true; $('#login').hidden = true; $('#app').hidden = false;
+  document.body.classList.toggle('is-offline', connection.offline);
   renderComposer(); renderEngine(); if (typeof refreshMetrics === 'function') refreshMetrics(); await refresh();
   if (typeof resumeShares === 'function') await resumeShares();
+  syncCopy().catch(() => {});
 }
 function renderEngine() {
-  $('#engine-dot').classList.toggle('offline', !state.options.engine_ready && !state.options.auto_start);
+  $('#engine-dot').classList.toggle('offline', connection.offline || (!state.options.engine_ready && !state.options.auto_start));
   $('#engine-label').textContent = engineLabel(state.options);
   $('#phone-url').textContent = state.options.lan_url || location.origin;
   $('#phone-url').href = state.options.lan_url || location.origin;
   $('#logout').hidden = !state.options.pin_required;
 }
 function engineLabel(status) {
-  return {ready:'Your Mac is ready',sleeping:'Sleeping · wakes automatically',starting:'Starting image engine'}[status.engine_state] || (status.engine_ready?'Your Mac is ready':'Image engine is offline');
+  return {ready:'Your Mac is ready',sleeping:'Sleeping · wakes automatically',starting:'Starting image engine',away:'Away from your Mac · using this phone'}[status.engine_state] || (status.engine_ready?'Your Mac is ready':'Image engine is offline');
 }
 function qualityHint() {
   const quality = state.options.qualities[state.quality];
@@ -123,6 +135,7 @@ function renderComposer() {
   $('#aspect').disabled = originalShape;
   if (originalShape) $('#aspect').value = 'original';
   $('#snofs').checked = state.snofs;
+  $('#generate').disabled = connection.offline;
   $('#generate-label').textContent = state.mode === 'edit' ? (state.variations > 1 ? `Make ${state.variations} edits` : 'Edit image') : (state.variations > 1 ? `Create ${state.variations} images` : 'Create image');
   $('#seed').hidden = state.seed === null; $('#seed').value = state.seed ?? '';
   $('#seed-toggle').textContent = state.seed === null ? 'Random seed' : 'Fixed seed · switch to random';
@@ -152,6 +165,7 @@ function downloadLinks(image, compact=false) {
     const name = format.toUpperCase();
     const hint = format === 'png' ? (image.kind === 'upload' ? 'Original image' : 'Original + settings') : 'Easy to share';
     const query = format === 'jpg' ? '&format=jpg' : '';
+    if (format === 'jpg' && connection.offline) return `<span class="${compact ? 'download-option' : 'secondary'} unavailable" aria-disabled="true" title="JPG copies are made by your Mac">${icon('download')}${compact ? `<span>${name}<small>Needs your Mac</small></span>` : `${name} needs your Mac`}</span>`;
     return `<a class="${compact ? 'download-option' : 'secondary'}" href="${image.url || `/media/image/${image.id}`}?download=1${query}" download="studio-${image.id}.${format}" aria-label="Download ${name}" title="${hint}">${icon('download')}${compact ? `<span>${name}<small>${hint}</small></span>` : `Download ${name}`}</a>`;
   }).join('');
 }
@@ -192,6 +206,7 @@ async function refresh(loadMore=false) {
     state.navigation=library.navigation;state.jobs = jobs.jobs; state.total = library.total;
     for (const view of ['library','favorites','archive']) $(`#count-${view}`).textContent = library.counts[view];
     renderGallery();
+    if (!connection.offline) syncSoon(JSON.stringify([library.counts, state.jobs.map(job => [job.id, job.status])]));
     if (typeof refreshOpenProject === 'function') await refreshOpenProject();
   } catch (error) { if (state.authenticated) toast(error.message); }
   finally { fetching = false; }
@@ -231,7 +246,7 @@ document.addEventListener('click', event => {
 });
 $('#login-form').onsubmit = async event => {
   event.preventDefault(); const button = $('#login-form button'); button.disabled = true; $('#login-error').textContent = '';
-  try { await send('/api/login',{pin:$('#pin').value}); $('#pin').value = ''; await enterStudio(); }
+  try { await send('/api/login',{pin:$('#pin').value}); setOfflineLocked(false); $('#pin').value = ''; await enterStudio(); }
   catch (error) { $('#login-error').textContent = error.message; }
   finally { button.disabled = false; }
 };
@@ -246,12 +261,19 @@ $('#compose-form').onsubmit = async event => {
     await send('/api/generate',body); await changeView('library');
     toast(state.variations > 1 ? `${state.variations} variations queued. They’ll appear as each finishes.` : 'Your image is on its way. It will save automatically.');
   } catch (error) { errorElement.textContent = error.message; errorElement.hidden = false; }
-  finally { refreshing = false; $('#generate').disabled = false; }
+  finally { refreshing = false; $('#generate').disabled = connection.offline; }
 };
 $('#upload-root').onclick = $('#upload-button').onclick = () => $('#upload').click();
 $('#upload').onchange = async event => {
   const file = event.target.files[0]; if (!file) return;
   if (file.size > 20*1024*1024) { toast('Choose a photo smaller than 20 MB.'); event.target.value = ''; return; }
+  if (connection.offline) {
+    // Uploads are stored by the Mac, so the photo waits in this phone's inbox like a shared one.
+    try { await ShareInbox.keep([file]); await updateSharedNotice(); toast('Saved on this phone for up to 24 hours. Import it when your Mac is reachable.'); }
+    catch (error) { toast(shareErrors[error.message] || shareErrors.storage); }
+    finally { event.target.value = ''; }
+    return;
+  }
   const form = new FormData(); form.append('image',file); $('#upload-root').disabled = $('#upload-button').disabled = true;
   try { const root = await api('/api/uploads',{method:'POST',body:form}); await refresh(); await showProject(root.project_id,root.id); toast('Original saved. You can edit it now or come back later.'); }
   catch (error) { toast(error.message); }
@@ -277,7 +299,7 @@ $('#search').onchange = () => searchImages(true);
 $('#search').onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); searchImages(true); } };
 $('#load-more').onclick = () => refresh(true);
 $('#phone-info').onclick = $('#mobile-info').onclick = () => $('#info-dialog').showModal();
-$('#logout').onclick = async () => { try { await send('/api/logout',{}); showLogin(); } catch (error) { toast(error.message); } };
+$('#logout').onclick = () => lockStudio().catch(error => toast(error.message));
 document.addEventListener('keydown',event => {
   if (event.key === 'Escape') {
     const menu = $('.card-download[open]');
@@ -302,10 +324,15 @@ window.addEventListener('resize',reserveComposerSpace);
 setInterval(async () => { if (state.authenticated && !document.hidden) { try { state.options = await api('/api/options'); renderEngine(); } catch { /* Next refresh retries the connection. */ } } },15000);
 let unreachable = false;
 async function start() {
-  try { const auth = await api('/api/auth'); unreachable = false; $('#login-error').textContent = ''; if (auth.authenticated) await enterStudio(); else showLogin(); }
+  try {
+    const auth = await api('/api/auth', {timeout:await openOfflineCopy() ? 3500 : 8000}); unreachable = false; $('#login-error').textContent = '';
+    // The studio was locked while away from home; end that session now the Mac can hear it.
+    if (auth.authenticated && !auth.offline && offlineLocked()) { await send('/api/logout',{}); showLogin(); return; }
+    if (auth.authenticated) await enterStudio(); else showLogin();
+  }
   catch (error) { unreachable = Boolean(error.unreachable); $('#login').hidden = false; $('#login-error').textContent = error.message; }
 }
-document.addEventListener('visibilitychange', () => { if (document.hidden) return; if (state.authenticated) refresh(); else if (unreachable) start(); });
-window.addEventListener('online', () => { if (unreachable) start(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) return; if (connection.offline) reconnect(); if (state.authenticated) refresh(); else if (unreachable) start(); });
+window.addEventListener('online', () => { if (connection.offline) reconnect(); else if (unreachable) start(); });
 start();
 if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js').catch(() => { /* The studio works without the offline app shell. */ });

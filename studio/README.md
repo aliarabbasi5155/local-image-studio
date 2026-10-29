@@ -150,9 +150,18 @@ the first time it runs. Each phone trusts it once:
 4. Sign in with your PIN, then **Share → Add to Home Screen** (iPhone) or
    **⋮ → Install app** (Android).
 
-The installed app opens full screen, keeps its own sign-in, and shows its shell
-with a "Can't reach your Mac" message when you are away from home. It never
-caches the Mac's images or library; incoming Android shares are temporarily
+The installed app opens full screen and keeps its own sign-in. While it can
+reach your Mac it also keeps a copy of your library on the phone, including
+full-size images and finished clips, and keeps that copy up to date. Away from
+home it opens that copy instead: you can browse, search, compare, favorite,
+archive, delete, download PNGs and play clips. Changes wait on the phone and
+reach your Mac the next time the app can reach it. A project that gained new
+images on the Mac in the meantime is kept rather than deleted. Creating,
+editing, selections, identity swaps, videos, JPG and ZIP downloads need the Mac.
+Photos uploaded or shared away from home wait in the phone's inbox. **Lock
+studio** removes the copy from the phone. Only the installed app keeps a copy;
+an ordinary browser tab, such as the one on this Mac, does not.
+Incoming Android shares are temporarily
 kept on the phone until imported, discarded, or expired after 24 hours. Once HTTPS is ready, phones can only reach the
 setup page over plain HTTP, so the PIN never crosses the Wi-Fi unencrypted.
 This Mac keeps using **http://localhost:7878**, which browsers already treat as

@@ -1,6 +1,6 @@
 'use strict';
-// Only incoming shares are staged here, never the Mac's library. Shared by the
-// worker and page so a PIN prompt, reload or offline launch cannot lose a photo.
+// Only incoming shares and offline uploads are staged here; the library copy lives in offline-store.js.
+// Shared by the worker and page so a PIN prompt, reload or offline launch cannot lose a photo.
 const ShareInbox = (() => {
   const cacheName = 'studio-share-inbox-v1';
   const maxFile = 20 * 1024 * 1024, maxTotal = 100 * 1024 * 1024;
@@ -21,7 +21,9 @@ const ShareInbox = (() => {
   }
   async function receive(request) {
     const form = await request.formData();
-    const files = form.getAll('images').filter(value => value instanceof File);
+    return keep(form.getAll('images').filter(value => value instanceof File));
+  }
+  async function keep(files) {
     if (!files.length) throw new Error('empty');
     if (files.length > 10) throw new Error('limit');
     for (const file of files) {
@@ -48,5 +50,5 @@ const ShareInbox = (() => {
     });
   }
   async function remove(key) { return (await caches.open(cacheName)).delete(key); }
-  return {cacheName, exclusive, list, receive, remove};
+  return {cacheName, exclusive, list, receive, keep, remove};
 })();

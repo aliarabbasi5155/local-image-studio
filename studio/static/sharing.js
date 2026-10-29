@@ -16,9 +16,11 @@ async function updateSharedNotice() {
   let pending = [];
   if (hasShareInbox()) pending = await ShareInbox.list();
   $('#shared-notice').hidden = !pending.length && !error;
+  // Offline, photos stay here until the Mac can store them.
+  const live = state.authenticated && !connection.offline;
   $('#shared-message').textContent = error ? (shareErrors[error] || shareErrors.storage) :
-    `${pending.length} shared photo${pending.length === 1 ? '' : 's'} waiting on this phone. ${state.authenticated ? 'Review and import into your library.' : 'Connect to your Mac and unlock the studio to import.'}`;
-  $('#shared-review').hidden = !pending.length || !state.authenticated;
+    `${pending.length} photo${pending.length === 1 ? '' : 's'} waiting on this phone. ${live ? 'Review and import into your library.' : state.authenticated ? 'Import when your Mac is reachable.' : 'Connect to your Mac and unlock the studio to import.'}`;
+  $('#shared-review').hidden = !pending.length || !live;
   $('#shared-dismiss').hidden = !error;
   return pending;
 }
@@ -49,7 +51,7 @@ function clearShareQuery() {
 function releaseSharePreviews() { for (const url of sharePreviews) URL.revokeObjectURL(url); sharePreviews = []; }
 
 async function reviewShares() {
-  if (!state.authenticated || shareBusy) return;
+  if (!state.authenticated || connection.offline || shareBusy) return;
   const pending = await ShareInbox.list();
   releaseSharePreviews();
   $('#shared-photos').replaceChildren();

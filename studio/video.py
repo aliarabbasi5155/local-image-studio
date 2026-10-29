@@ -155,12 +155,15 @@ class Videos:
         self.wake.set()
         return web.json_response({"id": video_id}, status=202)
 
-    async def library(self, request):
+    def entries(self):
         rows = self.store.rows("SELECT * FROM videos ORDER BY created DESC LIMIT 100")
         for row in rows:
             row["recipe"] = json.loads(row["recipe"])
             row["url"] = f'/media/video/{row["id"]}' if row["status"] == "complete" else None
-        return web.json_response({"videos": rows})
+        return rows
+
+    async def library(self, request):
+        return web.json_response({"videos": self.entries()})
 
     async def cancel(self, request):
         video_id = request.match_info["id"]
