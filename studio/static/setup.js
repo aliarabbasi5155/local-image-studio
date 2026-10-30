@@ -5,12 +5,12 @@ const status = document.querySelector('#setup-status');
 document.querySelector('#open-secure').href = secureURL;
 async function check() {
   try {
-    // This request only succeeds after the phone trusts the Mac's certificate.
+    // This request only succeeds after the phone trusts the computer's certificate.
     await fetch(secureURL + 'api/health', {mode:'no-cors', cache:'no-store'});
-    status.lastChild.textContent = ' This phone trusts your Mac. Opening the studio…';
+    status.lastChild.textContent = ' This phone trusts your computer. Opening the studio…';
     location.replace(secureURL);
   } catch {
-    status.lastChild.textContent = ' This phone doesn’t trust your Mac yet. Follow the steps below.';
+    status.lastChild.textContent = ' This phone doesn’t trust your computer yet. Follow the steps below.';
     status.classList.add('waiting');
   }
 }

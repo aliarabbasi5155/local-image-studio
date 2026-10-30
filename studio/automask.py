@@ -1,4 +1,4 @@
-"""Client for the separate native Mac segmentation service."""
+"""Client for the separate native computer segmentation service."""
 import asyncio
 import io
 import os
@@ -67,11 +67,11 @@ class AutoMask:
             form.add_field("protect_faces", "1" if protect else "0")
             form.add_field("protect_skin", "1" if protect_skin else "0")
             form.add_field("concepts", ",".join(concepts))
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=180)) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=int(os.environ.get("SAM3_TIMEOUT", "170")) + 10)) as session:
                 async with session.post(self.base + "/select", data=form, headers=self.headers()) as response:
                     payload = await response.json()
                     if response.status != 200:
                         raise AutomaticSelectionError(payload.get("error", "Automatic selection could not finish. Try the brush."),response.status)
                     return payload
         except (OSError, aiohttp.ClientError, asyncio.TimeoutError) as error:
-            raise AutomaticSelectionError("Automatic selection is unavailable. Open Start Web Studio on your Mac, or use the brush.") from error
+            raise AutomaticSelectionError("Automatic selection is unavailable. Open Start Web Studio on your computer, or use the brush.") from error

@@ -1,4 +1,4 @@
-"""Authenticated control of the small Mac helper (also used by Docker)."""
+"""Authenticated control of the small computer helper (also used by Docker)."""
 import asyncio
 import contextlib
 import os
@@ -23,10 +23,10 @@ class NativeEngine:
                                            headers=headers) as response:
                     payload = await response.json()
                     if response.status != 200:
-                        raise RuntimeError(payload.get("error", "Your Mac’s helper is unavailable."))
+                        raise RuntimeError(payload.get("error", "Your computer’s helper is unavailable."))
                     return payload
         except (OSError, aiohttp.ClientError, asyncio.TimeoutError) as error:
-            raise RuntimeError("Your Mac’s background helper is unavailable. Make sure you are logged in on your Mac, then try again.") from error
+            raise RuntimeError("Your computer’s background helper is unavailable. Make sure you are logged in on your computer, then try again.") from error
 
     async def heartbeat(self):
         while True:

@@ -1,7 +1,7 @@
 'use strict';
-// The installed app's copy of the library, shared by the page and worker. The copy is the Mac's last
+// The installed app's copy of the library, shared by the page and worker. The copy is the computer's last
 // snapshot; changes made away from home are kept beside it as wanted states and applied on top, so
-// they survive reloads and are sent once the Mac is reachable. Library rules mirror studio/projects.py.
+// they survive reloads and are sent once the computer is reachable. Library rules mirror studio/projects.py.
 const OfflineCopy = (() => {
   const data = 'studio-offline-v1', media = 'studio-offline-media-v1';
   const active = ['queued', 'submitted', 'running'];
@@ -39,7 +39,7 @@ const OfflineCopy = (() => {
       const removed = project.versions.filter(v => pending.deletedVersions[v.id]);
       project.versions = project.versions.filter(v => !pending.deletedVersions[v.id]);
       for (const version of project.versions) if (version.parent && removed.some(r => r.id === version.parent.id)) version.parent.deleted = true;
-      // On the Mac the root is the original's own record. The Mac keeps a comparison copy of a deleted
+      // On the computer the root is the original's own record. The computer keeps a comparison copy of a deleted
       // original; until the next update the phone still has the image itself.
       const root = project.versions.find(v => v.id === project.root_id), gone = removed.find(r => r.id === project.root_id);
       if (root) project.root = root; else if (gone) project.root = {id:gone.id, url:gone.url, ready:true, recovered:true};
@@ -71,7 +71,7 @@ const OfflineCopy = (() => {
     return {images:photos.slice(offset, offset + limit), total:photos.length, counts:library(projects).counts,
       navigation:live.sort(newest).filter(p => matching.has(p.id)).map(p => ({id:p.id, title:p.title}))};
   }
-  // Offline, comparisons use the parent's own saved image, a pixel copy of the Mac's edit source. A parent
+  // Offline, comparisons use the parent's own saved image, a pixel copy of the computer's edit source. A parent
   // deleted on this phone is still saved here until the next update.
   function detail(copy, projects, id) {
     const project = projects.find(p => p.id === id);
@@ -97,7 +97,7 @@ const OfflineCopy = (() => {
     return [...new Set([...thumbs, ...images, ...extra])];
   }
 
-  // Validates a library change against the phone's view like the Mac would, then records it in pending.
+  // Validates a library change against the phone's view like the computer would, then records it in pending.
   function change(copy, pending, method, path, body) {
     const current = view(copy, pending), fail = (status, error) => ({status, body:{error}});
     const project = id => current.find(p => p.id === id);

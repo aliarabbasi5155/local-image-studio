@@ -1,0 +1,176 @@
+{
+  "images": [
+    {
+      "id": "a7e1cebd-1fec-48a9-9075-f5c764212946",
+      "mode": "create",
+      "quality": "high",
+      "snofs": true,
+      "size": [
+        4096,
+        4096
+      ],
+      "generation_size": [
+        1024,
+        1024
+      ],
+      "seconds": 127.46,
+      "channel_variance": [
+        4623.834860357059,
+        5148.801226145439,
+        5957.407249940614
+      ],
+      "references": false
+    },
+    {
+      "id": "7c482527-39f3-41e8-a201-4f6584453ae7",
+      "mode": "edit",
+      "quality": "high",
+      "snofs": true,
+      "size": [
+        1024,
+        1024
+      ],
+      "generation_size": [
+        768,
+        768
+      ],
+      "seconds": 106.1,
+      "channel_variance": [
+        4698.951158139418,
+        3252.608425557406,
+        3081.7524474282363
+      ],
+      "references": true
+    }
+  ],
+  "video": {
+    "id": "d8f7e623-0631-425b-a034-4cad07062a51",
+    "seconds": 339.52,
+    "probe": {
+      "programs": [],
+      "streams": [
+        {
+          "codec_type": "video",
+          "width": 512,
+          "height": 512,
+          "r_frame_rate": "24/1",
+          "duration": "2.041667",
+          "nb_frames": "49"
+        },
+        {
+          "codec_type": "audio",
+          "r_frame_rate": "0/0",
+          "duration": "2.026000",
+          "nb_frames": "96"
+        }
+      ]
+    },
+    "sampling": {
+      "stage_one_sigmas": [
+        1.0,
+        0.99375,
+        0.9875,
+        0.98125,
+        0.975,
+        0.909375,
+        0.725,
+        0.421875,
+        0.0
+      ],
+      "stage_two_sigmas": [
+        0.909375,
+        0.725,
+        0.421875,
+        0.0
+      ],
+      "sampler": "euler",
+      "image_strength": 1.0
+    }
+  },
+  "date": "2026-10-30",
+  "hardware": {
+    "system": "Ubuntu 24.04.5 LTS x86_64",
+    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU",
+    "vram_mib": 6144,
+    "ram_gib": 15.44,
+    "swap_gib": 35,
+    "driver": "580.178.04",
+    "python": "3.12.3"
+  },
+  "deployment": {
+    "project": "local-image-studio-gf65",
+    "web": "Docker Desktop, healthy",
+    "gpu_worker": "native user systemd service, enabled at login",
+    "image_engine": "on-demand; 600 second idle timeout",
+    "independent_installation": true,
+    "direct_home_wifi_health": "passed",
+    "docker_rebuild_restart_and_library_recovery": "passed"
+  },
+  "tests": {
+    "python_macos": 136,
+    "python_ubuntu": 136,
+    "javascript": 19,
+    "make_check_macos": "passed",
+    "make_check_ubuntu": "passed"
+  },
+  "automatic_selection": {
+    "source_id": "d45c8f3e-f3e1-4023-8f4b-10529c4d6633",
+    "seconds": 82.41,
+    "candidates": 2,
+    "faces": 1,
+    "model": "SAM 3 Q8"
+  },
+  "identity": {
+    "source_id": "7d49215f-3233-44b1-99ce-3c5c050c34c9",
+    "areas_seconds": 207.4,
+    "jobs": [
+      "4a550d2e-c5cd-4e1a-a373-d51fbddba33c"
+    ],
+    "generation_seconds": 62.85,
+    "status": "complete"
+  },
+  "cli_benchmark": "20261030T191002Z-ubuntu-cuda-cli.json",
+  "quality": {
+    "image_model": "FLUX.2 Klein 9B distilled",
+    "fast": "GGUF Q4_K_M",
+    "balanced_high": "GGUF Q8_0",
+    "text_encoder": "Qwen3 8B Q8",
+    "adapter": "same pinned SNOFS v1.4",
+    "steps": 4,
+    "guidance": 1.0,
+    "note": "Same model family and presets; quantizers, VAE tiling and backend arithmetic can change pixels. Output sizes are preserved."
+  },
+  "notes": [
+    "4K is a 1024-pixel High generation followed by the same Real-ESRGAN upscaler.",
+    "The video uses the Mac's eight-step and three-step schedules, with a 49-frame MP4 and audio verified by FFprobe.",
+    "Video offloading uses system RAM and swap; roughly 17 GiB of system swap was observed during the first refinement check.",
+    "An initial multi-reference edit exceeded 6 GB VRAM. The image launcher now reserves 2 GB for activation headroom, offloading more weights without reducing size or precision."
+  ],
+  "integration_sha256": {
+    "scripts/cuda_nodes.py": "241be5f1b0c996537d933daafeb23a0fc8d884799d1c9f8cfb81fb66dd88abcb",
+    "scripts/video_cuda.py": "a8e71a8a52884c8983294cc6939d4266983b5fd56d13463a71e33d7f757e23f0",
+    "scripts/start.sh": "3cd1709d4d5cc0320caaae8e892184914b1d7f3feb50250fa7bfb316e3ff99f1"
+  },
+  "maximum_detail_guided_edit": {
+    "id": "93a941a2-52ec-4fe1-803c-6127b54af904",
+    "status": "complete",
+    "generation_size": [
+      1024,
+      1024
+    ],
+    "output_size": [
+      1024,
+      1024
+    ],
+    "detail": "maximum",
+    "shape_guidance": "outline_reference_v1",
+    "model": "flux2-klein-9b-8bit",
+    "snofs": true,
+    "seconds": 130.88,
+    "channel_variance": [
+      4366.152654019519,
+      2970.374996335906,
+      2725.274546290668
+    ]
+  }
+}

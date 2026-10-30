@@ -26,7 +26,7 @@ function renderAnimatePanel() {
   videoReadiness().then(status => {
     if (!$('#animate-send')) return;
     $('#animate-send').disabled = !status?.ready || connection.offline;
-    $('#animate-status').textContent = status?.ready ? '' : status?.error || 'Video setup is needed on your Mac.';
+    $('#animate-status').textContent = status?.ready ? '' : status?.error || 'Video setup is needed on your computer.';
   });
 }
 async function submitAnimation(event) {

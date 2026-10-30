@@ -1,9 +1,9 @@
 'use strict';
 // Keeps the app shell available when the phone is away from home Wi-Fi, and serves the images the installed
-// app saved for offline use (offline-store.js). Library data otherwise comes from the Mac, and
+// app saved for offline use (offline-store.js). Library data otherwise comes from the computer, and
 // generation requests always go to it. Incoming shares have their own temporary inbox.
 importScripts('/static/share-store.js', '/static/offline-store.js');
-const CACHE = 'studio-shell-v10';
+const CACHE = 'studio-shell-v11';
 const SHELL = ['/', '/static/style.css', '/static/projects.css', '/static/polish.css', '/static/sharing.css', '/static/offline.css', '/static/viewer.css',
   '/static/offline-store.js', '/static/offline.js', '/static/settings.js', '/static/app.js', '/static/projects.js', '/static/automatic.js',
   '/static/masking.js', '/static/closeup.js', '/static/identity.js', '/static/video.js', '/static/actions.js', '/static/share-store.js', '/static/sharing.js',
@@ -48,7 +48,7 @@ self.addEventListener('fetch', event => {
   const navigation = event.request.mode === 'navigate' && url.pathname === '/';
   if (event.request.method !== 'GET' || url.origin !== location.origin || !(navigation || SHELL.includes(url.pathname))) return;
   const key = navigation ? '/' : url.pathname;
-  // Network first, so the newest app always loads at home; fall back quickly when the Mac is out of reach.
+  // Network first, so the newest app always loads at home; fall back quickly when the computer is out of reach.
   const network = fetch(event.request).then(response => {
     if (response.ok) { const copy = response.clone(); caches.open(CACHE).then(cache => cache.put(key, copy)); }
     return response;

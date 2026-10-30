@@ -1,0 +1,36 @@
+{
+  "gguf_runtime": {
+    "repository": "https://github.com/city96/ComfyUI-GGUF.git",
+    "revision": "6ea2651e7df66d7585f6ffee804b20e92fb38b8a"
+  },
+  "models": {
+    "4": {
+      "repo_id": "unsloth/FLUX.2-klein-9B-GGUF",
+      "revision": "6db9b2d0479c98795589c94c9beef5cc818c6966",
+      "filename": "flux-2-klein-9b-Q4_K_M.gguf",
+      "size": 5673900320,
+      "sha256": "23cadc53168a1b9c607a79d2b8cf942deeb0b48dcdb6024bf757360c7a746c19"
+    },
+    "8": {
+      "repo_id": "unsloth/FLUX.2-klein-9B-GGUF",
+      "revision": "6db9b2d0479c98795589c94c9beef5cc818c6966",
+      "filename": "flux-2-klein-9b-Q8_0.gguf",
+      "size": 10245691680,
+      "sha256": "68957129335ce59ddadcb771f9c375f0ceb587b9c03a104e427fe303d3aab4c6"
+    }
+  },
+  "text_encoder": {
+    "repo_id": "unsloth/Qwen3-8B-GGUF",
+    "revision": "a6adef130ffb23ddaf1a62fec9dced968c9bc482",
+    "filename": "Qwen3-8B-Q8_0.gguf",
+    "size": 8709519168,
+    "sha256": "0cfbf745760f07a76ddeb358dd025a27f2e11d1ca9c9a4169a373d52990fe86e"
+  },
+  "vae": {
+    "repo_id": "Comfy-Org/flux2-klein-9B",
+    "revision": "1138ce884c8e977cdacacbe779784fec4426bb3f",
+    "filename": "split_files/vae/flux2-vae.safetensors",
+    "size": 336211292,
+    "sha256": "868fe7b343cc8f3a19dbcfcafbc3d5f888802be3f89bd81b65b3621a066ce8f3"
+  }
+}

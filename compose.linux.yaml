@@ -1,0 +1,7 @@
+# Docker Desktop manages the website; the host helper owns the NVIDIA GPU.
+name: local-image-studio-gf65
+services:
+  studio:
+    environment:
+      STUDIO_BACKEND: cuda
+      SAM3_TIMEOUT: "900"

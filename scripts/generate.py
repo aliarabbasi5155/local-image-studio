@@ -5,6 +5,7 @@ import hashlib
 import importlib.metadata
 import json
 import math
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
@@ -15,6 +16,8 @@ from urllib.request import Request, urlopen
 from PIL import Image, ImageStat
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from studio.backends import is_cuda, model_registry, runtime_registry  # noqa: E402
 DEFAULT_PROMPT = (
     "Editorial architectural photograph of a secluded Italian villa beside Lake Como, "
     "warm terracotta walls, weathered stone steps, delicate climbing ivy and purple "
@@ -36,7 +39,7 @@ def resolve_lora(model_key, lora_key, strength=None):
     if lora_key is None:
         return None
     adapters = json.loads((ROOT / "config/loras.json").read_text())
-    models = json.loads((ROOT / "config/models.json").read_text())
+    models = model_registry(ROOT)
     adapter = adapters[lora_key]
     if models[model_key]["model_name"] not in adapter["model_names"]:
         raise SystemExit(f"{lora_key} does not support {model_key}")
@@ -48,10 +51,14 @@ def resolve_lora(model_key, lora_key, strength=None):
 
 
 def build_prompt(model_key, width, height, seed, prompt, lora=None):
-    models = json.loads((ROOT / "config/models.json").read_text())
+    models = model_registry(ROOT)
     model = models[model_key]
     directory = ROOT / "models" / model_key
-    if not (directory / "source.json").is_file():
+    if is_cuda(ROOT):
+        directory = ROOT / "runtime/ComfyUI/models/diffusion_models" / model["filename"]
+        if not directory.is_file():
+            raise SystemExit("Model missing. Run scripts/setup_cuda.py")
+    elif not (directory / "source.json").is_file():
         raise SystemExit(f"Model missing. Download it with scripts/download_models.py {model_key}")
     output_key = f"{model_key}-{lora['source']['workflow_suffix']}" if lora else model_key
     return {
@@ -60,7 +67,8 @@ def build_prompt(model_key, width, height, seed, prompt, lora=None):
             "inputs": {
                 "model_name": model["model_name"], "quantize": model["quantize"],
                 "custom_model_path": str(directory),
-                "loras": json.dumps([{"path": lora["path"], "strength": lora["strength"]}]) if lora else "",
+                "loras": (f"{lora['source']['comfy_filename']}:{lora['strength']}" if is_cuda(ROOT)
+                          else json.dumps([{"path": lora["path"], "strength": lora["strength"]}])) if lora else "",
             },
         },
         "2": {
@@ -75,7 +83,7 @@ def build_prompt(model_key, width, height, seed, prompt, lora=None):
 
 
 def main():
-    models = json.loads((ROOT / "config/models.json").read_text())
+    models = model_registry(ROOT)
     defaults_path = ROOT / "config/defaults.json"
     defaults = json.loads(defaults_path.read_text()) if defaults_path.exists() else {}
     parser = argparse.ArgumentParser(description=__doc__)
@@ -100,10 +108,11 @@ def main():
     lora = resolve_lora(args.model, args.lora, args.lora_strength)
     workflow_key = f"{args.model}-{lora['source']['workflow_suffix']}" if lora else args.model
     stats = request(args.server, "/system_stats")
-    runtime = json.loads((ROOT / "config/runtime.json").read_text())
-    patch_sha256 = hashlib.sha256((ROOT / "patches/flux2klein-mlx.patch").read_bytes()).hexdigest()
-    lora_patch_sha256 = hashlib.sha256((ROOT / "patches/flux2klein-lora.patch").read_bytes()).hexdigest()
-    packages = {name: importlib.metadata.version(name) for name in ("mflux", "mlx", "mlx-metal", "torch", "transformers")}
+    runtime = runtime_registry(ROOT)
+    patch_sha256 = None if is_cuda(ROOT) else hashlib.sha256((ROOT / "patches/flux2klein-mlx.patch").read_bytes()).hexdigest()
+    lora_patch_sha256 = None if is_cuda(ROOT) else hashlib.sha256((ROOT / "patches/flux2klein-lora.patch").read_bytes()).hexdigest()
+    package_names = ("gguf", "torch", "transformers") if is_cuda(ROOT) else ("mflux", "mlx", "mlx-metal", "torch", "transformers")
+    packages = {name: importlib.metadata.version(name) for name in package_names}
     records = []
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     report_path = ROOT / "benchmarks" / f"{stamp}-{args.label}.json"
@@ -173,10 +182,12 @@ def main():
         })
         report = {
             "created_at": datetime.now(timezone.utc).isoformat(), "label": args.label,
-            "model": args.model, "model_source": json.loads((ROOT / "models" / args.model / "source.json").read_text()), "backend": "MLX/Metal via ComfyUI",
+            "model": args.model, "model_source": models[args.model] if is_cuda(ROOT) else json.loads((ROOT / "models" / args.model / "source.json").read_text()),
+            "backend": "CUDA/GGUF via ComfyUI" if is_cuda(ROOT) else "MLX/Metal via ComfyUI",
             "width": args.width, "height": args.height, "steps": 4, "guidance": 1.0,
             "prompt": args.prompt, "system_stats": stats, "runs": records,
             "runtime_sources": runtime, "integration_patch_sha256": patch_sha256,
+            "cuda_integration_sha256": hashlib.sha256((ROOT / "scripts/cuda_nodes.py").read_bytes()).hexdigest() if is_cuda(ROOT) else None,
             "lora_integration_patch_sha256": lora_patch_sha256, "lora": lora, "packages": packages,
             "note": "End-to-end latency includes queueing, model loading if needed, encoding, sampling, decoding and saving. Downloads excluded. Later runs change seed and recompute the image.",
         }

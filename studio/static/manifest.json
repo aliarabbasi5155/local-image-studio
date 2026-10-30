@@ -2,7 +2,7 @@
   "id": "/",
   "name": "Image Studio",
   "short_name": "Studio",
-  "description": "Create and edit images on your Mac from anywhere at home.",
+  "description": "Create and edit images on your computer from anywhere at home.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

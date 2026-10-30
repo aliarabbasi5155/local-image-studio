@@ -592,7 +592,7 @@ class Engine:
                             await asyncio.sleep(3)
                             continue
                     if not await self.available():
-                        self.store.update_job(job["id"], phase="Starting your Mac’s image engine" if self.native.base else "Waiting for your Mac’s image engine")
+                        self.store.update_job(job["id"], phase="Starting your computer’s image engine" if self.native.base else "Waiting for your computer’s image engine")
                         await asyncio.sleep(3)
                         continue
                     async with self.native.activity():

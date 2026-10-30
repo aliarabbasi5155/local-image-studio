@@ -4,6 +4,8 @@ import argparse
 import ipaddress
 import os
 import secrets
+import shutil
+import socket
 import subprocess
 import tempfile
 from pathlib import Path
@@ -37,6 +39,8 @@ def openssl(*args, data=None):
 
 
 def local_name():
+    if not shutil.which("scutil"):
+        return socket.gethostname().split(".")[0].lower() + ".local"
     result = subprocess.run(["scutil", "--get", "LocalHostName"], capture_output=True, text=True)
     return result.stdout.strip().lower() + ".local" if result.returncode == 0 and result.stdout.strip() else None
 

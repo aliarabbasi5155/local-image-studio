@@ -29,7 +29,7 @@ function saveEditor() {
 function scheduleEstimate() {
   clearTimeout(mainEstimateTimer);
   const revision = ++estimateRevision, hint = $('#estimate-hint');
-  if (connection.offline) { hint.textContent = 'Needs your Mac'; return; }
+  if (connection.offline) { hint.textContent = 'Needs your computer'; return; }
   mainEstimateTimer = setTimeout(async () => {
     if (!state.authenticated) return;
     try {
@@ -332,7 +332,7 @@ async function navigateProject(direction) {
 
 // --- Tools ----------------------------------------------------------------------------------------------
 function setTool(tool) {
-  if (connection.offline && tool !== 'edit') return toast('This tool needs your Mac. Join your home Wi-Fi to use it.');
+  if (connection.offline && tool !== 'edit') return toast('This tool needs your computer. Join your home Wi-Fi to use it.');
   if (tool === 'area') { openMaskEditor().catch(error => toast(error.message)); return; }
   if (tool === 'identity') { openIdentitySwap().catch(error => toast(error.message)); return; }
   if (tool === 'closeup') { openCloseUp(); return; }
@@ -383,7 +383,7 @@ function scheduleViewerEstimate() {
   clearTimeout(viewerEstimateTimer);
   const revision = ++viewerEstimateRevision, hint = $('#lb-estimate');
   if (!hint) return;
-  if (connection.offline) { hint.textContent = 'Editing needs your Mac'; return; }
+  if (connection.offline) { hint.textContent = 'Editing needs your computer'; return; }
   viewerEstimateTimer = setTimeout(async () => {
     const item = selectedImage();
     if (!item || !$('#detail-dialog').open) return;
@@ -614,7 +614,7 @@ async function refreshMetrics() {
     const status = await api('/api/metrics'), gb = value => value == null ? 'Unavailable' : `${(value / 1024 ** 3).toFixed(1)} GB`;
     Object.assign(state.options, status); renderEngine();
     $('#server-status').textContent = `${engineLabel(status)}${status.active_images ? ` · ${status.active_images} in progress` : ''}`;
-    $('#metrics-content').innerHTML = `<div class="metrics-grid"><div><span>Image engine</span><strong>${escapeHTML(engineLabel(status))}</strong></div><div><span>Waiting</span><strong>${status.queued_images}</strong></div><div><span>Mac memory available</span><strong>${gb(status.memory_free)} of ${gb(status.memory_total)}</strong></div><div><span>Last image took</span><strong>${status.last_image_seconds == null ? '—' : duration(status.last_image_seconds)}</strong></div><div><span>Typical recently</span><strong>${status.recent_average_seconds == null ? '—' : duration(status.recent_average_seconds)}</strong></div><div><span>Storage available</span><strong>${gb(status.storage_free)}</strong></div></div><p>${status.auto_start ? 'The image engine starts when you make something and stops after 10 idle minutes to free memory. ' : ''}More free memory on your Mac makes images faster.</p>`;
+    $('#metrics-content').innerHTML = `<div class="metrics-grid"><div><span>Image engine</span><strong>${escapeHTML(engineLabel(status))}</strong></div><div><span>Waiting</span><strong>${status.queued_images}</strong></div><div><span>computer memory available</span><strong>${gb(status.memory_free)} of ${gb(status.memory_total)}</strong></div><div><span>Last image took</span><strong>${status.last_image_seconds == null ? '—' : duration(status.last_image_seconds)}</strong></div><div><span>Typical recently</span><strong>${status.recent_average_seconds == null ? '—' : duration(status.recent_average_seconds)}</strong></div><div><span>Storage available</span><strong>${gb(status.storage_free)}</strong></div></div><p>${status.auto_start ? 'The image engine starts when you make something and stops after 10 idle minutes to free memory. ' : ''}More free memory on your computer makes images faster.</p>`;
     renderOfflineStatus();
   } catch { $('#server-status').textContent = 'Status unavailable · tap to retry'; }
   finally { metricsBusy = false; }

@@ -22,6 +22,7 @@ from .media import media_file, save_jpeg
 from .metrics import Metrics
 from .downloads import Downloads
 from .video import Videos
+from .backends import model_registry, runtime_registry
 from .masking import normalize_mask, masked_size, automatic_feather
 from .automask import AutoMask, AutomaticSelectionError, validate_selection
 from .identity import CONCEPTS, WORKING_SIDE, blend_width as identity_blend, body_guide, close_up, clothing_area, donor_body, donor_crops, mask_png, swap_areas, request_parts
@@ -45,7 +46,7 @@ def failure(message, status=400):
 
 
 def needs_setup(request):
-    """Phones reach the studio over HTTPS once HTTPS is ready; plain HTTP stays for this Mac."""
+    """Phones reach the studio over HTTPS once HTTPS is ready; plain HTTP stays for this computer."""
     return bool(request.app[STATE]["tls"]) and not request.secure and request.url.host not in LOOPBACK
 
 
@@ -173,7 +174,7 @@ async def automatic_mask(request):
     target, protect, skin = validate_selection(await request.json())
     engine = state["engine"]
     if engine.resource_lock.locked() or state["store"].one("SELECT id FROM jobs WHERE status IN ('submitted','running')"):
-        return failure("Your Mac is making an image. Try automatic selection when it finishes.", 409)
+        return failure("Your computer is making an image. Try automatic selection when it finishes.", 409)
     async with engine.resource_lock:
         try:
             result = await state["automask"].select(media_file(state["store"].directory, "uploads", source["id"]), target, protect, skin)
@@ -213,7 +214,7 @@ async def identity_areas(request):
         return failure("Choose a different photo to take the identity from.")
     engine = state["engine"]
     if engine.resource_lock.locked() or store.one("SELECT id FROM jobs WHERE status IN ('submitted','running')"):
-        return failure("Your Mac is making an image. Find the swap areas when it finishes.", 409)
+        return failure("Your computer is making an image. Find the swap areas when it finishes.", 409)
     started = time.monotonic()
     async with engine.resource_lock:
         try:
@@ -1031,10 +1032,10 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
                     project_root or os.environ.get("ENGINE_PROJECT_ROOT", str(ROOT)), templates)
     app = web.Application(middlewares=[access], client_max_size=MAX_UPLOAD + 65536)
     app[STATE] = {"store": store, "engine": engine, "pin": pin, "attempts": {}, "tls": tls if (tls / "server.crt").exists() else None,
-                  "models": json.loads((ROOT / "config/models.json").read_text()),
+                  "models": model_registry(ROOT),
                   "adapter": json.loads((ROOT / "config/loras.json").read_text())["snofs-klein-9b-v1.4"],
                   "upscaler": json.loads((ROOT / "config/upscaler.json").read_text()),
-                  "runtime": json.loads((ROOT / "config/runtime.json").read_text())}
+                  "runtime": runtime_registry(ROOT)}
     app[STATE]["metrics"] = Metrics(store,engine)
     app[STATE]["automask"] = AutoMask()
     app[STATE]["downloads"] = Downloads()

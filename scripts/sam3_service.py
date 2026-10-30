@@ -7,6 +7,7 @@ import hmac
 import io
 import json
 import os
+import platform
 import sys
 import tempfile
 import time
@@ -46,7 +47,8 @@ async def authorize(request, handler):
 
 async def health(request):
     return web.json_response({"ready": BINARY.is_file() and MODEL.is_file(), "busy": LOCK.locked(),
-                              "model": "SAM 3 Q8 · Metal", "engine_control": True, "video_control": True})
+                              "model": "SAM 3 Q8 · " + ("Metal" if platform.system() == "Darwin" else "CPU"),
+                              "engine_control": True, "video_control": True})
 
 
 async def engine_status(request):
@@ -115,7 +117,7 @@ async def select(request):
         CACHE.move_to_end(key)
         return web.json_response(dict(cached[1], cached=True))
     if LOCK.locked() or await engine_busy():
-        return web.json_response({"error": "Your Mac is making an image. Try automatic selection when it finishes."}, status=409)
+        return web.json_response({"error": "Your computer is making an image. Try automatic selection when it finishes."}, status=409)
     if LOCK.locked():
         return web.json_response({"error": "Automatic selection is already running. Try again when it finishes."}, status=409)
     async with LOCK:
@@ -127,7 +129,7 @@ async def select(request):
                 process = await asyncio.create_subprocess_exec(str(BINARY), str(MODEL), str(path), str(folder), target,
                                                                "1" if protect else "0", "1" if protect_skin else "0", *concepts, stdout=log, stderr=log)
                 try:
-                    code = await asyncio.wait_for(process.wait(), timeout=170)
+                    code = await asyncio.wait_for(process.wait(), timeout=int(os.environ.get("SAM3_TIMEOUT", "170")))
                     if code:
                         return web.json_response({"error": "SAM 3 could not select this image. Use the brush, or try again."}, status=503)
                     payload = json.loads((folder / "result.json").read_text())

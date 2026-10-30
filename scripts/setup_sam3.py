@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import secrets
 import shutil
 import subprocess
@@ -47,11 +48,12 @@ def install():
         subprocess.run(["git", "-C", str(source), "fetch", "origin", CONFIG["commit"]], check=True)
         subprocess.run(["git", "-C", str(source), "checkout", "--detach", CONFIG["commit"]], check=True)
     subprocess.run(["git", "-C", str(source), "submodule", "update", "--init", "--recursive"], check=True)
-    fingerprint = CONFIG["commit"] + checksum(ROOT / "scripts/sam3/main.cpp") + checksum(ROOT / "scripts/sam3/CMakeLists.txt")
+    metal = platform.system() == "Darwin"
+    fingerprint = CONFIG["commit"] + checksum(ROOT / "scripts/sam3/main.cpp") + checksum(ROOT / "scripts/sam3/CMakeLists.txt") + str(metal)
     binary = runtime / "sam3-build/studio-sam3"
     built = runtime / "sam3-build-fingerprint.txt"
     if not binary.exists() or not built.exists() or built.read_text() != fingerprint:
-        print("Building automatic selection for your Mac…", flush=True)
+        print("Building automatic selection…", flush=True)
         environment = runtime / "sam3-build-env"
         uv = shutil.which("uv") or str(ROOT / ".bin/uv")
         if not (environment / "bin/python").exists():
@@ -60,7 +62,7 @@ def install():
         if not cmake.exists():
             subprocess.run([uv, "pip", "install", "--python", str(environment / "bin/python"), "cmake==" + CONFIG["cmake"]], check=True)
         subprocess.run([str(cmake), "-S", str(ROOT / "scripts/sam3"), "-B", str(runtime / "sam3-build"),
-                        "-DGGML_METAL=ON", "-DGGML_NATIVE=ON", "-DBUILD_SHARED_LIBS=OFF"], check=True)
+                        "-DGGML_METAL=" + ("ON" if metal else "OFF"), "-DGGML_NATIVE=ON", "-DBUILD_SHARED_LIBS=OFF"], check=True)
         subprocess.run([str(cmake), "--build", str(runtime / "sam3-build"), "-j", "4"], check=True)
         built.write_text(fingerprint)
     token = runtime / "sam3-token.txt"

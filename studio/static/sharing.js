@@ -16,10 +16,10 @@ async function updateSharedNotice() {
   let pending = [];
   if (hasShareInbox()) pending = await ShareInbox.list();
   $('#shared-notice').hidden = !pending.length && !error;
-  // Offline, photos stay here until the Mac can store them.
+  // Offline, photos stay here until the computer can store them.
   const live = state.authenticated && !connection.offline;
   $('#shared-message').textContent = error ? (shareErrors[error] || shareErrors.storage) :
-    `${pending.length} photo${pending.length === 1 ? '' : 's'} waiting on this phone. ${live ? 'Review and import into your library.' : state.authenticated ? 'Import when your Mac is reachable.' : 'Connect to your Mac and unlock the studio to import.'}`;
+    `${pending.length} photo${pending.length === 1 ? '' : 's'} waiting on this phone. ${live ? 'Review and import into your library.' : state.authenticated ? 'Import when your computer is reachable.' : 'Connect to your computer and unlock the studio to import.'}`;
   $('#shared-review').hidden = !pending.length || !live;
   $('#shared-dismiss').hidden = !error;
   return pending;

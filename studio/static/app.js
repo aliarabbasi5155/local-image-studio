@@ -13,8 +13,8 @@ let deletingImage = null, deletePending = false, libraryRevision = 0;
 
 async function api(path, options={}) {
   if (connection.offline) return offlineRequest(path, options);
-  // Library reads are quick on the Mac, so a silent wait on one means the phone is away from home.
-  // Status and options can wait on the Mac's helpers, so they keep no limit.
+  // Library reads are quick on the computer, so a silent wait on one means the phone is away from home.
+  // Status and options can wait on the computer's helpers, so they keep no limit.
   const quick = (options.method || 'GET') === 'GET' && /^\/api\/(auth|jobs|projects|favorites|photos)\b/.test(path);
   const wait = options.timeout ?? (quick ? 8000 : null);
   let response;
@@ -22,7 +22,7 @@ async function api(path, options={}) {
     headers:options.body && !(options.body instanceof FormData) ? {'Content-Type':'application/json',...options.headers} : options.headers}); }
   catch {
     if (path !== '/api/login' && await openOfflineCopy()) { goOffline(); return offlineRequest(path, options); }
-    const error=new Error('Can’t reach your Mac. Join your home Wi-Fi and keep the Mac awake, then try again.');error.unreachable=true;throw error;
+    const error=new Error('Can’t reach your computer. Join your home Wi-Fi and keep the computer awake, then try again.');error.unreachable=true;throw error;
   }
   const body = await response.json();
   if (!response.ok) {
@@ -62,7 +62,7 @@ function showLogin() {
 }
 async function enterStudio() {
   state.options = await api('/api/options');
-  // Offline changes reach the Mac before the library is shown, so they never seem to vanish.
+  // Offline changes reach the computer before the library is shown, so they never seem to vanish.
   if (!connection.offline) reportSent(await sendPending().catch(() => null));
   state.authenticated = true; $('#login').hidden = true; $('#app').hidden = false;
   document.body.classList.toggle('is-offline', connection.offline);
@@ -78,7 +78,7 @@ function renderEngine() {
   $('#logout').hidden = !state.options.pin_required;
 }
 function engineLabel(status) {
-  return {ready:'Your Mac is ready',sleeping:'Sleeping · wakes automatically',starting:'Starting image engine',away:'Away from your Mac · using this phone'}[status.engine_state] || (status.engine_ready?'Your Mac is ready':'Image engine is offline');
+  return {ready:'Your computer is ready',sleeping:'Sleeping · wakes automatically',starting:'Starting image engine',away:'Away from your computer · using this phone'}[status.engine_state] || (status.engine_ready?'Your computer is ready':'Image engine is offline');
 }
 function choiceChips(name, choices, selected) {
   return choices.map(([value, label, title]) => `<button type="button" role="radio" data-${name}="${value}" aria-checked="${value === selected}"${title ? ` aria-label="${title}" title="${title}"` : ''}>${label}</button>`).join('');
@@ -108,7 +108,7 @@ function emptyHTML() {
   if (state.query) return `<div class="empty"><div class="orb">${icon('search')}</div><h2>No matching images.</h2><p>Try a different word from your prompt.</p></div>`;
   if (state.view === 'favorites') return `<div class="empty"><div class="orb">${icon('heart')}</div><h2>Keep the ones you love.</h2><p>Tap the heart on an image to give it a home here.</p></div>`;
   if (state.view === 'archive') return `<div class="empty"><div class="orb">${icon('archive')}</div><h2>Out of sight. Still yours.</h2><p>Archived images live here with their settings. Restore one whenever you like.</p></div>`;
-  return `<div class="empty"><div class="orb">${icon('spark')}</div><h2>Make something worth keeping.</h2><p>Start with a thought, a place, or a little “what if”.<br>Your imagination. Your Mac. Your studio.</p><div class="suggestions"><button data-suggestion="A cinematic photograph of a tiny Italian cafe at sunrise, warm terracotta walls, soft golden light and realistic details.">An Italian morning</button><button data-suggestion="A beautiful photograph of a red fox in a snowy forest, soft natural light, detailed fur, quiet winter atmosphere.">A quiet winter</button><button data-suggestion="An architectural photograph of a peaceful modern cabin beside a mountain lake, misty dawn, natural wood, warm lights and realistic details.">Somewhere peaceful</button></div></div>`;
+  return `<div class="empty"><div class="orb">${icon('spark')}</div><h2>Make something worth keeping.</h2><p>Start with a thought, a place, or a little “what if”.<br>Your imagination. Your computer. Your studio.</p><div class="suggestions"><button data-suggestion="A cinematic photograph of a tiny Italian cafe at sunrise, warm terracotta walls, soft golden light and realistic details.">An Italian morning</button><button data-suggestion="A beautiful photograph of a red fox in a snowy forest, soft natural light, detailed fur, quiet winter atmosphere.">A quiet winter</button><button data-suggestion="An architectural photograph of a peaceful modern cabin beside a mountain lake, misty dawn, natural wood, warm lights and realistic details.">Somewhere peaceful</button></div></div>`;
 }
 function jobHTML(job) {
   const failed = job.status === 'failed';
@@ -220,8 +220,8 @@ $('#upload').onchange = async event => {
   const file = event.target.files[0]; if (!file) return;
   if (file.size > 20*1024*1024) { toast('Choose a photo smaller than 20 MB.'); event.target.value = ''; return; }
   if (connection.offline) {
-    // Uploads are stored by the Mac, so the photo waits in this phone's inbox like a shared one.
-    try { await ShareInbox.keep([file]); await updateSharedNotice(); toast('Saved on this phone for up to 24 hours. Import it when your Mac is reachable.'); }
+    // Uploads are stored by the computer, so the photo waits in this phone's inbox like a shared one.
+    try { await ShareInbox.keep([file]); await updateSharedNotice(); toast('Saved on this phone for up to 24 hours. Import it when your computer is reachable.'); }
     catch (error) { toast(shareErrors[error.message] || shareErrors.storage); }
     finally { event.target.value = ''; }
     return;
@@ -268,7 +268,7 @@ let unreachable = false;
 async function start() {
   try {
     const auth = await api('/api/auth', {timeout:await openOfflineCopy() ? 3500 : 8000}); unreachable = false; $('#login-error').textContent = '';
-    // The studio was locked while away from home; end that session now the Mac can hear it.
+    // The studio was locked while away from home; end that session now the computer can hear it.
     if (auth.authenticated && !auth.offline && offlineLocked()) { await send('/api/logout',{}); showLogin(); return; }
     if (auth.authenticated) await enterStudio(); else showLogin();
   }

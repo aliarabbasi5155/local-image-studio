@@ -154,6 +154,57 @@ took about 21 and 19 seconds, and an edit about 30 seconds. See
 [the website report](benchmarks/20261005-web-studio.json).
 See [the measured run](benchmarks/20261004T234742Z-snofs-8bit.json).
 
+## Ubuntu / NVIDIA laptop
+
+Use a separate checkout on Ubuntu. The CUDA installer keeps Klein 9B, four steps,
+guidance 1.0 and the same SNOFS adapter. Fast uses GGUF Q4_K_M; Balanced and High
+use GGUF Q8_0. Qwen3 8B uses Q8, with component unloading, CPU offloading and tiled
+VAE processing for a 6 GB GPU. Different quantizers and GPU kernels can produce
+different images for the same seed; these are the same model family and presets,
+not pixel-identical Mac outputs. Recipes record the actual CUDA sources.
+The image engine reserves 2 GB for activations and other GPU use, trading some
+speed for room during larger edits with multiple references.
+
+Install an NVIDIA driver, Python 3.12 with venv, Git, a C++ compiler, curl, FFmpeg
+and Docker Desktop. In the new checkout:
+
+```bash
+bash scripts/setup_linux.sh
+# Open Docker Desktop, then:
+bash scripts/start_linux_docker.sh 192.168.1.135
+```
+
+The **local-image-studio-gf65** app appears in Docker Desktop's Containers view.
+Use its Start/Stop buttons after this first setup. The website and persistent
+library run in Docker; the user systemd helper runs ComfyUI on the host's NVIDIA
+GPU, wakes it for jobs, and frees it after ten idle minutes. Docker Desktop for
+Linux [does not expose NVIDIA GPUs to ordinary containers](https://docs.docker.com/desktop/features/gpu/). This follows the Mac
+deployment arrangement. The laptop must be logged in, awake and on the home Wi-Fi.
+The helper is enabled at login; Docker Desktop starts at login when its setting
+is enabled. Run the launcher again if the laptop's IP changes.
+
+The launcher prints the PIN and phone setup address. Browser access is
+`http://192.168.1.135:7878` for certificate setup, followed by
+`https://192.168.1.135:7443`. Certificates, PIN and library are separate from the
+Mac installation. Automatic selection uses the same SAM 3 Q8 weights on CPU;
+its timeout is longer because that part can be slower.
+
+Optional photo-to-video uses LTX-2.3 distilled 1.1 Q4, the matching Gemma 3 12B
+encoder, audio/video VAEs and the two-stage spatial upscaler. Install its pinned,
+checksum-verified CUDA weights with:
+
+```bash
+.venv/bin/python scripts/setup_video_cuda.py
+```
+
+Video runs in a separate process after the helper releases the image engine.
+It uses RAM and swap as well as the GPU. The saved recipe records each component.
+Model files remain under `models/cuda`; downloaded runtimes and the Linux virtual
+environment remain local. Source deployment should exclude `.venv`, `.cache`,
+`models`, `runtime`, `outputs` and `studio-data` when updating an existing laptop.
+See the [GF65 validation report](benchmarks/20261030-gf65-cuda.json) for measured
+image/video timings and the verified Docker deployment.
+
 ## Install on another Mac
 
 Requires Apple Silicon, macOS compatible with MLX 0.32.3, Git, and

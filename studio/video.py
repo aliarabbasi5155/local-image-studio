@@ -1,4 +1,4 @@
-"""Durable image-to-video jobs, serialized with image generation on the Mac."""
+"""Durable image-to-video jobs, serialized with image generation on the computer."""
 import asyncio
 import contextlib
 import json
@@ -14,8 +14,11 @@ from aiohttp import web
 from PIL import Image, ImageOps
 
 from .media import media_file
+from .backends import is_cuda, runtime_registry
 
-CONFIG = json.loads((Path(__file__).resolve().parents[1] / "config/video.json").read_text())
+_ROOT = Path(__file__).resolve().parents[1]
+_CUDA = is_cuda(_ROOT)
+CONFIG = json.loads((_ROOT / "config" / ("video.cuda.json" if _CUDA else "video.json")).read_text())
 SIZES = {"landscape": (768, 512), "portrait": (512, 768), "square": (512, 512)}
 
 
@@ -76,6 +79,11 @@ def validate_recipe(payload, source_size=None):
     result = {"prompt": prompt.strip(), "shape": shape, "width": width, "height": height,
             "frames": frames, "fps": 24, "seed": seed, "model": CONFIG["label"],
             "model_revision": CONFIG["model"]["revision"], "runtime_revision": CONFIG["runtime_revision"]}
+    if _CUDA:
+        result["backend"] = "cuda-gguf"
+        result["runtime_sources"] = runtime_registry(_ROOT)
+        result["sampling"] = CONFIG["sampling"]
+        result["model_sources"] = {key: CONFIG[key] for key in ("model", "text_encoder", "projection", "video_vae", "audio_vae", "upscaler")}
     if source_size is not None or payload.get("sizing_version") == 2:
         if "shape" in payload:
             raise ValueError("Video shape follows the photo automatically. Reload Studio to update its controls.")
@@ -105,7 +113,7 @@ class Videos:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
             async with session.request(method, native.base + path, headers=headers, **kwargs) as response:
                 if response.status == 404:
-                    raise RuntimeError("Restart the Mac helper to enable video generation.")
+                    raise RuntimeError("Restart the computer helper to enable video generation.")
                 result = await response.json()
                 if response.status != 200:
                     raise RuntimeError(result.get("error", "Video helper unavailable."))
@@ -117,7 +125,7 @@ class Videos:
         except (OSError, RuntimeError, aiohttp.ClientError, asyncio.TimeoutError) as error:
             status = {"ready": False, "error": str(error)}
         if status.get("ready") and status.get("sizing_version", 0) < 2:
-            status.update(ready=False, error="Restart the Mac helper to enable photo-sized videos.")
+            status.update(ready=False, error="Restart the computer helper to enable photo-sized videos.")
         return web.json_response({**status, "model": CONFIG["label"]})
 
     async def submit(self, request):
@@ -136,7 +144,7 @@ class Videos:
         if not status.get("ready"):
             return web.json_response({"error": status.get("error", "Install the video model first.")}, status=503)
         if status.get("sizing_version", 0) < 2:
-            return web.json_response({"error": "Restart the Mac helper to enable photo-sized videos."}, status=503)
+            return web.json_response({"error": "Restart the computer helper to enable photo-sized videos."}, status=503)
         async with self.submission_lock:
             if self.store.one("SELECT COUNT(*) AS n FROM videos WHERE status IN ('queued','running')")["n"] >= 4:
                 return web.json_response({"error": "Finish or cancel a video before adding more."}, status=429)

@@ -1,4 +1,16 @@
-# M5 / 24 GB validation
+# Hardware validation
+
+## Ubuntu / RTX 3060
+
+For the independent Ubuntu / RTX 3060 laptop, see
+[the GF65 CUDA validation](20261030-gf65-cuda.json) and
+[the CUDA CLI benchmark](20261030T191002Z-ubuntu-cuda-cli.json).
+The Linux studio runs in Docker Desktop with an automatically started native
+GPU helper. Its High preset produced a verified 4096 × 4096 output in 127.46 s;
+the 49-frame, 24 fps video with audio took 339.52 s. Quantized weights and
+arithmetic differ from MLX, so identical seeds do not guarantee identical pixels.
+
+## M5 / 24 GB
 
 Measured on **5 October 2026 (Europe/Rome)**, MacBook Pro **Apple M5**,
 **10-core GPU**, **24 GB unified memory**, **macOS 26.5**, connected to AC power.

@@ -1,4 +1,4 @@
-"""Native MLX video endpoint for the authenticated Mac helper."""
+"""Isolated MLX or CUDA video endpoint for the authenticated local helper."""
 import asyncio
 import contextlib
 import io
@@ -11,7 +11,9 @@ from pathlib import Path
 from aiohttp import web
 from PIL import Image, ImageOps
 
-from studio.video import CONFIG, validate_recipe
+from studio.video import validate_recipe
+
+MLX_CONFIG = json.loads((Path(__file__).resolve().parents[1] / "config/video.json").read_text())
 
 
 async def run_process(command, log, environment, root, timeout):
@@ -31,34 +33,51 @@ class NativeVideo:
         self.root, self.engine, self.lock = Path(root), engine, resource_lock
         self.engine_busy = engine_busy
         self.busy = False
+        backend = self.root / "runtime/backend.txt"
+        self.cuda = backend.exists() and backend.read_text().strip() == "cuda"
+        self.config = json.loads((self.root / "config/video.cuda.json").read_text()) if self.cuda else MLX_CONFIG
         self.executable = self.root / "runtime/ltx-2-mlx/.venv/bin/ltx-2-mlx"
+        if self.cuda:
+            self.executable = self.root / ".venv/bin/python"
 
     def environment(self):
         return dict(os.environ, PATH=os.pathsep.join(["/opt/homebrew/bin", "/usr/local/bin", os.environ.get("PATH", "")]),
                     HF_HOME=str(self.root / ".cache/huggingface"), HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1")
 
     def ready(self):
+        if self.cuda:
+            try:
+                config = json.loads((self.root / "config/video.cuda.json").read_text())
+                installed = json.loads((self.root / "runtime/video-cuda-ready.json").read_text()) == config
+                files = all((self.root / "runtime/ComfyUI/models" / config[key]["category"] / Path(config[key]["filename"]).name).is_file()
+                            for key in ("model", "text_encoder", "projection", "video_vae", "audio_vae", "upscaler"))
+                return installed and files and self.executable.is_file() and bool(shutil.which("ffmpeg")) and bool(shutil.which("ffprobe"))
+            except (OSError, ValueError, KeyError):
+                return False
         marker = self.root / "runtime/video-ready.json"
         try:
-            installed = json.loads(marker.read_text()) == CONFIG
+            installed = json.loads(marker.read_text()) == self.config
         except (OSError, ValueError):
             installed = False
         models = self.root / "models"
-        files = all((models / CONFIG["model"]["directory"] / name).is_file() for name in CONFIG["model"]["files"])
+        files = all((models / self.config["model"]["directory"] / name).is_file() for name in self.config["model"]["files"])
         return (installed and files and self.executable.is_file()
-                and (models / CONFIG["text_encoder"]["directory"] / "model.safetensors.index.json").is_file()
+                and (models / self.config["text_encoder"]["directory"] / "model.safetensors.index.json").is_file()
                 and bool(shutil.which("ffmpeg", path=self.environment()["PATH"]))
                 and bool(shutil.which("ffprobe", path=self.environment()["PATH"])))
 
     async def status(self, request):
         ready = self.ready()
         return web.json_response({"ready": ready, "busy": self.busy, "sizing_version": 2,
-                                  "error": None if ready else "On your Mac, run: .venv/bin/python scripts/setup_video.py"})
+                                  "error": None if ready else "Video setup required: .venv/bin/python scripts/" + ("setup_video_cuda.py" if self.cuda else "setup_video.py")})
 
     def command(self, recipe, source, output):
+        if self.cuda:
+            return [str(self.executable), str(self.root / "scripts/video_cuda.py"), "--recipe", json.dumps(recipe),
+                    "--image", str(source), "--output", str(output)]
         return [str(self.executable), "generate", "--distilled", "--low-ram",
-                "--model", str(self.root / "models" / CONFIG["model"]["directory"]),
-                "--gemma", str(self.root / "models" / CONFIG["text_encoder"]["directory"]),
+                "--model", str(self.root / "models" / self.config["model"]["directory"]),
+                "--gemma", str(self.root / "models" / self.config["text_encoder"]["directory"]),
                 "--prompt", recipe["prompt"], "--image", str(source),
                 "--height", str(recipe.get("generation_height", recipe["height"])),
                 "--width", str(recipe.get("generation_width", recipe["width"])),
@@ -77,9 +96,9 @@ class NativeVideo:
 
     async def generate(self, request):
         if not self.ready():
-            return web.json_response({"error": "Install the video runtime and weights using scripts/setup_video.py."}, status=503)
+            return web.json_response({"error": "Install the video runtime and weights using scripts/" + ("setup_video_cuda.py" if self.cuda else "setup_video.py")}, status=503)
         if self.lock.locked():
-            return web.json_response({"error": "Your Mac is busy. Try again after the current task finishes."}, status=409)
+            return web.json_response({"error": "Your computer is busy. Try again after the current task finishes."}, status=409)
         # Hold both locks through execution: waking ComfyUI and SAM inference wait/refuse.
         async with self.lock, self.engine.lock:
             if await self.engine_busy():
@@ -120,7 +139,7 @@ class NativeVideo:
                             output.rename(raw)
                             code = await run_process(self.finish_command(recipe, raw, output), log, self.environment(), self.root, 180)
                     if code or not output.is_file():
-                        return web.json_response({"error": "LTX could not finish this video. Check runtime/video-inference.log on your Mac."}, status=503)
+                        return web.json_response({"error": "LTX could not finish this video. Check runtime/video-inference.log on your computer."}, status=503)
                     # Stream before removing the temporary directory. FileResponse defers reading.
                     response = web.StreamResponse(headers={"Content-Type": "video/mp4", "Content-Length": str(output.stat().st_size)})
                     await response.prepare(request)
