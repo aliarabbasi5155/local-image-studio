@@ -176,7 +176,7 @@ function renderStatus() {
   box.hidden = false;
   box.innerHTML = active
     ? `<span class="lb-ring big" data-ring="${item.id}">${value?.percent != null ? `${value.percent}%` : ''}</span><strong>${isVideo(item) ? 'Animating' : value?.stage || 'Waiting'}</strong>${value?.remaining ? `<small>≈ ${value.remaining} left</small>` : ''}<button type="button" class="lb-text-button" data-action="${isVideo(item) ? 'video-cancel' : 'cancel'}" data-id="${item.id}">Stop</button>`
-    : `<strong>${item.status === 'cancelled' ? 'Stopped' : 'This didn’t finish'}</strong>${item.error || item.job?.error ? `<p>${escapeHTML(item.error || item.job.error)}</p>` : ''}${isVideo(item) ? '' : `<button type="button" class="lb-text-button" data-action="retry" data-id="${item.id}">Try again</button>`}`;
+    : `<strong>${item.status === 'cancelled' ? 'Stopped' : 'This didn’t finish'}</strong>${item.error || item.job?.error ? `<p>${escapeHTML(imageErrorText(item.error || item.job.error))}</p>` : ''}${isVideo(item) ? '' : `<button type="button" class="lb-text-button" data-action="retry" data-id="${item.id}">Try again</button>`}`;
   updateRings();
 }
 function updateRings() {

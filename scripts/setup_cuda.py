@@ -46,6 +46,7 @@ def main():
     plugin = comfy / "custom_nodes/studio-klein-cuda"
     plugin.mkdir(exist_ok=True)
     shutil.copy2(ROOT / "scripts/cuda_nodes.py", plugin / "__init__.py")
+    shutil.copy2(ROOT / "scripts/cuda_memory.py", plugin / "retry.py")
     for directory in ("outputs", "runtime/input", "runtime/user/default/workflows"):
         (ROOT / directory).mkdir(parents=True, exist_ok=True)
     for source in (ROOT / "workflows").glob("*.json"):

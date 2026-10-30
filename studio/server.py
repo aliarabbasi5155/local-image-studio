@@ -6,6 +6,7 @@ import hmac
 import io
 import json
 import os
+import re
 import secrets
 import signal
 import ssl
@@ -95,9 +96,32 @@ async def service_worker(request):
 
 
 async def setup_page(request):
-    # The page checks whether this phone already trusts the HTTPS address, then opens it.
+    # Keep troubleshooting visible until the user chooses the secure address.
     return web.FileResponse(STATIC / "setup.html", headers={"Cache-Control": "no-store",
         "Content-Security-Policy": "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self' https:; frame-ancestors 'none'"})
+
+
+def certificate_details(tls):
+    pem = (tls / "ca.crt").read_text()
+    fingerprint = hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest().upper()
+    name = "Image Studio Home"
+    try:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.load_verify_locations(cafile=str(tls / "ca.crt"))
+        subject = context.get_ca_certs()[0]["subject"]
+        name = next(value for row in subject for key, value in row if key == "commonName")
+    except (ssl.SSLError, IndexError, StopIteration):
+        pass
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return {"name": name, "fingerprint_sha256": ":".join(fingerprint[i:i+2] for i in range(0,64,2)),
+            "filename": f"{slug}-{fingerprint[:12].lower()}.crt"}
+
+
+async def setup_certificate_details(request):
+    tls = request.app[STATE]["tls"]
+    if not tls:
+        raise web.HTTPNotFound()
+    return web.json_response(certificate_details(tls), headers={"Cache-Control": "no-store"})
 
 
 async def certificate_authority(request):
@@ -106,7 +130,9 @@ async def certificate_authority(request):
         raise web.HTTPNotFound()
     # DER is the format both iOS profiles and Android's CA certificate installer accept.
     content = ssl.PEM_cert_to_DER_cert((tls / "ca.crt").read_text())
-    return web.Response(body=content, content_type="application/x-x509-ca-cert", headers={"Cache-Control": "no-store"})
+    filename = certificate_details(tls)["filename"]
+    return web.Response(body=content, content_type="application/x-x509-ca-cert", headers={"Cache-Control": "no-store",
+        "Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 async def auth(request):
@@ -1052,6 +1078,7 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
         web.get("/", index), web.get("/static/{name}", static_file), web.get("/sw.js", service_worker),
         web.post("/share-target", share_target_fallback), web.post("/api/share-upload", share_upload),
         web.get("/setup", setup_page), web.get("/setup/image-studio-home.crt", certificate_authority),
+        web.get("/setup/certificate.json", setup_certificate_details),
         web.get("/api/auth", auth), web.post("/api/login", login), web.post("/api/logout", logout),
         web.get("/api/health", health), web.get("/api/options", options),
         web.get("/api/videos/options", videos.options), web.get("/api/videos", videos.library),

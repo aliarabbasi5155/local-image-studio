@@ -19,6 +19,7 @@ from comfy_api.latest import ComfyExtension, io, ui
 from comfy_extras.nodes_custom_sampler import BasicGuider, KSamplerSelect, RandomNoise, SamplerCustomAdvanced
 from comfy_extras.nodes_edit_model import ReferenceLatent
 from comfy_extras.nodes_flux import EmptyFlux2LatentImage, Flux2Scheduler
+from .retry import run_with_memory_retry
 
 ROOT = Path(__file__).resolve().parents[4]
 CONFIG = json.loads((ROOT / "config/cuda.json").read_text())
@@ -160,7 +161,8 @@ class _KleinGenerate:
                 conditioning = encode_references(conditioning, references)
                 release()
             logging.info("Studio CUDA: sampling Klein 9B Q%s, %sx%s, %s steps", pipeline["quantize"], width, height, num_inference_steps)
-            latent = sample(pipeline, conditioning, width, height, num_inference_steps, seed)
+            latent = run_with_memory_retry(
+                lambda: sample(pipeline, conditioning, width, height, num_inference_steps, seed), memory)
             release()
             result = decode(latent)
             release()

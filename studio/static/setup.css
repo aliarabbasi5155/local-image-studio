@@ -3,3 +3,4 @@
 .setup-steps{padding-left:20px;margin:26px 0 0;color:var(--muted);font-size:13px;line-height:1.7}.setup-steps li{margin-bottom:24px}.setup-steps li::marker{color:var(--accent);font-weight:650}.setup-steps strong{color:var(--text);font-weight:600}.setup-steps p{margin:6px 0}.setup-steps b{color:#dcd2c8;font-weight:600}
 .setup-steps .primary{margin:12px 0;text-decoration:none;width:auto}.setup-steps details{background:#1c1b1f;border:1px solid #302c31;border-radius:9px;padding:9px 12px;margin-top:8px}.setup-steps summary{cursor:pointer;color:var(--text);font-size:12px}
 .setup-link{display:inline-block;margin-top:4px;color:var(--accent);font-weight:600}
+.setup-card code{display:block;overflow-wrap:anywhere;font-size:11px;color:var(--text)}.setup-status .status-dot{flex-shrink:0}.setup-card #install-app{margin-top:12px}

@@ -104,6 +104,12 @@ function elapsedText(job) {
   const seconds = Math.max(0,Math.round(Date.now()/1000 - (job.started || job.created)));
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds/60)}m ${seconds%60}s`;
 }
+function imageErrorText(error) {
+  const message = String(error || '');
+  return /out of memory|would exceed allowed memory/i.test(message)
+    ? 'The GPU ran out of working memory. Your photo and settings are saved. Try again; choose Balanced if it happens again.'
+    : message;
+}
 function emptyHTML() {
   if (state.query) return `<div class="empty"><div class="orb">${icon('search')}</div><h2>No matching images.</h2><p>Try a different word from your prompt.</p></div>`;
   if (state.view === 'favorites') return `<div class="empty"><div class="orb">${icon('heart')}</div><h2>Keep the ones you love.</h2><p>Tap the heart on an image to give it a home here.</p></div>`;
@@ -113,7 +119,7 @@ function emptyHTML() {
 function jobHTML(job) {
   const failed = job.status === 'failed';
   const cancellable = activeStatuses.includes(job.status);
-  return `<article class="image-card job-card ${failed ? 'failed' : ''}"><div class="job-top"><span>${job.recipe.mode === 'edit' ? 'Edit' : 'Creation'} · Variation ${job.variation}</span>${cancellable ? `<button data-action="cancel" data-id="${job.id}" aria-label="Stop variation ${job.variation}">${icon('close')}</button>` : ''}</div>${icon('spark')}<p>${escapeHTML(job.recipe.prompt)}</p>${failed ? `<div class="job-error">${escapeHTML(job.error)}</div><button class="secondary" data-action="retry" data-id="${job.id}">Reuse settings</button>` : `<div class="job-phase"><span>${escapeHTML(job.cancel_requested ? 'Stopping…' : job.phase)}</span><span data-elapsed="${job.id}">${elapsedText(job)}</span></div><div class="progress-track"><span data-progress="${job.id}"></span></div>`}</article>`;
+  return `<article class="image-card job-card ${failed ? 'failed' : ''}"><div class="job-top"><span>${job.recipe.mode === 'edit' ? 'Edit' : 'Creation'} · Variation ${job.variation}</span>${cancellable ? `<button data-action="cancel" data-id="${job.id}" aria-label="Stop variation ${job.variation}">${icon('close')}</button>` : ''}</div>${icon('spark')}<p>${escapeHTML(job.recipe.prompt)}</p>${failed ? `<div class="job-error">${escapeHTML(imageErrorText(job.error))}</div><button class="secondary" data-action="retry" data-id="${job.id}">Reuse settings</button>` : `<div class="job-phase"><span>${escapeHTML(job.cancel_requested ? 'Stopping…' : job.phase)}</span><span data-elapsed="${job.id}">${elapsedText(job)}</span></div><div class="progress-track"><span data-progress="${job.id}"></span></div>`}</article>`;
 }
 function cardActions(buttons) {
   return `<div class="card-actions">${buttons.join('')}</div>`;
@@ -277,4 +283,6 @@ async function start() {
 document.addEventListener('visibilitychange', () => { if (document.hidden) return; if (connection.offline) reconnect(); if (state.authenticated) refresh(); else if (unreachable) start(); });
 window.addEventListener('online', () => { if (connection.offline) reconnect(); else if (unreachable) start(); });
 start();
-if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js').catch(() => { /* The studio works without the offline app shell. */ });
+if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js').catch(error => {
+  if (/ssl|certificate|security/i.test(error.message || '')) toast('Phone installation needs certificate trust. Open Use on your phone → Check installation.');
+});

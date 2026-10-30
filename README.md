@@ -24,7 +24,8 @@ and reuse the settings saved with every image. The library persists in
 
 Phones can install the studio as a home-network-only app. Open the printed phone
 address once; it walks the phone through trusting this Mac's local HTTPS
-certificate, then opens `https://<mac-address>:7443` to add to the Home Screen.
+certificate. Choose **Check installation** to verify the secure connection on
+port **7443**, then add the studio to the Home Screen.
 See [Install it on your phone](studio/README.md#install-it-on-your-phone).
 
 After the first setup, the Mac helper starts at login. Just open the website with
@@ -163,7 +164,10 @@ VAE processing for a 6 GB GPU. Different quantizers and GPU kernels can produce
 different images for the same seed; these are the same model family and presets,
 not pixel-identical Mac outputs. Recipes record the actual CUDA sources.
 The image engine reserves 2 GB for activations and other GPU use, trading some
-speed for room during larger edits with multiple references.
+speed for room during larger edits with multiple references. If sampling still
+runs out of GPU memory, it clears unused weights and retries once with full
+weight offloading and a 3 GB reserve. The model, seed, steps and output size stay
+the same; the retry can take longer. A second failure remains visible for retry.
 
 Install an NVIDIA driver, Python 3.12 with venv, Git, a C++ compiler, curl, FFmpeg
 and Docker Desktop. In the new checkout:

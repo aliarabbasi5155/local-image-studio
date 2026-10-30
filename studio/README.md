@@ -133,21 +133,27 @@ prints the new phone address.
 ## Install it on your phone
 
 The studio is an installable app (PWA) that only works on your home network. It
-needs HTTPS, so the launcher creates a small certificate authority for this Mac
+needs HTTPS, so the launcher creates a small certificate authority for each computer
 the first time it runs. Each phone trusts it once:
 
 1. On the phone, open the **On your phone** address (`http://…:7878`). It shows
    a one-time setup page.
-2. Tap **Download certificate**.
+2. Tap **Download certificate**. Match the computer name and filename shown on
+   this page; the Mac and Ubuntu laptop have separate certificates.
    - **iPhone/iPad:** tap **Allow**, then **Settings → Profile Downloaded →
      Install**. Then turn it on in **Settings → General → About → Certificate
      Trust Settings → Image Studio Home**.
-   - **Android:** open **Settings**, search for **CA certificate**, choose
-     **Install anyway**, and pick `image-studio-home.crt`.
-3. Return to the setup page. It opens the secure studio at `https://…:7443`
-   as soon as the phone trusts your Mac.
+   - **Android:** open **Settings**, search for **CA certificate**, and install
+     the file named on the page as a **CA certificate**, not a Wi-Fi/VPN certificate.
+     Keep the Mac certificate installed too. Close the studio tabs and restart
+     Chrome after installing the laptop certificate.
+3. Choose **Check installation**. The setup page stays open, and the secure
+   check at `https://…:7443/setup` verifies the service worker can start. A red
+   certificate warning means installation is still blocked; merely opening the
+   page through the warning does not establish trust.
 4. Sign in with your PIN, then **Share → Add to Home Screen** (iPhone) or
-   **⋮ → Install app** (Android).
+   **⋮ → Add to Home screen → Install** (Android). An **Install app** button also
+   appears on the secure setup page when Chrome offers it.
 
 The installed app opens full screen and keeps its own sign-in. While it can
 reach your Mac it also keeps a copy of your library on the phone, including

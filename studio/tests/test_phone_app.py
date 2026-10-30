@@ -83,6 +83,10 @@ class PhoneAppTests(unittest.IsolatedAsyncioTestCase):
         certificate = await self.client.get("/setup/image-studio-home.crt", headers=PHONE)
         self.assertEqual((certificate.status, certificate.content_type), (200, "application/x-x509-ca-cert"))
         self.assertEqual(await certificate.read(), b"home authority")
+        details = await (await self.client.get("/setup/certificate.json", headers=PHONE)).json()
+        self.assertIn(details["filename"], certificate.headers["Content-Disposition"])
+        self.assertRegex(details["filename"], r"image-studio-home-[0-9a-f]{12}\.crt")
+        self.assertEqual(len(details["fingerprint_sha256"].split(":")),32)
         self.assertEqual((await self.client.get("/")).status, 200)
         login = await self.client.post("/api/login", json={"pin": "123456"})
         self.assertEqual(login.status, 200)
@@ -118,6 +122,9 @@ class PhoneAppTests(unittest.IsolatedAsyncioTestCase):
             writer.close()
             return names
         self.assertIn("192.168.1.20", await served_addresses())
+        details = await (await client.get("/setup/certificate.json")).json()
+        self.assertEqual(details["name"], "Image Studio Home (studio-test)")
+        self.assertIn("studio-test", details["filename"])
         self.assertTrue(ensure("192.168.1.21", "studio-test.local", runtime))
         self.assertEqual(await served_addresses(), {"localhost", "studio-test.local", "127.0.0.1", "192.168.1.21"})
 
