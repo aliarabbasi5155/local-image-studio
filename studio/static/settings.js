@@ -16,6 +16,7 @@ function saveSettings() { try { localStorage.setItem('studio-settings', JSON.str
 const editRecipe = () => ({...studioSettings.edit, snofs:studioSettings.snofs});
 const createRecipe = () => ({...studioSettings.create, snofs:studioSettings.snofs});
 
+// The optional style adapter's row is hidden when it isn't installed.
 const settingRows = [
   ['Edits', [['edit.output_size', 'Size', [['original', 'Match the photo'], ['preset', 'Preset'], ['2k', '2K'], ['4k', '4K']]],
     ['edit.resize_mode', 'Resizing', [['native', 'None · native size'], ['auto', 'Resize or AI upscale'], ['direct', 'None · full size']]],
@@ -42,7 +43,7 @@ settingsDialog.setAttribute('aria-labelledby', 'settings-title');
 document.body.append(settingsDialog);
 function renderSettings() {
   settingsDialog.innerHTML = `<header class="sheet-header"><h2 id="settings-title">Settings</h2><button type="button" class="sheet-done" data-close="settings-dialog">Done</button></header>
-    ${settingRows.map(([group, rows]) => `<section class="setting-group"><h3>${group}</h3>${rows.map(([path, label, options]) => options === 'toggle'
+    ${settingRows.filter(([group]) => group !== 'Style' || typeof state === 'undefined' || state.options?.adapter_available !== false).map(([group, rows]) => `<section class="setting-group"><h3>${group}</h3>${rows.map(([path, label, options]) => options === 'toggle'
       ? `<label class="setting-row"><span>${label}</span><input type="checkbox" role="switch" data-setting="${path}" ${settingPath(path) ? 'checked' : ''}></label>`
       : `<label class="setting-row"><span>${label}</span><select data-setting="${path}">${options.map(([value, text]) => `<option value="${value}" ${String(settingPath(path)) === String(value) ? 'selected' : ''}>${text}</option>`).join('')}</select></label>`).join('')}</section>`).join('')}
     <p class="setting-note">Without resizing, the size choice is not used. New images keep their shape choice in the create panel.</p>`;

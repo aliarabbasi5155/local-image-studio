@@ -182,6 +182,11 @@ async def health(request):
     return web.json_response({"service": "local-image-studio", "ok": True})
 
 
+def adapter_available(state, status):
+    # Without a helper that reports adapters (tests, hand-run engines), assume a manual setup that includes it.
+    return status.get("adapters") is None or state["adapter_key"] in status["adapters"]
+
+
 async def options(request):
     state = request.app[STATE]
     status = await state["metrics"].status()
@@ -189,6 +194,7 @@ async def options(request):
                               "engine_ready": status["engine_ready"], "engine_state": status["engine_state"], "auto_start": status["auto_start"],
                               "lan_url": os.environ.get("STUDIO_LAN_URL", f"{request.scheme}://{request.host}"),
                               "pin_required": bool(state["pin"]), "max_variations": 4,
+                              "adapter_available": adapter_available(state, status),
                               "automatic_masks": await state["automask"].status()})
 
 
@@ -537,7 +543,8 @@ async def generate(request):
                            state["upscaler"], payload.get("resize_mode", "auto"))
     model = QUALITIES[quality]["model"]
     # Identity uses the base model: a creative LoRA can retain or invent appearance.
-    use_snofs = payload.get("snofs", True) and not (identity is not None and identity.get("mode")) and framed is None
+    use_snofs = (payload.get("snofs", True) and adapter_available(state, await state["metrics"].status())
+                 and not (identity is not None and identity.get("mode")) and framed is None)
     recipe = {"version": 2, "mode": mode, "prompt": prompt.strip(), "quality": quality, "aspect": aspect,
               **sizing, "model": model, "model_source": state["models"][model],
               "steps": 4, "guidance": 1.0, "snofs": bool(use_snofs),
@@ -880,7 +887,8 @@ async def estimate(request):
                            WORKING_SIDE[quality] if payload.get("identity_swap") else None)
     else:
         size = plan_size(quality,aspect,mode,source,payload.get("output_size","preset"),QUALITIES,state["upscaler"],payload.get("resize_mode","auto"))
-    recipe = dict(size,mode=mode,model=QUALITIES[quality]["model"],snofs=payload.get("snofs",True))
+    recipe = dict(size,mode=mode,model=QUALITIES[quality]["model"],
+                  snofs=payload.get("snofs",True) and adapter_available(state, await state["metrics"].status()))
     if any(type(payload.get(key,False)) is not bool for key in ("mask_placement_guidance","mask_shape_guidance")):
         return failure("Choose valid placement or shape guidance.")
     if payload.get("mask_bounds") is not None:
@@ -1059,6 +1067,7 @@ def create_app(data_dir=None, engine_url=None, project_root=None, pin=None, star
     app = web.Application(middlewares=[access], client_max_size=MAX_UPLOAD + 65536)
     app[STATE] = {"store": store, "engine": engine, "pin": pin, "attempts": {}, "tls": tls if (tls / "server.crt").exists() else None,
                   "models": model_registry(ROOT),
+                  "adapter_key": "snofs-klein-9b-v1.4",
                   "adapter": json.loads((ROOT / "config/loras.json").read_text())["snofs-klein-9b-v1.4"],
                   "upscaler": json.loads((ROOT / "config/upscaler.json").read_text()),
                   "runtime": runtime_registry(ROOT)}

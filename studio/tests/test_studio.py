@@ -5,6 +5,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import aiohttp
 from aiohttp import web
@@ -75,6 +76,16 @@ class APITests(unittest.IsolatedAsyncioTestCase):
         for change in ({"variations": 9}, {"seed": True}, {"quality": "unknown"}, {"mode": "edit"}, {"snofs": "true"}):
             response = await self.client.post("/api/generate", json={"prompt": "test", **change})
             self.assertEqual(response.status, 400, change)
+
+    async def test_uninstalled_adapter_is_hidden_and_left_out_of_recipes(self):
+        await self.login()
+        helper = {"state": "sleeping", "memory_total": 1, "memory_free": 1, "idle_seconds": 600, "adapters": []}
+        with patch.object(self.app[STATE]["engine"].native, "request", AsyncMock(return_value=helper)):
+            self.assertFalse((await (await self.client.get("/api/options")).json())["adapter_available"])
+            response = await self.client.post("/api/generate", json={"prompt": "A fox in snow", "snofs": True})
+        recipe = self.store.job((await response.json())["jobs"][0])["recipe"]
+        self.assertFalse(recipe["snofs"])
+        self.assertIsNone(recipe["adapter"])
 
     async def test_archive_favorite_recipe_and_session_survive_restart(self):
         image_id, recipe = await self.seed_image()

@@ -89,12 +89,13 @@ class Metrics:
                     self.cached = {"engine_ready":False,"memory_total":None,"memory_free":None,"engine_response_ms":None}
                 self.cached["engine_state"] = "ready" if self.cached["engine_ready"] else "offline"
                 self.cached["auto_start"] = False
+                self.cached["adapters"] = None
                 try:
                     native = await self.engine.native.request()
                     if native:
                         self.cached.update(engine_state=native["state"], auto_start=True,
                                            memory_total=native["memory_total"], memory_free=native["memory_free"],
-                                           idle_seconds=native["idle_seconds"])
+                                           idle_seconds=native["idle_seconds"], adapters=native.get("adapters"))
                 except (OSError,RuntimeError,AttributeError,KeyError,asyncio.TimeoutError,aiohttp.ClientError):
                     pass
                 self.checked = time.monotonic()

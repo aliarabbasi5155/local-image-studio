@@ -25,7 +25,7 @@ from engine_supervisor import EngineSupervisor  # noqa: E402
 from video_native import NativeVideo  # noqa: E402
 
 CONFIG = json.loads((ROOT / "config/sam3.json").read_text())
-TOKEN = (ROOT / "runtime/sam3-token.txt").read_text().strip()
+TOKEN = Path(os.environ.get("SAM3_TOKEN_FILE", ROOT / "runtime/sam3-token.txt")).read_text().strip()
 BINARY = ROOT / "runtime/sam3-build/studio-sam3"
 MODEL = ROOT / "models/sam3" / CONFIG["filename"]
 LOCK = asyncio.Lock()
@@ -51,8 +51,14 @@ async def health(request):
                               "engine_control": True, "video_control": True})
 
 
+def installed_adapters():
+    """Optional adapters the engine can load; the website hides the ones that aren't installed."""
+    loras = json.loads((ROOT / "config/loras.json").read_text())
+    return [key for key, lora in loras.items() if (ROOT / "runtime/ComfyUI/models/loras" / lora["comfy_filename"]).is_file()]
+
+
 async def engine_status(request):
-    return web.json_response(await ENGINE.status())
+    return web.json_response(dict(await ENGINE.status(), adapters=installed_adapters()))
 
 
 async def engine_wake(request):
@@ -159,4 +165,5 @@ if __name__ == "__main__":
     app.add_routes([web.get("/health", health), web.post("/select", select),
                     web.get("/engine", engine_status), web.post("/engine/wake", engine_wake),
                     web.get("/video/status", VIDEO.status), web.post("/video/generate", VIDEO.generate)])
-    web.run_app(app, host="127.0.0.1", port=7877, access_log=None, print=None, handler_cancellation=True)
+    # Containers set HELPER_HOST so the website container can reach it; every request needs the token.
+    web.run_app(app, host=os.environ.get("HELPER_HOST", "127.0.0.1"), port=7877, access_log=None, print=None, handler_cancellation=True)

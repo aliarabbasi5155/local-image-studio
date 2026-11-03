@@ -1,0 +1,9 @@
+*
+!studio/
+!studio/**
+!config/
+!config/**
+!workflows/
+!workflows/**
+studio/**/__pycache__/
+studio/tests/

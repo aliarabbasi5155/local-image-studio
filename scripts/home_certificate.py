@@ -38,6 +38,21 @@ def openssl(*args, data=None):
     return subprocess.run([OPENSSL, *map(str, args)], input=data, capture_output=True, check=True).stdout
 
 
+def lan_address():
+    """This computer's home-network address, which phones on the same Wi-Fi use."""
+    for interface in ("en0", "en1") if shutil.which("ipconfig") else ():
+        result = subprocess.run(["ipconfig", "getifaddr", interface], capture_output=True, text=True)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    # Connecting a UDP socket only chooses a route; no packet is sent to this documentation address.
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        try:
+            probe.connect(("192.0.2.1", 9))
+            return probe.getsockname()[0]
+        except OSError:
+            return "127.0.0.1"
+
+
 def local_name():
     if not shutil.which("scutil"):
         return socket.gethostname().split(".")[0].lower() + ".local"
@@ -79,7 +94,7 @@ def ensure(address, hostname=None, runtime=ROOT / "runtime"):
         config.write_text(CONFIG.format(networks=networks, names=names))
         if not (authority / "ca.key").exists() or not (tls / "ca.crt").exists():
             write(authority / "ca.key", openssl("ecparam", "-name", "prime256v1", "-genkey", "-noout"), 0o600)
-            label = (hostname or "this Mac").removesuffix(".local")
+            label = (hostname or "this computer").removesuffix(".local")
             write(tls / "ca.crt", openssl("req", "-new", "-x509", "-key", authority / "ca.key", "-sha256", "-days", 3650,
                                           "-subj", f"/CN=Image Studio Home ({label})", "-config", config, "-extensions", "authority"))
             (tls / "server-names.txt").unlink(missing_ok=True)
@@ -102,5 +117,8 @@ def ensure(address, hostname=None, runtime=ROOT / "runtime"):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("address", help="This Mac's Wi-Fi address, for example 192.168.1.20")
-    print("Issued a new certificate." if ensure(parser.parse_args().address, local_name()) else "The certificate is current.")
+    parser.add_argument("address", nargs="?", help="This computer's Wi-Fi address, for example 192.168.1.20 (detected when omitted)")
+    parser.add_argument("--runtime", type=Path, default=ROOT / "runtime", help="Where the authority and website certificate are kept")
+    args = parser.parse_args()
+    issued = ensure(args.address or lan_address(), local_name(), args.runtime)
+    print("Issued a new certificate." if issued else "The certificate is current.")

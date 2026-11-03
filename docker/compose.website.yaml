@@ -1,0 +1,30 @@
+# macOS: the website in Docker, connected to the image engine that runs natively (Docker cannot reach the
+# Apple GPU). Started by `make start-docker`, which writes runtime/studio-docker.env for this file.
+name: local-image-studio
+services:
+  studio:
+    build:
+      context: .
+      dockerfile: docker/studio.Dockerfile
+    image: local-image-studio:latest
+    user: "${STUDIO_UID:-1000}:${STUDIO_GID:-1000}"
+    ports:
+      - "${STUDIO_BIND:-0.0.0.0}:${STUDIO_PORT:-7878}:7878"
+      - "${STUDIO_BIND:-0.0.0.0}:7443:7443"
+    environment:
+      COMFY_URL: http://host.docker.internal:8188
+      ENGINE_PROJECT_ROOT: "${ENGINE_PROJECT_ROOT:?Start the Docker website with: make start-docker}"
+      STUDIO_LAN_URL: "${STUDIO_LAN_URL:-http://localhost:7878}"
+      SAM3_URL: http://host.docker.internal:7877
+      ENGINE_CONTROL_URL: http://host.docker.internal:7877
+      SAM3_TOKEN_FILE: /run/secrets/sam3_token
+      STUDIO_TLS_DIR: /run/tls
+    volumes:
+      - ./studio-data:/data
+      - ./runtime/sam3-token.txt:/run/secrets/sam3_token:ro
+      # Only the public CA and the website certificate; the CA key stays in runtime/home-ca.
+      - ./runtime/tls:/run/tls:ro
+    restart: unless-stopped
+    init: true
+    mem_limit: 768m
+    cpus: 2

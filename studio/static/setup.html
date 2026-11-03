@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#141416"><title>Set up Image Studio</title>
+  <meta name="theme-color" content="#141416"><title>Set up Local Image Studio</title>
   <link rel="icon" href="/static/icon.svg"><link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <link rel="manifest" href="/static/manifest.json">
   <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/setup.css"><script src="/static/setup.js" defer></script>
@@ -11,7 +11,7 @@
   <main class="login-screen setup-screen">
     <div class="login-card setup-card">
       <img class="setup-mark" src="/static/icon.svg" alt=""><span class="eyebrow">ONE-TIME PHONE SETUP</span>
-      <h1>Put Image Studio on this phone.</h1>
+      <h1>Put Local Image Studio on this phone.</h1>
       <p>Your computer serves the studio securely, only on your home Wi-Fi. Trust your computer once, then add the studio to your Home Screen.</p>
       <p id="setup-status" class="setup-status" role="status"><span class="status-dot"></span><span id="setup-message">Checking this phone…</span></p>
       <button id="retry-check" class="secondary" type="button">Check again</button>
@@ -23,7 +23,7 @@
           <p>File: <code id="certificate-file">shown after loading</code></p>
           <details><summary>Certificate fingerprint (SHA-256)</summary><code id="certificate-fingerprint">Loading…</code></details>
           <details open><summary>iPhone or iPad</summary><p>Tap <b>Allow</b>. Open <b>Settings</b>, tap <b>Profile Downloaded</b>, then <b>Install</b>. Next, go to <b>General → About → Certificate Trust Settings</b> and turn on the certificate named above.</p></details>
-          <details><summary>Android</summary><p>Open <b>Settings</b> and search for <b>CA certificate</b>. Install it as a <b>CA certificate</b>, choosing the file named above. A Wi-Fi or VPN certificate is a different setting. Keep your Mac’s certificate installed too.</p><p>Close the studio tabs and restart Chrome after installing. If Chrome shows a red certificate warning, app installation is still blocked; opening the page through that warning does not fix trust.</p></details>
+          <details><summary>Android</summary><p>Open <b>Settings</b> and search for <b>CA certificate</b>. Install it as a <b>CA certificate</b>, choosing the file named above. A Wi-Fi or VPN certificate is a different setting. Keep this computer’s certificate installed too.</p><p>Close the studio tabs and restart Chrome after installing. If Chrome shows a red certificate warning, app installation is still blocked; opening the page through that warning does not fix trust.</p></details>
         </li>
         <li><strong>Check the secure connection</strong><p>This page stays open so you can check the certificate instructions.</p><a id="check-secure" class="setup-link">Check installation on port 7443 →</a><br><a id="open-secure" class="setup-link">Open Image Studio →</a></li>
         <li><strong>Add it to your Home Screen</strong><p>iPhone: tap <b>Share → Add to Home Screen</b>. Android: open the <b>⋮</b> menu and choose <b>Install app</b>.</p></li>

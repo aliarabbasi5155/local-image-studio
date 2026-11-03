@@ -10,10 +10,10 @@ async function setup({https=false, workerError=null}={}) {
     if (!elements.has(selector)) elements.set(selector,{hidden:selector==='#install-app',textContent:'',classList:{toggle(){}},addEventListener(type,callback){this[type]=callback;}});
     return elements.get(selector);
   };
-  const location={hostname:'192.168.1.135',protocol:https?'https:':'http:',replace(){throw Error('Unexpected redirect');}};
+  const location={hostname:'192.168.1.20',protocol:https?'https:':'http:',replace(){throw Error('Unexpected redirect');}};
   const context=vm.createContext({location,document:{querySelector:element},window:{isSecureContext:https,addEventListener(type,callback){events[type]=callback;}},
     navigator:{serviceWorker:{async register(url){registrations.push(url);if(workerError)throw Error(workerError);},ready:Promise.resolve({active:true})}},
-    fetch:async url => ({ok:true,json:async()=>({name:'Image Studio Home (ali-ubuntu)',filename:'ubuntu-123.crt',fingerprint_sha256:'12:34'})}),
+    fetch:async url => ({ok:true,json:async()=>({name:'Image Studio Home (studio-test)',filename:'ubuntu-123.crt',fingerprint_sha256:'12:34'})}),
     setTimeout,clearTimeout});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../static/setup.js'),'utf8'),context);
   await new Promise(resolve=>setImmediate(resolve));
@@ -25,7 +25,7 @@ test('HTTP reachability does not claim trust or redirect away from certificate i
   assert.match(elements.get('#setup-message').textContent,/reachable/);
   assert.doesNotMatch(elements.get('#setup-message').textContent,/trusts|passed/);
   assert.equal(elements.get('#certificate-file').textContent,'ubuntu-123.crt');
-  assert.equal(elements.get('#check-secure').href,'https://192.168.1.135:7443/setup');
+  assert.equal(elements.get('#check-secure').href,'https://192.168.1.20:7443/setup');
   assert.equal(registrations.length,0);
 });
 

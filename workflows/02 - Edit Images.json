@@ -69,7 +69,7 @@
           ]
         }
       ],
-      "title": "Model + SNOFS (ready to use)",
+      "title": "Model (add an adapter in loras, e.g. SNOFS/klein_snofs_v1_4.safetensors:1.0)",
       "properties": {
         "Node name for S&R": "Flux2KleinEditModelLoader"
       },
@@ -77,13 +77,13 @@
         "flux2-klein-9b",
         "8",
         "../../models/flux2-klein-9b-8bit",
-        "SNOFS/klein_snofs_v1_4.safetensors:1.0"
+        ""
       ],
       "widgets_values_named": {
         "model_name": "flux2-klein-9b",
         "quantize": "8",
         "custom_model_path": "../../models/flux2-klein-9b-8bit",
-        "loras": "SNOFS/klein_snofs_v1_4.safetensors:1.0"
+        "loras": ""
       }
     },
     {

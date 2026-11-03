@@ -74,4 +74,4 @@ class AutoMask:
                         raise AutomaticSelectionError(payload.get("error", "Automatic selection could not finish. Try the brush."),response.status)
                     return payload
         except (OSError, aiohttp.ClientError, asyncio.TimeoutError) as error:
-            raise AutomaticSelectionError("Automatic selection is unavailable. Open Start Web Studio on your computer, or use the brush.") from error
+            raise AutomaticSelectionError("Automatic selection is unavailable. Start Local Image Studio on your computer, or use the brush.") from error

@@ -14,14 +14,22 @@ CONFIG = json.loads((ROOT / "config/cuda.json").read_text())
 
 
 def download(source, category):
-    from huggingface_hub import hf_hub_download
     target = ROOT / "models/cuda" / category
-    path = Path(hf_hub_download(source["repo_id"], source["filename"],
-                               revision=source["revision"], local_dir=target))
-    with path.open("rb") as stream:
-        digest = hashlib.file_digest(stream, "sha256").hexdigest()
-    if path.stat().st_size != source["size"] or digest != source["sha256"]:
-        raise RuntimeError(f"Model checksum mismatch: {path}")
+    path = target / source["filename"]
+    # A verified stamp lets later runs (and every Docker start) skip the network and re-hashing many GB.
+    stamp, expected = path.with_name(path.name + ".verified"), f'{source["sha256"]} {source["size"]}\n'
+    if path.is_file() and path.stat().st_size == source["size"] and stamp.is_file() and stamp.read_text() == expected:
+        digest = source["sha256"]
+    else:
+        from huggingface_hub import hf_hub_download
+        print(f"Downloading {source['filename']} ({source['size'] / 1e9:.1f} GB)…", flush=True)
+        path = Path(hf_hub_download(source["repo_id"], source["filename"],
+                                   revision=source["revision"], local_dir=target))
+        with path.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        if path.stat().st_size != source["size"] or digest != source["sha256"]:
+            raise RuntimeError(f"Model checksum mismatch: {path}")
+        stamp.write_text(expected)
     link = ROOT / "runtime/ComfyUI/models" / category / path.name
     link.parent.mkdir(parents=True, exist_ok=True)
     if not link.exists():
@@ -34,9 +42,10 @@ def download(source, category):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-models", action="store_true")
+    parser.add_argument("--skip-gpu-check", action="store_true", help="For image builds, which have no GPU")
     args = parser.parse_args()
     import torch
-    if not torch.cuda.is_available():
+    if not args.skip_gpu_check and not torch.cuda.is_available():
         raise RuntimeError("Install CUDA-enabled PyTorch and a working NVIDIA driver first.")
     comfy = ROOT / "runtime/ComfyUI"
     install(json.loads((ROOT / "config/runtime.json").read_text())["comfyui"], comfy)
@@ -55,12 +64,16 @@ def main():
             shutil.copy2(source, destination)
     (ROOT / "runtime/backend.txt").write_text("cuda\n")
     if not args.no_models:
-        # Serial downloads keep memory and disk pressure bounded on a 16 GB laptop.
-        download(CONFIG["text_encoder"], "text_encoders")
-        download(CONFIG["vae"], "vae")
-        for source in CONFIG["models"].values():
-            download(source, "diffusion_models")
+        download_models()
     print("CUDA backend installed.", flush=True)
+
+
+def download_models():
+    # Serial downloads keep memory and disk pressure bounded on a 16 GB laptop.
+    download(CONFIG["text_encoder"], "text_encoders")
+    download(CONFIG["vae"], "vae")
+    for source in CONFIG["models"].values():
+        download(source, "diffusion_models")
 
 
 if __name__ == "__main__":

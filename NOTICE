@@ -1,0 +1,16 @@
+Local Image Studio
+Copyright 2026 Ali Abbasi
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party code
+- patches/flux2klein-*.patch modify comfyui-flux2klein-mlx by Valerio Santinelli,
+  MIT License. The full notice is in patches/UPSTREAM_LICENSE.txt.
+
+Software downloaded during installation (not included in this repository) keeps its own license,
+including ComfyUI (GPL-3.0), ComfyUI-GGUF (Apache-2.0), sam3.cpp (MIT), MFLUX (MIT) and
+Real-ESRGAN (BSD-3-Clause).
+
+Model weights downloaded during installation are not covered by this license. In particular,
+FLUX.2 Klein 9B is under the FLUX Non-Commercial License, and the optional SNOFS adapter is under
+its author's Model Personal Use License. See docs/models-and-licenses.md.

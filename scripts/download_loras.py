@@ -15,6 +15,14 @@ ROOT = Path(__file__).resolve().parents[1]
 def download(key, adapters):
     adapter = adapters[key]
     target = ROOT / "models" / "loras" / key
+    path = target / adapter["filename"]
+    link = ROOT / "runtime" / "ComfyUI" / "models" / "loras" / adapter["comfy_filename"]
+    source = target / "source.json"
+    # source.json is written only after verification, so a match means this exact file was checked.
+    if (source.is_file() and json.loads(source.read_text()) == adapter and path.is_file()
+            and path.stat().st_size == adapter["download_bytes"] and link.resolve() == path.resolve()):
+        print(f"Ready: {key} ({adapter['comfy_filename']})", flush=True)
+        return
     print(f"Downloading {adapter['repo_id']} / {adapter['filename']} @ {adapter['revision']}", flush=True)
     path = Path(hf_hub_download(
         repo_id=adapter["repo_id"], revision=adapter["revision"],
@@ -32,7 +40,6 @@ def download(key, adapters):
     for filename in ("README.md", "LICENSE"):
         hf_hub_download(repo_id=adapter["repo_id"], revision=adapter["revision"],
                         filename=filename, local_dir=target)
-    link = ROOT / "runtime" / "ComfyUI" / "models" / "loras" / adapter["comfy_filename"]
     link.parent.mkdir(parents=True, exist_ok=True)
     if link.exists() or link.is_symlink():
         if link.resolve() != path.resolve():

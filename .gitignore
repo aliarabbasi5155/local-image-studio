@@ -1,15 +1,22 @@
-.DS_Store
+# Local state: Python, caches, downloaded runtimes and models, the library, outputs.
 .venv/
-studio-data/
 .cache/
 runtime/
+studio-data/
 models/**
 !models/README.md
 outputs/**
-!outputs/.gitkeep
-benchmarks/*.history.json
+benchmarks/
 __pycache__/
 *.py[cod]
+
+# Settings and secrets.
 .env
 .env.*
 !.env.example
+
+# Editors and tools.
+.DS_Store
+.vscode/
+.idea/
+.serena/

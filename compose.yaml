@@ -1,24 +1,80 @@
+# Local Image Studio for Linux with an NVIDIA GPU: the website and the GPU engine, both in Docker.
+#
+#   docker compose up -d             # first start downloads about 26 GB of models into ./models
+#   docker compose logs -f engine    # follow the download
+#   open http://localhost:7878       # the PIN is in studio-data/access-pin.txt
+#
+# Needs Docker Engine with the NVIDIA Container Toolkit (Docker Desktop for Linux cannot use GPUs).
+# Optional settings go in a .env file next to this one; see .env.example. On a Mac, use ./install.sh.
+name: local-image-studio
 services:
-  studio:
-    build: .
-    image: local-image-studio:latest
-    user: "${STUDIO_UID:-1000}:${STUDIO_GID:-1000}"
-    ports:
-      - "${STUDIO_BIND:-0.0.0.0}:${STUDIO_PORT:-7878}:7878"
-      - "${STUDIO_BIND:-0.0.0.0}:7443:7443"
+  # Docker would create missing host folders as root; this creates them once, owned by you.
+  folders:
+    image: busybox:1.37
+    user: "0:0"
     environment:
-      COMFY_URL: http://host.docker.internal:8188
-      ENGINE_PROJECT_ROOT: "${ENGINE_PROJECT_ROOT:?Use Start Web Studio.command to configure your Mac path}"
-      STUDIO_LAN_URL: "${STUDIO_LAN_URL:-http://localhost:7878}"
-      SAM3_URL: http://host.docker.internal:7877
-      ENGINE_CONTROL_URL: http://host.docker.internal:7877
-      SAM3_TOKEN_FILE: /run/secrets/sam3_token
+      OWNER: "${LIS_UID:-1000}:${LIS_GID:-1000}"
+    command: >-
+      sh -c 'cd /lis && mkdir -p models studio-data runtime/docker/token runtime/docker/tls
+      && chown "$$OWNER" models studio-data runtime runtime/docker runtime/docker/token runtime/docker/tls'
+    volumes:
+      - .:/lis
+
+  engine:
+    build:
+      context: .
+      dockerfile: docker/engine.Dockerfile
+    image: local-image-studio-engine:latest
+    user: "${LIS_UID:-1000}:${LIS_GID:-1000}"
+    depends_on:
+      folders:
+        condition: service_completed_successfully
+    environment:
+      LIS_ADDRESS: "${LIS_ADDRESS:-}"
+      LIS_SNOFS: "${LIS_SNOFS:-0}"
+      LIS_VIDEO: "${LIS_VIDEO:-0}"
+    volumes:
+      - ./models:/app/models
+      - ./runtime/docker:/app/state
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    init: true
+
+  studio:
+    build:
+      context: .
+      dockerfile: docker/studio.Dockerfile
+    image: local-image-studio:latest
+    user: "${LIS_UID:-1000}:${LIS_GID:-1000}"
+    depends_on:
+      folders:
+        condition: service_completed_successfully
+      engine:
+        condition: service_started
+    ports:
+      - "${LIS_BIND:-0.0.0.0}:${LIS_PORT:-7878}:7878"
+      - "${LIS_BIND:-0.0.0.0}:${LIS_HTTPS_PORT:-7443}:7443"
+    environment:
+      STUDIO_BACKEND: cuda
+      COMFY_URL: http://engine:8188
+      ENGINE_CONTROL_URL: http://engine:7877
+      SAM3_URL: http://engine:7877
+      SAM3_TIMEOUT: "900"
+      SAM3_TOKEN_FILE: /run/token/helper-token.txt
+      ENGINE_PROJECT_ROOT: /app
+      STUDIO_LAN_URL: "http://${LIS_ADDRESS:-localhost}:${LIS_PORT:-7878}"
       STUDIO_TLS_DIR: /run/tls
     volumes:
       - ./studio-data:/data
-      - ./runtime/sam3-token.txt:/run/secrets/sam3_token:ro
-      # Only the public CA and the website certificate; the CA key stays in runtime/home-ca.
-      - ./runtime/tls:/run/tls:ro
+      - ./runtime/docker/token:/run/token:ro
+      # Only the public CA and the website certificate; the CA key stays in runtime/docker/home-ca.
+      - ./runtime/docker/tls:/run/tls:ro
     restart: unless-stopped
     init: true
     mem_limit: 768m

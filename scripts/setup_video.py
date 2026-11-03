@@ -50,7 +50,7 @@ for key in ("model", "text_encoder"):
     (target / "source.json").write_text(json.dumps(spec, indent=2) + "\\n")
 (root / "runtime/video-ready.json").write_text(json.dumps(config, indent=2) + "\\n")
 ''', str(ROOT)], env=env, check=True)
-    print("Video runtime and weights ready. Restart the Mac helper and Studio after current jobs finish.")
+    print("Video runtime and weights ready. After current jobs finish, restart the studio: make stop, then make start.")
 
 
 if __name__ == "__main__":

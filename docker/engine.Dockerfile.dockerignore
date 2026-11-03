@@ -1,0 +1,14 @@
+*
+!requirements.cuda.lock.txt
+!config/
+!config/**
+!scripts/
+!scripts/**
+!studio/
+!studio/**
+!workflows/
+!workflows/**
+!docker/engine-entrypoint.sh
+**/__pycache__/
+studio/tests/
+studio/static/

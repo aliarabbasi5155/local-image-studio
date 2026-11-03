@@ -62,6 +62,7 @@ async def check(args):
         report = {"job": video_id, "elapsed_seconds": round(time.monotonic() - started, 2),
                   "output": str(output.relative_to(ROOT)), "recipe": row["recipe"], "probe": probe}
         report_path = args.report
+        report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps({"output": str(output), "report": str(report_path), "elapsed_seconds": report["elapsed_seconds"]}), flush=True)
 
