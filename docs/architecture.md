@@ -42,6 +42,7 @@ flowchart LR
 | macOS with `make start-docker` | Docker Desktop | launchd service (Docker can't use the Apple GPU) |
 | Linux, source install | systemd user service | systemd user service, NVIDIA GPU |
 | Linux, `docker compose` | container | container with the GPU (NVIDIA Container Toolkit) |
+| Windows, `install.ps1` | Docker Desktop container | container with the NVIDIA GPU through WSL 2 |
 
 ## Jobs survive restarts
 

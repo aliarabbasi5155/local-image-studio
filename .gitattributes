@@ -1,2 +1,6 @@
 # Unified diff context lines use a literal space for an empty source line.
 patches/*.patch whitespace=-blank-at-eol,-blank-at-eof
+# Docker's Linux entrypoint must not acquire CRLF when checked out on Windows.
+*.sh text eol=lf
+*.ps1 text eol=lf
+*.cmd text eol=crlf

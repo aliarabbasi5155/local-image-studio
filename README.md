@@ -6,11 +6,12 @@
 
 <p align="center">
   <b>Create and edit images with AI on your own computer, privately, from your browser or your phone.</b><br>
-  One-command install for Macs with Apple Silicon and Linux PCs with NVIDIA GPUs. No cloud, no account, no subscription.
+  Local setup for Apple Silicon Macs and NVIDIA PCs on Linux or Windows. No cloud, no account, no subscription.
 </p>
 
 <p align="center">
   <a href="docs/install-mac.md">Install on a Mac</a> ·
+  <a href="docs/install-windows.md">Windows</a> ·
   <a href="docs/install-docker.md">Linux with Docker</a> ·
   <a href="docs/install-linux.md">Linux from source</a> ·
   <a href="docs/user-guide.md">User guide</a> ·
@@ -58,16 +59,16 @@ your phone like an app and send photos to it from your gallery.
 
 ## Requirements
 
-| | Mac | Linux PC |
-| --- | --- | --- |
-| Processor or GPU | Apple Silicon (M1 or newer) | NVIDIA GPU with 6 GB+ VRAM, driver 580+ |
-| Memory | 24 GB recommended | 16 GB |
-| System | macOS 14 or newer | x86-64 Linux, such as Ubuntu 22.04 or 24.04 |
-| Free disk space | about 35 GB | about 40 GB |
-| Tested on | MacBook Pro M5, 24 GB | RTX 3060 Laptop 6 GB, 16 GB RAM, Ubuntu 24.04 |
+| | Mac | Linux PC | Windows PC |
+| --- | --- | --- | --- |
+| Processor or GPU | Apple Silicon (M1 or newer) | NVIDIA GPU with 6 GB+ VRAM, driver 580+ | NVIDIA GPU with 6 GB+ VRAM, Windows driver 580+ |
+| Memory | 24 GB recommended | 16 GB | 32 GB recommended; allow WSL about 16 GB |
+| System | macOS 14 or newer | x86-64 Linux, such as Ubuntu 22.04 or 24.04 | x64 Windows 11, Docker Desktop with WSL 2 |
+| Free disk space | about 35 GB | about 40 GB | about 50 GB, on Docker Desktop's data drive |
+| Tested on | MacBook Pro M5, 24 GB | RTX 3060 Laptop 6 GB, 16 GB RAM, Ubuntu 24.04 | Launcher checks; GPU end-to-end validation pending |
 
-Nothing else needs to be installed first. The installer brings its own Python and verifies every
-download. Docker is optional.
+The native installer brings its own Python and verifies every download. Docker is optional on Mac
+and Linux; Windows uses Docker Desktop's WSL 2 backend.
 
 ## Install
 
@@ -81,6 +82,20 @@ curl -fsSL https://raw.githubusercontent.com/aliarabbasi5155/local-image-studio/
 
 It downloads about 30 GB of models. When it finishes, your browser opens the studio and Terminal shows
 your PIN. The [step-by-step Mac guide](docs/install-mac.md) walks through it with pictures.
+
+### Windows
+
+Install and open **Docker Desktop with the WSL 2 backend** once, then open PowerShell:
+
+```powershell
+$installer = Join-Path $env:TEMP 'local-image-studio-install.ps1'
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/aliarabbasi5155/local-image-studio/main/install.ps1 -OutFile $installer
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer
+```
+
+The installer checks GPU access before model downloads, opens the browser and creates a desktop
+shortcut. No Windows Python or Git is required. See [Install on Windows](docs/install-windows.md)
+for requirements, commands and the current validation status.
 
 ### Linux with Docker
 
@@ -108,9 +123,12 @@ See [Install on Linux](docs/install-linux.md).
 
 ## Everyday use
 
-The studio starts by itself when you log in. Open **<http://localhost:7878>** on the computer, or the
+On native installs, the studio starts by itself when you log in. On Windows, use the desktop shortcut
+or enable Docker Desktop at sign-in. Open **<http://localhost:7878>** on the computer, or the
 phone address the installer printed, and enter your PIN. To install it on your phone, see
 [Use it on your phone](docs/phone.md).
+
+Mac/Linux commands (Windows commands are in the [Windows guide](docs/install-windows.md#open-it-next-time)):
 
 ```bash
 make status    # what's running, the phone address and the PIN
@@ -125,7 +143,7 @@ make help      # everything else
 | --- | --- |
 | [User guide](docs/user-guide.md) | Creating, editing, areas, close-ups, person swaps, video, sizes |
 | [Use it on your phone](docs/phone.md) | Installing the app, sharing photos, offline library |
-| [Install on a Mac](docs/install-mac.md) · [Linux](docs/install-linux.md) · [Docker](docs/install-docker.md) | Setup in detail |
+| [Install on a Mac](docs/install-mac.md) · [Windows](docs/install-windows.md) · [Linux](docs/install-linux.md) · [Docker](docs/install-docker.md) | Setup in detail |
 | [Configuration](docs/configuration.md) | Where data lives, backups, PIN, ports, settings |
 | [Troubleshooting](docs/troubleshooting.md) | Common problems and fixes |
 | [How it works](docs/architecture.md) | Components and security model |

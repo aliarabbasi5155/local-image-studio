@@ -13,9 +13,11 @@ everything lives.
 | `outputs/` | The engine's own copies of finished images. The library doesn't need them. |
 | `.venv/`, `.cache/` | Python, packages and download caches for this folder only. |
 
-Nothing is stored outside the project folder except the login services (macOS:
+On native installs, nothing is stored outside the project folder except the login services (macOS:
 `~/Library/LaunchAgents/com.localimagestudio.*.plist`; Linux: `~/.config/systemd/user/local-image-studio-*.service`).
-In Docker, the same folders are used: `models/`, `studio-data/` and `runtime/docker/`.
+Linux Docker uses the same folders: `models/`, `studio-data/` and `runtime/docker/`.
+Windows Docker stores these in named volumes instead; see the [Windows backup and update guide](install-windows.md#files-backups-and-updates).
+The host-folder paths and `make` commands below refer to native installs / Linux Docker.
 
 ### Back up your library
 

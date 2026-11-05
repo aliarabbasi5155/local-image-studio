@@ -5,8 +5,10 @@ set -euo pipefail
 cd /app
 source scripts/env.sh
 nvidia-smi >/dev/null 2>&1 || ls /dev/nvidia0 >/dev/null 2>&1 || {
-  echo 'No NVIDIA GPU is visible in this container. Install the NVIDIA Container Toolkit and use Docker Engine'
-  echo '(Docker Desktop for Linux cannot pass GPUs to containers). See docs/install-docker.md.'
+  echo 'No NVIDIA GPU is visible in this container.'
+  echo 'Linux: install the NVIDIA Container Toolkit and use Docker Engine (not Docker Desktop for Linux).'
+  echo 'Windows: use Docker Desktop with the WSL 2 backend and an up-to-date Windows NVIDIA driver.'
+  echo 'See docs/install-docker.md or docs/install-windows.md.'
   exit 1
 }
 (cd scripts && ../.venv/bin/python engine_container.py)

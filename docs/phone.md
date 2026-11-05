@@ -12,6 +12,9 @@ Open the **On your phone** address that the installer printed, for example `http
 `make status` (or double-clicking **Local Image Studio.command** on a Mac) shows it again, and the
 **Connect** button in the studio shows it too.
 
+On Windows, enable [home-network access](install-windows.md#phone-access-optional) first, then open
+`http://YOUR_PC_IP:7878` on your phone (or your configured `LIS_PORT`).
+
 ## Install it as an app
 
 An installable web app needs a secure (HTTPS) connection. Local Image Studio creates a small

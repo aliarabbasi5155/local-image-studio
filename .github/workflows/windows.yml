@@ -1,0 +1,21 @@
+name: Windows launcher
+on:
+  push:
+  pull_request:
+jobs:
+  powershell:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check installer and launcher without downloading models
+        shell: ${{ matrix.shell }}
+        run: .\studio\tests\windows.tests.ps1
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate the Windows Compose configuration without a Windows GPU
+        run: docker compose -f compose.windows.yaml config --quiet

@@ -1,0 +1,85 @@
+# Windows + NVIDIA, using Docker Desktop's WSL 2 backend.
+# Named volumes keep Linux permissions and large model files off Windows bind mounts.
+# Start with install.ps1 or Local Image Studio.cmd; no Python or Git is needed on Windows.
+name: local-image-studio-windows
+services:
+  folders:
+    image: busybox:1.37
+    user: "0:0"
+    command: >-
+      sh -c 'mkdir -p /state/token /state/tls
+      && chown 1000:1000 /models /library /state /state/token /state/tls'
+    volumes:
+      - models:/models
+      - library:/library
+      - engine-state:/state
+      - helper-token:/state/token
+      - website-tls:/state/tls
+
+  engine:
+    build:
+      context: .
+      dockerfile: docker/engine.Dockerfile
+    image: local-image-studio-engine:latest
+    user: "1000:1000"
+    depends_on:
+      folders:
+        condition: service_completed_successfully
+    environment:
+      LIS_ADDRESS: "${LIS_ADDRESS:-}"
+      LIS_SNOFS: "${LIS_SNOFS:-0}"
+      LIS_VIDEO: "${LIS_VIDEO:-0}"
+    volumes:
+      - models:/app/models
+      - engine-state:/app/state
+      - helper-token:/app/state/token
+      - website-tls:/app/state/tls
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    init: true
+
+  studio:
+    build:
+      context: .
+      dockerfile: docker/studio.Dockerfile
+    image: local-image-studio:latest
+    user: "1000:1000"
+    depends_on:
+      folders:
+        condition: service_completed_successfully
+      engine:
+        condition: service_started
+    ports:
+      - "${LIS_BIND:-127.0.0.1}:${LIS_PORT:-7878}:7878"
+      - "${LIS_BIND:-127.0.0.1}:${LIS_HTTPS_PORT:-7443}:7443"
+    environment:
+      STUDIO_BACKEND: cuda
+      COMFY_URL: http://engine:8188
+      ENGINE_CONTROL_URL: http://engine:7877
+      SAM3_URL: http://engine:7877
+      SAM3_TIMEOUT: "900"
+      SAM3_TOKEN_FILE: /run/token/helper-token.txt
+      ENGINE_PROJECT_ROOT: /app
+      STUDIO_LAN_URL: "http://${LIS_ADDRESS:-localhost}:${LIS_PORT:-7878}"
+      STUDIO_TLS_DIR: /run/tls
+    volumes:
+      - library:/data
+      - helper-token:/run/token:ro
+      - website-tls:/run/tls:ro
+    restart: unless-stopped
+    init: true
+    mem_limit: 768m
+    cpus: 2
+
+volumes:
+  models:
+  library:
+  engine-state:
+  helper-token:
+  website-tls:

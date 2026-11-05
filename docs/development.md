@@ -62,6 +62,15 @@ report to `benchmarks/`. `make benchmark` makes two images with different seeds.
 3. Keep weights in `models/`, benchmark on the target computer, then wire it into
    `studio/engine.py` (`QUALITIES`, `build_graph`).
 
+## Windows launcher checks
+
+Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File studio/tests/windows.tests.ps1` on
+Windows, or `pwsh -NoProfile -File studio/tests/windows.tests.ps1` with PowerShell 7. These exercise
+archive installation, native exit codes, paths with spaces, local-only Docker selection, GPU
+preflight, readiness and configured ports without a GPU, models or network. The Windows workflow
+runs them in both Windows PowerShell 5.1 and PowerShell 7, and validates `compose.windows.yaml`.
+Actual Windows/NVIDIA installation and image generation still need hardware validation.
+
 ## Updating pinned versions
 
 - Python packages: update `requirements.lock.txt` (macOS) or `requirements.cuda.lock.txt` (NVIDIA)

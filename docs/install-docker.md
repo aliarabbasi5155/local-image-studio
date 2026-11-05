@@ -3,6 +3,7 @@
 | Your computer | What runs in Docker |
 | --- | --- |
 | Linux with an NVIDIA GPU | Everything: the website and the GPU engine. Start it with `docker compose up -d`. |
+| Windows with an NVIDIA GPU | Everything, using Docker Desktop with WSL 2. Use the [Windows installer](install-windows.md), which uses `compose.windows.yaml` and named volumes. |
 | Mac with Apple Silicon | Only the website. Docker on macOS can't use the Apple GPU, so the engine runs natively. [See below](#macos-website-in-docker-desktop). |
 
 ## Linux with an NVIDIA GPU

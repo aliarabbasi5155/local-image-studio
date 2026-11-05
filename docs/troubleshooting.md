@@ -3,6 +3,8 @@
 Start with `make status`, which shows whether the website, helper and engine are running, and
 `make logs`, which follows their logs (`runtime/web-studio.log`, `runtime/sam3-service.log`,
 `runtime/comfyui-launcher.log`). On Docker, use `docker compose ps` and `docker compose logs -f`.
+On Windows, use `.\scripts\windows.ps1 status` and `.\scripts\windows.ps1 logs`; see the
+[Windows guide](install-windows.md#if-setup-stops) for WSL, GPU and installation issues.
 
 ## Installing
 
